@@ -15,3 +15,5 @@
                        888P                 '8>
                      .J88"                   "
 ```
+Recommend starting at [[sijapi/config/.env]]
+
