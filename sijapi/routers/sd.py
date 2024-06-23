@@ -30,7 +30,7 @@ import shutil
 # from webdav3.client import Client
 from sijapi.routers.llm import query_ollama
 from sijapi import DEBUG, INFO, WARN, ERR, CRITICAL
-from sijapi import COMFYUI_URL, COMFYUI_LAUNCH_CMD, COMFYUI_DIR, COMFYUI_OUTPUT_DIR, HOST_PORT, TS_SUBNET, SD_CONFIG, SD_IMAGE_DIR, SD_WORKFLOWS_DIR, LOCAL_HOSTS, BASE_URL
+from sijapi import COMFYUI_URL, COMFYUI_LAUNCH_CMD, COMFYUI_DIR, COMFYUI_OUTPUT_DIR, HOST_PORT, TS_SUBNET, SD_CONFIG_PATH, SD_IMAGE_DIR, SD_WORKFLOWS_DIR, LOCAL_HOSTS, BASE_URL
 
 sd = APIRouter()
 
@@ -73,8 +73,8 @@ async def workflow(prompt: str, scene: str = None, size: str = None, style: str 
     scene_data = get_scene(scene)
     if not scene_data:
         scene_data = get_matching_scene(prompt)
-    prompt = scene_data['llm_pre_prompt'] + prompt
-    image_concept = await query_ollama(usr=prompt, sys=scene_data['llm_sys_msg'], max_tokens=100)
+    prompt = scene_data.get('llm_pre_prompt') + prompt
+    image_concept = await query_ollama(usr=prompt, sys=scene_data.get('llm_sys_msg'), max_tokens=100)
 
     scene_workflow = random.choice(scene_data['workflows'])
     if size:
@@ -230,6 +230,8 @@ def get_return_path(destination_path):
 
 # This allows selected scenes by name
 def get_scene(scene):
+    with open(SD_CONFIG_PATH, 'r') as SD_CONFIG_file:
+        SD_CONFIG = json.load(SD_CONFIG_file)
     for scene_data in SD_CONFIG['scenes']:
         if scene_data['scene'] == scene:
             return scene_data
@@ -240,6 +242,8 @@ def get_matching_scene(prompt):
     prompt_lower = prompt.lower()
     max_count = 0
     scene_data = None
+    with open(SD_CONFIG_PATH, 'r') as SD_CONFIG_file:
+        SD_CONFIG = json.load(SD_CONFIG_file)
     for sc in SD_CONFIG['scenes']:
         count = sum(1 for trigger in sc['triggers'] if trigger in prompt_lower)
         if count > max_count:
