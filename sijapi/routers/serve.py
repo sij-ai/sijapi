@@ -14,7 +14,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from pathlib import Path
 from sijapi import DEBUG, INFO, WARN, ERR, CRITICAL
-from sijapi.utilities import bool_convert, sanitize_filename, assemble_journal_path
+from sijapi.utilities import bool_convert, sanitize_filename, assemble_journal_path, localize_dt
 from sijapi import DATA_DIR, SD_IMAGE_DIR, PUBLIC_KEY, OBSIDIAN_VAULT_DIR
 
 serve = APIRouter(tags=["public"])
@@ -49,18 +49,18 @@ def is_valid_date(date_str: str) -> bool:
 
 @serve.get("/notes/{file_path:path}")
 async def get_file(file_path: str):
-
-    if is_valid_date(file_path):
-        absolute_path, local_path = assemble_journal_path(file_path, no_timestamp = True)
-    else:
+    try:
+        date_time = localize_dt(file_path);
+        absolute_path, local_path = assemble_journal_path(date_time, no_timestamp = True)
+    except ValueError as e:
+        DEBUG(f"Unable to parse {file_path} as a date, now trying to use it as a local path")
         absolute_path = OBSIDIAN_VAULT_DIR / file_path
         if not absolute_path.suffix:
-            absolute_path = absolute_path.with_suffix(".md")
+            absolute_path = Path(absolute_path.with_suffix(".md"))
 
     if not absolute_path.is_file():
-        raise HTTPException(status_code=404, detail="File not found")
-
-    if absolute_path.suffix == '.md':
+        WARN(f"{absolute_path} is not a valid file it seems.")
+    elif absolute_path.suffix == '.md':
         try:
             with open(absolute_path, 'r', encoding='utf-8') as file:
                 content = file.read()

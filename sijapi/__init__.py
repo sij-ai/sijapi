@@ -127,8 +127,6 @@ COMFYUI_DIR = Path(os.getenv('COMFYUI_DIR'))
 COMFYUI_OUTPUT_DIR = COMFYUI_DIR / 'output'
 COMFYUI_LAUNCH_CMD = os.getenv('COMFYUI_LAUNCH_CMD', 'mamba activate comfyui && python main.py')
 SD_CONFIG_PATH = CONFIG_DIR / 'sd.json'
-with open(SD_CONFIG_PATH, 'r') as SD_CONFIG_file:
-    SD_CONFIG = json.load(SD_CONFIG_file)
 
 ### Summarization
 SUMMARY_CHUNK_SIZE = int(os.getenv("SUMMARY_CHUNK_SIZE", 4000))  # measured in tokens
