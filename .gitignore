@@ -1,4 +1,4 @@
-\# Ignore specific data files and directories
+# Ignore specific data files and directories
 sijapi/data/calendar.ics
 sijapi/data/asr/
 sijapi/data/geocoder/
