@@ -1,0 +1,456 @@
+{
+  "11": {
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    },
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": [
+        "12",
+        1
+      ],
+      "text": [
+        "25",
+        0
+      ]
+    }
+  },
+  "12": {
+    "_meta": {
+      "title": "Load LoRA"
+    },
+    "class_type": "LoraLoader",
+    "inputs": {
+      "clip": [
+        "4",
+        1
+      ],
+      "lora_name": "SDXL/add-detail-xl.safetensors",
+      "model": [
+        "4",
+        0
+      ],
+      "strength_clip": 0.3,
+      "strength_model": 0.33
+    }
+  },
+  "13": {
+    "_meta": {
+      "title": "Load LoRA"
+    },
+    "class_type": "LoraLoader",
+    "inputs": {
+      "clip": [
+        "12",
+        1
+      ],
+      "lora_name": "SDXL/SDXLLandskaper_v1-000003.safetensors",
+      "model": [
+        "12",
+        0
+      ],
+      "strength_clip": 0.75,
+      "strength_model": 0.8
+    }
+  },
+  "14": {
+    "_meta": {
+      "title": "Power KSampler Advanced 🦚"
+    },
+    "class_type": "Power KSampler Advanced (PPF Noise)",
+    "inputs": {
+      "add_noise": "enable",
+      "alpha_exponent": 1,
+      "boost_leading_sigma": "false",
+      "cfg": 8,
+      "ch_settings": [
+        "19",
+        0
+      ],
+      "denoise": 1,
+      "enable_denoise": "false",
+      "end_at_step": 10000,
+      "guide_use_noise": "true",
+      "latent_image": [
+        "20",
+        0
+      ],
+      "model": [
+        "13",
+        0
+      ],
+      "modulator": 1,
+      "negative": [
+        "61",
+        0
+      ],
+      "noise_blending": "cuberp",
+      "noise_mode": "additive",
+      "noise_type": "brownian_fractal",
+      "positive": [
+        "63",
+        0
+      ],
+      "ppf_settings": [
+        "18",
+        0
+      ],
+      "return_with_leftover_noise": "disable",
+      "sampler_name": "dpmpp_2m_sde",
+      "scale": 1,
+      "scheduler": "karras",
+      "seed": 809193506471910,
+      "sigma_tolerance": 0.5,
+      "start_at_step": 0,
+      "steps": 28
+    }
+  },
+  "18": {
+    "_meta": {
+      "title": "Perlin Power Fractal Settings 🦚"
+    },
+    "class_type": "Perlin Power Fractal Settings (PPF Noise)",
+    "inputs": {
+      "X": 0,
+      "Y": 0,
+      "Z": 0,
+      "brightness": 0,
+      "contrast": 0,
+      "evolution": 0.2,
+      "exponent": 5,
+      "frame": 40,
+      "lacunarity": 2.4,
+      "octaves": 8,
+      "persistence": 1.6,
+      "scale": 8
+    }
+  },
+  "19": {
+    "_meta": {
+      "title": "Cross-Hatch Power Fractal Settings 🦚"
+    },
+    "class_type": "Cross-Hatch Power Fractal Settings (PPF Noise)",
+    "inputs": {
+      "angle_degrees": 45,
+      "blur": 2.5,
+      "brightness": 0,
+      "color_tolerance": 0.05,
+      "contrast": 0,
+      "frequency": 320,
+      "num_colors": 32,
+      "octaves": 24,
+      "persistence": 1.5
+    }
+  },
+  "20": {
+    "_meta": {
+      "title": "Perlin Power Fractal Noise 🦚"
+    },
+    "class_type": "Perlin Power Fractal Latent (PPF Noise)",
+    "inputs": {
+      "X": 0,
+      "Y": 0,
+      "Z": 0,
+      "batch_size": 1,
+      "brightness": 0,
+      "clamp_max": 1,
+      "clamp_min": 0,
+      "contrast": 0,
+      "device": "cpu",
+      "evolution": 0.2,
+      "exponent": 4,
+      "frame": 40,
+      "height": [
+        "54",
+        1
+      ],
+      "lacunarity": 2.4,
+      "octaves": 8,
+      "optional_vae": [
+        "4",
+        2
+      ],
+      "persistence": 1.6,
+      "ppf_settings": [
+        "18",
+        0
+      ],
+      "resampling": "nearest-exact",
+      "scale": 8,
+      "seed": 189685705390202,
+      "width": [
+        "54",
+        0
+      ]
+    }
+  },
+  "21": {
+    "_meta": {
+      "title": "Conditioning (Combine)"
+    },
+    "class_type": "ConditioningCombine",
+    "inputs": {
+      "conditioning_1": [
+        "11",
+        0
+      ],
+      "conditioning_2": [
+        "6",
+        0
+      ]
+    }
+  },
+  "23": {
+    "_meta": {
+      "title": "String (Multiline)"
+    },
+    "class_type": "JWStringMultiline",
+    "inputs": {
+      "text": "API_SPrompt"
+    }
+  },
+  "24": {
+    "_meta": {
+      "title": "String (Multiline)"
+    },
+    "class_type": "JWStringMultiline",
+    "inputs": {
+      "text": "API_NPrompt"
+    }
+  },
+  "25": {
+    "_meta": {
+      "title": "String (Multiline)"
+    },
+    "class_type": "JWStringMultiline",
+    "inputs": {
+      "text": "API_PPrompt"
+    }
+  },
+  "28": {
+    "_meta": {
+      "title": "Tiled VAE Decode"
+    },
+    "class_type": "VAEDecodeTiled_TiledDiffusion",
+    "inputs": {
+      "fast": false,
+      "samples": [
+        "14",
+        0
+      ],
+      "tile_size": [
+        "53",
+        0
+      ],
+      "vae": [
+        "4",
+        2
+      ]
+    }
+  },
+  "36": {
+    "_meta": {
+      "title": "Save Image"
+    },
+    "class_type": "SaveImage",
+    "inputs": {
+      "filename_prefix": "API_",
+      "images": [
+        "52",
+        0
+      ]
+    }
+  },
+  "4": {
+    "_meta": {
+      "title": "Load Checkpoint"
+    },
+    "class_type": "CheckpointLoaderSimple",
+    "inputs": {
+      "ckpt_name": "SDXL/realismEngineSDXL_v20VAE.safetensors"
+    }
+  },
+  "42": {
+    "_meta": {
+      "title": "Upscale Model Loader"
+    },
+    "class_type": "Upscale Model Loader",
+    "inputs": {
+      "model_name": "RealESRGAN_x2plus.pth"
+    }
+  },
+  "52": {
+    "_meta": {
+      "title": "Ultimate SD Upscale"
+    },
+    "class_type": "UltimateSDUpscale",
+    "inputs": {
+      "cfg": 8,
+      "denoise": 0.24,
+      "force_uniform_tiles": true,
+      "image": [
+        "28",
+        0
+      ],
+      "mask_blur": 8,
+      "mode_type": "Linear",
+      "model": [
+        "12",
+        0
+      ],
+      "negative": [
+        "7",
+        0
+      ],
+      "positive": [
+        "21",
+        0
+      ],
+      "sampler_name": "dpmpp_2m_sde",
+      "scheduler": "karras",
+      "seam_fix_denoise": 1,
+      "seam_fix_mask_blur": 8,
+      "seam_fix_mode": "None",
+      "seam_fix_padding": 16,
+      "seam_fix_width": 64,
+      "seed": 1041855229054013,
+      "steps": 16,
+      "tile_height": [
+        "53",
+        0
+      ],
+      "tile_padding": 32,
+      "tile_width": [
+        "53",
+        0
+      ],
+      "tiled_decode": true,
+      "upscale_by": 2,
+      "upscale_model": [
+        "42",
+        0
+      ],
+      "vae": [
+        "4",
+        2
+      ]
+    }
+  },
+  "53": {
+    "_meta": {
+      "title": "Integer"
+    },
+    "class_type": "JWInteger",
+    "inputs": {
+      "value": 768
+    }
+  },
+  "54": {
+    "_meta": {
+      "title": "AnyAspectRatio"
+    },
+    "class_type": "AnyAspectRatio",
+    "inputs": {
+      "height_ratio": 3,
+      "rounding_value": 32,
+      "side_length": 1023,
+      "width_ratio": 4
+    }
+  },
+  "6": {
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    },
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": [
+        "12",
+        1
+      ],
+      "text": [
+        "23",
+        0
+      ]
+    }
+  },
+  "60": {
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    },
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": [
+        "13",
+        1
+      ],
+      "text": [
+        "23",
+        0
+      ]
+    }
+  },
+  "61": {
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    },
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": [
+        "13",
+        1
+      ],
+      "text": [
+        "24",
+        0
+      ]
+    }
+  },
+  "62": {
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    },
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": [
+        "13",
+        1
+      ],
+      "text": [
+        "25",
+        0
+      ]
+    }
+  },
+  "63": {
+    "_meta": {
+      "title": "Conditioning (Combine)"
+    },
+    "class_type": "ConditioningCombine",
+    "inputs": {
+      "conditioning_1": [
+        "62",
+        0
+      ],
+      "conditioning_2": [
+        "60",
+        0
+      ]
+    }
+  },
+  "7": {
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    },
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": [
+        "12",
+        1
+      ],
+      "text": [
+        "24",
+        0
+      ]
+    }
+  }
+}

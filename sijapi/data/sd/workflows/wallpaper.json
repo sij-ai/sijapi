@@ -1,0 +1,332 @@
+{
+  "11": {
+    "_meta": {
+      "title": "Perlin Power Fractal Noise 🦚"
+    },
+    "class_type": "Perlin Power Fractal Latent (PPF Noise)",
+    "inputs": {
+      "X": 0,
+      "Y": 0,
+      "Z": 0,
+      "batch_size": 1,
+      "brightness": 0,
+      "clamp_max": 1,
+      "clamp_min": 0,
+      "contrast": 0,
+      "device": "cpu",
+      "evolution": 0,
+      "exponent": 4,
+      "frame": 0,
+      "height": 1025,
+      "lacunarity": 2,
+      "octaves": 8,
+      "optional_vae": [
+        "4",
+        2
+      ],
+      "persistence": 1.5,
+      "resampling": "nearest-exact",
+      "scale": 5,
+      "seed": 490162938389882,
+      "width": 1023
+    }
+  },
+  "13": {
+    "_meta": {
+      "title": "Power KSampler Advanced 🦚"
+    },
+    "class_type": "Power KSampler Advanced (PPF Noise)",
+    "inputs": {
+      "add_noise": "enable",
+      "alpha_exponent": 1,
+      "boost_leading_sigma": "false",
+      "cfg": 1.6,
+      "ch_settings": [
+        "15",
+        0
+      ],
+      "denoise": 1,
+      "enable_denoise": "false",
+      "end_at_step": 10000,
+      "guide_use_noise": "true",
+      "latent_image": [
+        "11",
+        0
+      ],
+      "model": [
+        "4",
+        0
+      ],
+      "modulator": 1,
+      "negative": [
+        "7",
+        0
+      ],
+      "noise_blending": "cuberp",
+      "noise_mode": "additive",
+      "noise_type": "brownian_fractal",
+      "positive": [
+        "20",
+        0
+      ],
+      "ppf_settings": [
+        "14",
+        0
+      ],
+      "return_with_leftover_noise": "disable",
+      "sampler_name": "dpmpp_2m_sde",
+      "scale": 1,
+      "scheduler": "karras",
+      "seed": 697312143874418,
+      "sigma_tolerance": 0.5,
+      "start_at_step": 0,
+      "steps": 8
+    }
+  },
+  "14": {
+    "_meta": {
+      "title": "Perlin Power Fractal Settings 🦚"
+    },
+    "class_type": "Perlin Power Fractal Settings (PPF Noise)",
+    "inputs": {
+      "X": 0,
+      "Y": 0,
+      "Z": 0,
+      "brightness": 0,
+      "contrast": 0,
+      "evolution": 0,
+      "exponent": 4,
+      "frame": 0,
+      "lacunarity": 2,
+      "octaves": 8,
+      "persistence": 1.5,
+      "scale": 5
+    }
+  },
+  "15": {
+    "_meta": {
+      "title": "Cross-Hatch Power Fractal Settings 🦚"
+    },
+    "class_type": "Cross-Hatch Power Fractal Settings (PPF Noise)",
+    "inputs": {
+      "angle_degrees": 45,
+      "blur": 2.5,
+      "brightness": 0,
+      "color_tolerance": 0.05,
+      "contrast": 0,
+      "frequency": 320,
+      "num_colors": 16,
+      "octaves": 12,
+      "persistence": 1.5
+    }
+  },
+  "20": {
+    "_meta": {
+      "title": "Conditioning (Combine)"
+    },
+    "class_type": "ConditioningCombine",
+    "inputs": {
+      "conditioning_1": [
+        "6",
+        0
+      ],
+      "conditioning_2": [
+        "21",
+        0
+      ]
+    }
+  },
+  "21": {
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    },
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": [
+        "4",
+        1
+      ],
+      "text": "API_SPrompt"
+    }
+  },
+  "22": {
+    "_meta": {
+      "title": "Ultimate SD Upscale"
+    },
+    "class_type": "UltimateSDUpscale",
+    "inputs": {
+      "cfg": 8,
+      "denoise": 0.21,
+      "force_uniform_tiles": true,
+      "image": [
+        "8",
+        0
+      ],
+      "mask_blur": 8,
+      "mode_type": "Linear",
+      "model": [
+        "4",
+        0
+      ],
+      "negative": [
+        "23",
+        0
+      ],
+      "positive": [
+        "6",
+        0
+      ],
+      "sampler_name": "euler",
+      "scheduler": "normal",
+      "seam_fix_denoise": 1,
+      "seam_fix_mask_blur": 8,
+      "seam_fix_mode": "None",
+      "seam_fix_padding": 16,
+      "seam_fix_width": 64,
+      "seed": 470914682435746,
+      "steps": 20,
+      "tile_height": 512,
+      "tile_padding": 32,
+      "tile_width": 512,
+      "tiled_decode": false,
+      "upscale_by": 2,
+      "upscale_model": [
+        "24",
+        0
+      ],
+      "vae": [
+        "4",
+        2
+      ]
+    }
+  },
+  "23": {
+    "_meta": {
+      "title": "ConditioningZeroOut"
+    },
+    "class_type": "ConditioningZeroOut",
+    "inputs": {
+      "conditioning": [
+        "7",
+        0
+      ]
+    }
+  },
+  "24": {
+    "_meta": {
+      "title": "Load Upscale Model"
+    },
+    "class_type": "UpscaleModelLoader",
+    "inputs": {
+      "model_name": "ESRGAN_SRx4_DF2KOST_official-ff704c30.pth"
+    }
+  },
+  "26": {
+    "_meta": {
+      "title": "Upscale Image (using Model)"
+    },
+    "class_type": "ImageUpscaleWithModel",
+    "inputs": {
+      "image": [
+        "22",
+        0
+      ],
+      "upscale_model": [
+        "24",
+        0
+      ]
+    }
+  },
+  "27": {
+    "_meta": {
+      "title": "Image Resize by Factor"
+    },
+    "class_type": "JWImageResizeByFactor",
+    "inputs": {
+      "factor": 0.5,
+      "image": [
+        "30",
+        0
+      ],
+      "interpolation_mode": "bicubic"
+    }
+  },
+  "30": {
+    "_meta": {
+      "title": "ImageBlur"
+    },
+    "class_type": "ImageBlur",
+    "inputs": {
+      "blur_radius": 3,
+      "image": [
+        "26",
+        0
+      ],
+      "sigma": 1.5
+    }
+  },
+  "4": {
+    "_meta": {
+      "title": "Load Checkpoint"
+    },
+    "class_type": "CheckpointLoaderSimple",
+    "inputs": {
+      "ckpt_name": "Other/dreamshaperXL_v21TurboDPMSDE.safetensors"
+    }
+  },
+  "6": {
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    },
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": [
+        "4",
+        1
+      ],
+      "text": "API_PPrompt"
+    }
+  },
+  "7": {
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    },
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": [
+        "4",
+        1
+      ],
+      "text": "API_NPrompt"
+    }
+  },
+  "8": {
+    "_meta": {
+      "title": "VAE Decode"
+    },
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "13",
+        0
+      ],
+      "vae": [
+        "4",
+        2
+      ]
+    }
+  },
+  "9": {
+    "_meta": {
+      "title": "Save Image"
+    },
+    "class_type": "SaveImage",
+    "inputs": {
+      "filename_prefix": "API_",
+      "images": [
+        "27",
+        0
+      ]
+    }
+  }
+}
