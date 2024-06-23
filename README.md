@@ -15,5 +15,5 @@
                        888P                 '8>
                      .J88"                   "
 ```
-Recommend starting at [[sijapi/config/.env]]
+Recommend starting at [[sijapi/config/.env-example]] (which must be renamed .env before attempting to run.)
 
