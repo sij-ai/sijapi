@@ -140,6 +140,17 @@ async def clip_post(
     markdown_filename = await process_article(background_tasks, url, title, encoding, source, tts, voice)
     return {"message": "Clip saved successfully", "markdown_filename": markdown_filename}
 
+@note.post("/archive")
+async def archive_post(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = None,
+    url: Optional[str] = Form(None),
+    source: Optional[str] = Form(None),
+    title: Optional[str] = Form(None),
+    encoding: str = Form('utf-8')
+):
+    markdown_filename = await process_archive(background_tasks, url, title, encoding, source)
+    return {"message": "Clip saved successfully", "markdown_filename": markdown_filename}
 
 @note.get("/clip")
 async def clip_get(
@@ -182,27 +193,68 @@ async def process_for_daily_note(file: Optional[UploadFile] = File(None), text: 
         absolute_path, relative_path = assemble_journal_path(now, subdir=subdir, filename=file.filename)
         with open(absolute_path, 'wb') as f:
             f.write(file_content)
-        source_prefix = ""
+
         if 'audio' in file_type:
             transcription = await asr.transcribe_audio(file_path=absolute_path, params=asr.TranscribeParams(model="small-en", language="en", threads=6))
-            source_prefix = "voice note"
             file_entry = f"![[{relative_path}]]"
 
         elif 'image' in file_type:
-            source_prefix = "image"
             file_entry = f"![[{relative_path}]]"
         
         else:
             file_entry = f"[Source]({relative_path})"
     
-    if source:
-        source = f" — {source_prefix} from {source}:"
-    else:
-        source = ""
 
     text_entry = text if text else ""
     INFO(f"transcription: {transcription}\nfile_entry: {file_entry}\ntext_entry: {text_entry}")
-    return await add_to_daily_note(transcription, file_entry, text_entry, now, source)
+    return await add_to_daily_note(transcription, file_entry, text_entry, now)
+
+
+async def add_to_daily_note(transcription: str = None, file_link: str = None, additional_text: str = None, date_time: datetime = None):
+    date_time = date_time or datetime.now()
+    note_path, _ = assemble_journal_path(date_time, filename='Notes', extension=".md", no_timestamp = True)
+    time_str = date_time.strftime("%H:%M")
+    
+    entry_lines = []
+    if additional_text and additional_text.strip():
+        entry_lines.append(f"\t* {additional_text.strip()}") 
+    if transcription and transcription.strip():
+        entry_lines.append(f"\t* {transcription.strip()}") 
+    if file_link and file_link.strip():
+        entry_lines.append(f"\t\t {file_link.strip()}")
+
+    entry = f"\n* **{time_str}**\n" + "\n".join(entry_lines)
+
+    # Write the entry to the end of the file
+    if note_path.exists():
+        with open(note_path, 'a', encoding='utf-8') as note_file:
+            note_file.write(entry)
+    else: 
+        date_str = date_time.strftime("%Y-%m-%d")
+        frontmatter = f"""---
+date: {date_str}
+tags:
+ - notes
+---
+
+"""
+        content = frontmatter + entry
+        # If the file doesn't exist, create it and start with "Notes"
+        with open(note_path, 'w', encoding='utf-8') as note_file:
+            note_file.write(content)
+
+    return entry
+
+async def handle_text(title:str, summary:str, extracted_text:str, date_time: datetime = None):
+    date_time = date_time if date_time else datetime.now()
+    absolute_path, relative_path = assemble_journal_path(date_time, filename=title, extension=".md", no_timestamp = True)
+    with open(absolute_path, "w") as file:
+        file.write(f"# {title}\n\n## Summary\n{summary}\n\n## Transcript\n{extracted_text}")
+        
+    # add_to_daily_note(f"**Uploaded [[{title}]]**: *{summary}*", absolute_path)
+
+    return True
+
 
 async def process_document(
     background_tasks: BackgroundTasks,
@@ -293,13 +345,12 @@ async def process_article(
     parsed_content = parse_article(url, source)
     if parsed_content is None:
         return {"error": "Failed to retrieve content"}
-
-
-    readable_title = sanitize_filename(title if title else parsed_content.get("title", "Untitled"))
-
     content = parsed_content["content"]
 
-    markdown_filename, relative_path = assemble_journal_path(datetime.now(), "Articles", readable_title, extension=".md")
+    readable_title = sanitize_filename(title if title else parsed_content.get("title", "Untitled"))
+    if not readable_title:
+        readable_title = timestamp
+    markdown_filename, relative_path = assemble_journal_path(datetime.now(), subdir="Articles", filename=readable_title, extension=".md")
 
     try:
         tags = parsed_content.get('meta_keywords', [])
@@ -374,6 +425,7 @@ banner: "{banner_markdown}"
                 md_file.write(markdown_content)
 
             INFO(f"Successfully saved to {markdown_filename}")
+            add_to_daily_note
             return markdown_filename
         
         except Exception as e:
@@ -413,6 +465,66 @@ def parse_article(url: str, source: Optional[str] = None):
         'meta_keywords': article.meta_keywords
     }
 
+
+
+async def process_archive(
+    background_tasks: BackgroundTasks,
+    url: str,
+    title: Optional[str] = None,
+    encoding: str = 'utf-8',
+    source: Optional[str] = None,
+):
+
+    timestamp = datetime.now().strftime('%b %d, %Y at %H:%M')
+
+    parsed_content = parse_article(url, source)
+    if parsed_content is None:
+        return {"error": "Failed to retrieve content"}
+    content = parsed_content["content"]
+
+    readable_title = sanitize_filename(title if title else parsed_content.get("title", "Untitled"))
+    if not readable_title:
+        readable_title = timestamp
+
+    markdown_path = OBSIDIAN_VAULT_DIR / "archive"
+
+    try:
+        frontmatter = f"""---
+title: {readable_title}
+author: {parsed_content.get('author', 'Unknown')}
+published: {parsed_content.get('date_published', 'Unknown')}
+added: {timestamp}
+excerpt: {parsed_content.get('excerpt', '')}
+---
+"""
+        body = f"# {readable_title}\n\n"
+
+        try:
+            authors = parsed_content.get('author', '')
+            authors_in_brackets = [f"[[{author.strip()}]]" for author in authors.split(",")]
+            authors_string = ", ".join(authors_in_brackets)
+
+            body += f"by {authors_string} in [{parsed_content.get('domain', urlparse(url).netloc.replace('www.', ''))}]({parsed_content.get('url', url)}).\n\n"
+            body += content
+            markdown_content = frontmatter + body
+        except Exception as e:
+            ERR(f"Failed to combine elements of article markdown.")
+
+        try:
+            with open(markdown_path, 'w', encoding=encoding) as md_file:
+                md_file.write(markdown_content)
+
+            INFO(f"Successfully saved to {markdown_path}")
+            add_to_daily_note
+            return markdown_path
+        
+        except Exception as e:
+            ERR(f"Failed to write markdown file")
+            raise HTTPException(status_code=500, detail=str(e))
+        
+    except Exception as e:
+        ERR(f"Failed to clip {url}: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 def download_file(url, folder):
@@ -463,50 +575,6 @@ async def save_file(file: UploadFile, folder: Path) -> Path:
 
 
 
-async def add_to_daily_note(transcription: str, file_link: str, additional_text: str, date_time: datetime = None, source: str = None):
-    date_time = date_time or datetime.now()
-    note_path, _ = assemble_journal_path(date_time, filename='Notes', extension=".md", no_timestamp = True)
-    time_str = date_time.strftime("%H:%M")
-    
-    entry_lines = []
-    if additional_text.strip():
-        entry_lines.append(f"\t* {additional_text.strip()}") 
-    if transcription.strip():
-        entry_lines.append(f"\t* {transcription.strip()}") 
-    if file_link.strip():
-        entry_lines.append(f"\t\t {file_link.strip()}")
-
-    entry = f"\n* **{time_str}**{source}\n" + "\n".join(entry_lines)
-
-    # Write the entry to the end of the file
-    if note_path.exists():
-        with open(note_path, 'a', encoding='utf-8') as note_file:
-            note_file.write(entry)
-    else: 
-        date_str = date_time.strftime("%Y-%m-%d")
-        frontmatter = f"""---
-date: {date_str}
-tags:
- - notes
----
-
-"""
-        content = frontmatter + entry
-        # If the file doesn't exist, create it and start with "Notes"
-        with open(note_path, 'w', encoding='utf-8') as note_file:
-            note_file.write(content)
-
-    return entry
-
-async def handle_text(title:str, summary:str, extracted_text:str, date_time: datetime = None):
-    date_time = date_time if date_time else datetime.now()
-    absolute_path, relative_path = assemble_journal_path(date_time, filename=title, extension=".md", no_timestamp = True)
-    with open(absolute_path, "w") as file:
-        file.write(f"# {title}\n\n## Summary\n{summary}\n\n## Transcript\n{extracted_text}")
-        
-    # add_to_daily_note(f"**Uploaded [[{title}]]**: *{summary}*", absolute_path)
-
-    return True
     
 ### FRONTMATTER, BANNER
 

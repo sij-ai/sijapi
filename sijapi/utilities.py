@@ -62,22 +62,41 @@ def assemble_journal_path(date_time: datetime, subdir: str = None, filename: str
             relative_path = relative_path / f"{day_short} {subdir}"
 
         if filename:
-            if no_timestamp:
-                filename = f"{day_short} {sanitize_filename(filename)}"
-            else:
-                filename = f"{day_short} {timestamp} {sanitize_filename(filename)}"
+            filename = sanitize_filename(filename)
+            filename = f"{day_short} {filename}" if no_timestamp else f"{day_short} {timestamp} {filename}"
 
             if extension:
                 extension = extension if extension.startswith(".") else f".{extension}"
                 filename = f"{filename}{extension}" if not filename.endswith(extension) else filename
-            
+
+            else:
+                if has_valid_extension(filename, [".md", ".m4a", ".wav", ".aiff", ".flac", ".mp3", ".mp4", ".pdf", ".js", ".json", ".yaml", ".py"]):
+                    DEBUG(f"Provided filename has a valid extension, so we use that.")
+                else:
+                    filename = f"{filename}.md"
+                    DEBUG(f"We are forcing the file to be a .md")
+  
             relative_path = relative_path / filename
+        
+        else:
+            DEBUG(f"This only happens, theoretically, when no filename nor subdirectory are provided, but an extension is. Which is kinda silly.")
+            return None, None
     
     absolute_path = OBSIDIAN_VAULT_DIR / relative_path 
 
     os.makedirs(absolute_path.parent, exist_ok=True)
  
     return absolute_path, relative_path
+
+
+def has_valid_extension(filename, valid_extensions=None):
+    if valid_extensions is None:
+        # Check if there's any extension
+        return bool(os.path.splitext(filename)[1])
+    else:
+        # Check if the extension is in the list of valid extensions
+        return os.path.splitext(filename)[1].lower() in valid_extensions
+    
 
 def prefix_lines(text: str, prefix: str = '> ') -> str:
     lines = text.split('\n')
@@ -117,14 +136,23 @@ def get_extension(file):
         raise e
 
 
-
 def sanitize_filename(text, max_length=255):
     """Sanitize a string to be used as a safe filename."""
     DEBUG(f"Filename before sanitization: {text}")
-    sanitized = re.sub(r'[^\w\s\.-]', '', text).strip()
+    
+    # Replace multiple spaces with a single space and remove other whitespace
+    text = re.sub(r'\s+', ' ', text)
+    
+    # Remove any non-word characters except space, dot, and hyphen
+    sanitized = re.sub(r'[^\w \.-]', '', text)
+    
+    # Remove leading/trailing spaces
+    sanitized = sanitized.strip()
+    
     final_filename = sanitized[:max_length]
     DEBUG(f"Filename after sanitization: {final_filename}")
     return final_filename
+
 
 def bool_convert(value: str = Form(None)):
     return value.lower() in ["true", "1", "t", "y", "yes"]

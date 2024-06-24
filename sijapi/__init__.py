@@ -10,8 +10,8 @@ from pydantic import BaseModel
 import traceback
 import logging
 from .logs import Logger
+from .purgenc import process_nc
 
-    
 # from sijapi.config.config import load_config
 # cfg = load_config()
 
@@ -93,6 +93,7 @@ VISUALCROSSING_API_KEY = os.getenv("VISUALCROSSING_API_KEY")
 ### Obsidian & notes
 OBSIDIAN_VAULT_DIR = Path(os.getenv("OBSIDIAN_BASE_DIR") or HOME_DIR / "Nextcloud" / "notes")
 OBSIDIAN_JOURNAL_DIR = OBSIDIAN_VAULT_DIR / "journal"
+process_nc(OBSIDIAN_JOURNAL_DIR, True)
 OBSIDIAN_RESOURCES_DIR = "obsidian/resources"
 OBSIDIAN_BANNER_DIR = f"{OBSIDIAN_RESOURCES_DIR}/banners"
 os.makedirs(Path(OBSIDIAN_VAULT_DIR) / OBSIDIAN_BANNER_DIR, exist_ok=True)
