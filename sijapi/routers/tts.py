@@ -165,6 +165,8 @@ async def get_model(voice: str = None, voice_file: UploadFile = None):
         raise HTTPException(status_code=400, detail="No model or voice specified")
 
 async def determine_voice_id(voice_name: str) -> str:
+    DEBUG(f"Searching for voice id for {voice_name}")
+    
     hardcoded_voices = {
         "alloy": "E3A1KVbKoWSIKSZwSUsW",
         "echo": "b42GBisbu9r5m5n6pHF7",
@@ -172,7 +174,7 @@ async def determine_voice_id(voice_name: str) -> str:
         "onyx": "clQb8NxY08xZ6mX6wCPE",
         "nova": "6TayTBKLMOsghG7jYuMX",
         "shimmer": "E7soeOyjpmuZFurvoxZ2",
-        DEFAULT_VOICE: "6TayTBKLMOsghG7jYuMX",
+        "Luna": "6TayTBKLMOsghG7jYuMX",
         "Sangye": "E7soeOyjpmuZFurvoxZ2",
         "Herzog": "KAX2Y6tTs0oDWq7zZXW7",
         "Attenborough": "b42GBisbu9r5m5n6pHF7"
@@ -198,7 +200,8 @@ async def determine_voice_id(voice_name: str) -> str:
         except Exception as e:
             ERR(f"Error determining voice ID: {str(e)}")
 
-    return "6TayTBKLMOsghG7jYuMX" 
+    # as a last fallback, rely on David Attenborough
+    return "b42GBisbu9r5m5n6pHF7"
 
 
 async def elevenlabs_tts(model: str, input_text: str, voice: str, title: str = None, output_dir: str = None):

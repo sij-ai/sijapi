@@ -20,7 +20,7 @@ from datetime import datetime
 import argparse
 from . import LOGGER, LOGS_DIR, OBSIDIAN_VAULT_DIR
 from .logs import Logger
-from .utilities import fix_nextcloud_filenames
+from .utilities import list_and_correct_impermissible_files
 
 parser = argparse.ArgumentParser(description='Personal API.')
 parser.add_argument('--debug', action='store_true', help='Set log level to INFO')
@@ -139,7 +139,7 @@ def main(argv):
             load_router(router_name)
 
     journal = OBSIDIAN_VAULT_DIR / "journal"
-    fix_nextcloud_filenames(journal, rename=True)
+    list_and_correct_impermissible_files(journal, rename=True)
     config = Config()
     config.keep_alive_timeout = 1200 
     config.bind = [HOST]

@@ -9,6 +9,7 @@ sijapi/data/sd/workflows/private
 sijapi/data/*.pbf
 sijapi/data/geonames.txt
 sijapi/data/sd/images/
+sijapi/config/*.yaml
 sijapi/config/O365/
 sijapi/local_only/
 sijapi/testbed/

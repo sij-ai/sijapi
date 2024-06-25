@@ -210,7 +210,7 @@ def list_and_correct_impermissible_files(root_dir, rename: bool = False):
             if check_file_name(filename):
                 file_path = Path(dirpath) / filename
                 impermissible_files.append(file_path)
-                print(f"Impermissible file found: {file_path}")
+                DEBUG(f"Impermissible file found: {file_path}")
                 
                 # Sanitize the file name
                 new_filename = sanitize_filename(filename)
@@ -228,18 +228,9 @@ def list_and_correct_impermissible_files(root_dir, rename: bool = False):
                 # Rename the file
                 if rename:
                     os.rename(file_path, new_file_path)
-                    print(f"Renamed: {file_path} -> {new_file_path}")
+                    DEBUG(f"Renamed: {file_path} -> {new_file_path}")
     
     return impermissible_files
-
-def fix_nextcloud_filenames(dir_to_fix, rename: bool = False):
-    impermissible_files = list_and_correct_impermissible_files(dir_to_fix, rename)
-    if impermissible_files:
-        print("\nList of impermissible files found and corrected:")
-        for file in impermissible_files:
-            print(file)
-    else:
-        print("No impermissible files found.")
 
 
 def bool_convert(value: str = Form(None)):
@@ -454,7 +445,7 @@ def convert_degrees_to_cardinal(d):
     return dirs[ix % len(dirs)]  
 
 
-def localize_dt(dt):
+def localize_datetime(dt):
     initial_dt = dt
     try:
         if isinstance(dt, str):

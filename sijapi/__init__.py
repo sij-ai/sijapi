@@ -1,5 +1,6 @@
 import os
 import json
+import yaml
 from pathlib import Path
 import ipaddress
 import multiprocessing
@@ -7,9 +8,11 @@ from dotenv import load_dotenv
 from dateutil import tz
 from pathlib import Path
 from pydantic import BaseModel
+from typing import List, Optional
 import traceback
 import logging
 from .logs import Logger
+from .classes import AutoResponder, IMAPConfig, SMTPConfig, EmailAccount, EmailContact, IncomingEmail
 
 # from sijapi.config.config import load_config
 # cfg = load_config()
@@ -116,6 +119,7 @@ SUMMARY_INSTRUCT_TTS = os.getenv('SUMMARY_INSTRUCT_TTS', "You are an AI assistan
 DEFAULT_LLM = os.getenv("DEFAULT_LLM", "dolphin-mistral")
 DEFAULT_VISION = os.getenv("DEFAULT_VISION", "llava")
 DEFAULT_VOICE = os.getenv("DEFAULT_VOICE", "Luna")
+DEFAULT_11L_VOICE = os.getenv("DEFAULT_11L_VOICE", "Victoria")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 ### Stable diffusion
@@ -164,29 +168,15 @@ MS365_TOGGLE = True if os.getenv("MS365_TOGGLE") == "True" else False
 ICAL_TOGGLE = True if os.getenv("ICAL_TOGGLE") == "True" else False
 ICS_PATH = DATA_DIR / 'calendar.ics' # deprecated now, but maybe revive?
 ICALENDARS = os.getenv('ICALENDARS', 'NULL,VOID').split(',')
-class IMAP_DETAILS(BaseModel):
-    email: str
-    password: str
-    host: str
-    imap_port: int
-    smtp_port: int
-    imap_encryption: str = None
-    smtp_encryption: str = None
 
-IMAP = IMAP_DETAILS(
-    email = os.getenv('IMAP_EMAIL'),
-    password = os.getenv('IMAP_PASSWORD'),
-    host = os.getenv('IMAP_HOST', '127.0.0.1'),
-    imap_port = int(os.getenv('IMAP_PORT', 1143)),
-    smtp_port = int(os.getenv('SMTP_PORT', 469)),
-    imap_encryption = os.getenv('IMAP_ENCRYPTION', None),
-    smtp_encryption = os.getenv('SMTP_ENCRYPTION', None)
-)
-AUTORESPONSE_WHITELIST = os.getenv('AUTORESPONSE_WHITELIST', '').split(',')
-AUTORESPONSE_BLACKLIST = os.getenv('AUTORESPONSE_BLACKLIST', '').split(',')
-AUTORESPONSE_BLACKLIST.extend(["no-reply@", "noreply@", "@uscourts.gov", "@doi.gov"])
-AUTORESPONSE_CONTEXT = os.getenv('AUTORESPONSE_CONTEXT', None)
-AUTORESPOND = AUTORESPONSE_CONTEXT != None 
+def load_email_accounts(yaml_path: str) -> List[EmailAccount]:
+    with open(yaml_path, 'r') as file:
+        config = yaml.safe_load(file)
+    return [EmailAccount(**account) for account in config['accounts']]
+
+EMAIL_CONFIG = CONFIG_DIR / "email.yaml"
+EMAIL_ACCOUNTS = load_email_accounts(EMAIL_CONFIG)
+AUTORESPOND = True
 
 ### Courtlistener & other webhooks
 COURTLISTENER_DOCKETS_DIR = DATA_DIR / "courtlistener" / "dockets"
