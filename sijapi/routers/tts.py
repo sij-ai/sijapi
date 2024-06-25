@@ -273,7 +273,17 @@ async def get_voice_file_path(voice: str = None, voice_file: UploadFile = None) 
         return select_voice(DEFAULT_VOICE)
 
 
-async def local_tts(text_content: str, speed: float, voice: str, voice_file = None, podcast: bool = False, background_tasks: BackgroundTasks = None, title: str = None, output_path: Optional[Path] = None) -> str:
+
+async def local_tts(
+    text_content: str,
+    speed: float,
+    voice: str,
+    voice_file = None,
+    podcast: bool = False,
+    background_tasks: BackgroundTasks = None,
+    title: str = None,
+    output_path: Optional[Path] = None
+) -> str:
     if output_path:
         file_path = Path(output_path)
     else:
@@ -286,25 +296,45 @@ async def local_tts(text_content: str, speed: float, voice: str, voice_file = No
     file_path.parent.mkdir(parents=True, exist_ok=True)
 
     voice_file_path = await get_voice_file_path(voice, voice_file)
-    XTTS = TTS(model_name=MODEL_NAME).to(DEVICE)
+    
+    # Initialize TTS model in a separate thread
+    XTTS = await asyncio.to_thread(TTS, model_name=MODEL_NAME)
+    await asyncio.to_thread(XTTS.to, DEVICE)
+
     segments = split_text(text_content)
     combined_audio = AudioSegment.silent(duration=0)
 
     for i, segment in enumerate(segments):
         segment_file_path = TTS_SEGMENTS_DIR / f"segment_{i}.wav"
         DEBUG(f"Segment file path: {segment_file_path}")
-        segment_file = await asyncio.to_thread(XTTS.tts_to_file, text=segment, speed=speed, file_path=str(segment_file_path), speaker_wav=[voice_file_path], language="en")
-        DEBUG(f"Segment file generated: {segment_file}")
-        combined_audio += AudioSegment.from_wav(str(segment_file))
-        # Delete the segment file immediately after adding it to the combined audio
-        segment_file_path.unlink()
+        
+        # Run TTS in a separate thread
+        await asyncio.to_thread(
+            XTTS.tts_to_file,
+            text=segment,
+            speed=speed,
+            file_path=str(segment_file_path),
+            speaker_wav=[voice_file_path],
+            language="en"
+        )
+        DEBUG(f"Segment file generated: {segment_file_path}")
+        
+        # Load and combine audio in a separate thread
+        segment_audio = await asyncio.to_thread(AudioSegment.from_wav, str(segment_file_path))
+        combined_audio += segment_audio
 
+        # Delete the segment file
+        await asyncio.to_thread(segment_file_path.unlink)
+
+    # Export the combined audio in a separate thread
     if podcast:
         podcast_file_path = PODCAST_DIR / file_path.name
-        combined_audio.export(podcast_file_path, format="wav")
+        await asyncio.to_thread(combined_audio.export, podcast_file_path, format="wav")
+    
+    await asyncio.to_thread(combined_audio.export, file_path, format="wav")
 
-    combined_audio.export(file_path, format="wav")
     return str(file_path)
+
 
 
 async def stream_tts(text_content: str, speed: float, voice: str, voice_file) -> StreamingResponse:

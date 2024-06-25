@@ -16,6 +16,7 @@ from PIL import Image
 from pathlib import Path
 import uuid
 import json
+import yaml
 import ipaddress
 import socket
 import subprocess
@@ -228,30 +229,29 @@ def get_return_path(destination_path):
     else:
         return str(destination_path)
 
-# This allows selected scenes by name
 def get_scene(scene):
     with open(SD_CONFIG_PATH, 'r') as SD_CONFIG_file:
-        SD_CONFIG = json.load(SD_CONFIG_file)
+        SD_CONFIG = yaml.safe_load(SD_CONFIG_file)
     for scene_data in SD_CONFIG['scenes']:
         if scene_data['scene'] == scene:
             return scene_data
-    return None 
+    return None
 
-# This returns the scene with the most trigger words present in the provided prompt, or otherwise if none match it returns the first scene in the array - meaning the first should be considered the default scene.
+# This returns the scene with the most trigger words present in the provided prompt,
+# or otherwise if none match it returns the first scene in the array - 
+# meaning the first should be considered the default scene.
 def get_matching_scene(prompt):
     prompt_lower = prompt.lower()
     max_count = 0
     scene_data = None
     with open(SD_CONFIG_PATH, 'r') as SD_CONFIG_file:
-        SD_CONFIG = json.load(SD_CONFIG_file)
+        SD_CONFIG = yaml.safe_load(SD_CONFIG_file)
     for sc in SD_CONFIG['scenes']:
         count = sum(1 for trigger in sc['triggers'] if trigger in prompt_lower)
         if count > max_count:
             max_count = count
             scene_data = sc
-    return scene_data if scene_data else SD_CONFIG['scenes'][0] # fall back on first scene, which should be an appropriate default scene.
-
-
+    return scene_data if scene_data else SD_CONFIG['scenes'][0]  # fall back on first scene, which should be an appropriate default scene.
 
 
 
