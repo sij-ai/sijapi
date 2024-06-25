@@ -12,7 +12,7 @@ from typing import List, Optional
 import traceback
 import logging
 from .logs import Logger
-from .classes import AutoResponder, IMAPConfig, SMTPConfig, EmailAccount, EmailContact, IncomingEmail
+from .classes import AutoResponder, IMAPConfig, SMTPConfig, EmailAccount, EmailContact, IncomingEmail, TimezoneTracker, Database
 
 # from sijapi.config.config import load_config
 # cfg = load_config()
@@ -43,6 +43,7 @@ os.makedirs(LOGS_DIR, exist_ok=True)
 load_dotenv(ENV_PATH)
 
 ### API essentials
+DB = Database.from_env()
 ROUTERS = os.getenv('ROUTERS', '').split(',')
 PUBLIC_SERVICES = os.getenv('PUBLIC_SERVICES', '').split(',')
 GLOBAL_API_KEY = os.getenv("GLOBAL_API_KEY") 
@@ -68,29 +69,19 @@ os.makedirs(REQUESTS_DIR, exist_ok=True)
 REQUESTS_LOG_PATH = LOGS_DIR / "requests.log"
 
 
-### Databases
-DB = os.getenv("DB", 'sijdb')
-DB_HOST = os.getenv("DB_HOST", "127.0.0.1")
-DB_PORT = os.getenv("DB_PORT", 5432)
-DB_USER = os.getenv("DB_USER", 'sij')
-DB_PASS = os.getenv("DB_PASS")
-DB_SSH = os.getenv("DB_SSH", "100.64.64.15")
-DB_SSH_USER = os.getenv("DB_SSH_USER")
-DB_SSH_PASS = os.getenv("DB_SSH_ENV")
-DB_URL = f'postgresql://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB}'
-
 
 ### LOCATE AND WEATHER LOCALIZATIONS
 USER_FULLNAME = os.getenv('USER_FULLNAME')
 USER_BIO = os.getenv('USER_BIO')
-TZ = tz.gettz(os.getenv("TZ", "America/Los_Angeles"))
 HOME_ZIP = os.getenv("HOME_ZIP") # unimplemented
-LOCATION_OVERRIDES = DATA_DIR / "loc_overrides.json"
-LOCATIONS_CSV = DATA_DIR / "US.csv"
+NAMED_LOCATIONS = CONFIG_DIR / "named-locations.yaml"
 # DB = DATA_DIR / "weatherlocate.db" # deprecated
 VISUALCROSSING_BASE_URL = os.getenv("VISUALCROSSING_BASE_URL", "https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline")
 VISUALCROSSING_API_KEY = os.getenv("VISUALCROSSING_API_KEY")
-
+GEONAMES_TXT = DATA_DIR / "geonames.txt"
+LOCATIONS_CSV = DATA_DIR / "US.csv"
+TZ = tz.gettz(os.getenv("TZ", "America/Los_Angeles"))
+DynamicTZ = TimezoneTracker(DB)
 
 ### Obsidian & notes
 ALLOWED_FILENAME_CHARS = r'[^\w \.-]'
@@ -131,7 +122,7 @@ COMFYUI_URL = os.getenv('COMFYUI_URL', "http://localhost:8188")
 COMFYUI_DIR = Path(os.getenv('COMFYUI_DIR'))
 COMFYUI_OUTPUT_DIR = COMFYUI_DIR / 'output'
 COMFYUI_LAUNCH_CMD = os.getenv('COMFYUI_LAUNCH_CMD', 'mamba activate comfyui && python main.py')
-SD_CONFIG_PATH = CONFIG_DIR / 'sd.json'
+SD_CONFIG_PATH = CONFIG_DIR / 'sd.yaml'
 
 ### Summarization
 SUMMARY_CHUNK_SIZE = int(os.getenv("SUMMARY_CHUNK_SIZE", 4000))  # measured in tokens
@@ -155,7 +146,7 @@ TTS_DIR = DATA_DIR / "tts"
 os.makedirs(TTS_DIR, exist_ok=True)
 VOICE_DIR = TTS_DIR / 'voices'
 os.makedirs(VOICE_DIR, exist_ok=True)
-PODCAST_DIR = TTS_DIR / "sideloads"
+PODCAST_DIR = os.getenv("PODCAST_DIR", TTS_DIR / "sideloads")
 os.makedirs(PODCAST_DIR, exist_ok=True)
 TTS_OUTPUT_DIR = TTS_DIR / 'outputs'
 os.makedirs(TTS_OUTPUT_DIR, exist_ok=True)
@@ -169,13 +160,7 @@ ICAL_TOGGLE = True if os.getenv("ICAL_TOGGLE") == "True" else False
 ICS_PATH = DATA_DIR / 'calendar.ics' # deprecated now, but maybe revive?
 ICALENDARS = os.getenv('ICALENDARS', 'NULL,VOID').split(',')
 
-def load_email_accounts(yaml_path: str) -> List[EmailAccount]:
-    with open(yaml_path, 'r') as file:
-        config = yaml.safe_load(file)
-    return [EmailAccount(**account) for account in config['accounts']]
-
 EMAIL_CONFIG = CONFIG_DIR / "email.yaml"
-EMAIL_ACCOUNTS = load_email_accounts(EMAIL_CONFIG)
 AUTORESPOND = True
 
 ### Courtlistener & other webhooks

@@ -17,6 +17,8 @@ from datetime import datetime, date, time
 from typing import Optional, Union, Tuple
 import asyncio
 from PIL import Image
+import pandas as pd
+from scipy.spatial import cKDTree
 from dateutil.parser import parse as dateutil_parse
 from docx import Document
 import asyncpg
@@ -24,7 +26,7 @@ from sshtunnel import SSHTunnelForwarder
 from fastapi import Depends, HTTPException, Request, UploadFile
 from fastapi.security.api_key import APIKeyHeader
 from sijapi import DEBUG, INFO, WARN, ERR, CRITICAL
-from sijapi import DB, GLOBAL_API_KEY, DB, DB_HOST, DB_PORT, DB_USER, DB_PASS, TZ, YEAR_FMT, MONTH_FMT, DAY_FMT, DAY_SHORT_FMT, OBSIDIAN_VAULT_DIR, ALLOWED_FILENAME_CHARS, MAX_FILENAME_LENGTH
+from sijapi import GLOBAL_API_KEY, YEAR_FMT, MONTH_FMT, DAY_FMT, DAY_SHORT_FMT, OBSIDIAN_VAULT_DIR, ALLOWED_FILENAME_CHARS, MAX_FILENAME_LENGTH
 
 api_key_header = APIKeyHeader(name="Authorization")
 
@@ -141,64 +143,38 @@ def sanitize_filename(text, max_length=MAX_FILENAME_LENGTH):
     """Sanitize a string to be used as a safe filename while protecting the file extension."""
     DEBUG(f"Filename before sanitization: {text}")
 
-    # Replace multiple spaces with a single space and remove other whitespace
     text = re.sub(r'\s+', ' ', text)
-
-    # Remove any non-word characters except space, dot, and hyphen
     sanitized = re.sub(ALLOWED_FILENAME_CHARS, '', text)
-
-    # Remove leading/trailing spaces
     sanitized = sanitized.strip()
-
-    # Split the filename into base name and extension
     base_name, extension = os.path.splitext(sanitized)
 
-    # Calculate the maximum length for the base name
     max_base_length = max_length - len(extension)
-
-    # Truncate the base name if necessary
     if len(base_name) > max_base_length:
         base_name = base_name[:max_base_length].rstrip()
-
-    # Recombine the base name and extension
     final_filename = base_name + extension
-
-    # In case the extension itself is too long, truncate the entire filename
-    if len(final_filename) > max_length:
-        final_filename = final_filename[:max_length]
 
     DEBUG(f"Filename after sanitization: {final_filename}")
     return final_filename
 
 
-
 def check_file_name(file_name, max_length=255):
     """Check if the file name needs sanitization based on the criteria of the second sanitize_filename function."""
-    DEBUG(f"Checking filename: {file_name}")
 
     needs_sanitization = False
 
-    # Check for length
     if len(file_name) > max_length:
-        DEBUG(f"Filename exceeds maximum length of {max_length}")
+        DEBUG(f"Filename exceeds maximum length of {max_length}: {file_name}")
         needs_sanitization = True
-
-    # Check for non-word characters (except space, dot, and hyphen)
     if re.search(ALLOWED_FILENAME_CHARS, file_name):
-        DEBUG("Filename contains non-word characters (except space, dot, and hyphen)")
+        DEBUG(f"Filename contains non-word characters (except space, dot, and hyphen): {file_name}")
         needs_sanitization = True
-
-    # Check for multiple consecutive spaces
     if re.search(r'\s{2,}', file_name):
-        DEBUG("Filename contains multiple consecutive spaces")
+        DEBUG(f"Filename contains multiple consecutive spaces: {file_name}")
         needs_sanitization = True
-
-    # Check for leading/trailing spaces
     if file_name != file_name.strip():
-        DEBUG("Filename has leading or trailing spaces")
+        DEBUG(f"Filename has leading or trailing spaces: {file_name}")
         needs_sanitization = True
 
-    DEBUG(f"Filename {'needs' if needs_sanitization else 'does not need'} sanitization")
     return needs_sanitization
 
 
@@ -381,49 +357,6 @@ def convert_to_unix_time(iso_date_str):
     return int(dt.timestamp())
 
 
-async def get_db_connection():
-    conn = await asyncpg.connect(
-        database=DB,
-        user=DB_USER,
-        password=DB_PASS,
-        host=DB_HOST,
-        port=DB_PORT
-    )
-    return conn
-
-temp = """
-def get_db_connection_ssh(ssh: bool = True):
-    if ssh:
-        with SSHTunnelForwarder(
-            (DB_SSH, 22),
-            DB_SSH_USER=DB_SSH_USER,
-            DB_SSH_PASS=DB_SSH_PASS,
-            remote_bind_address=DB_SSH,
-            local_bind_address=(DB_HOST, DB_PORT)
-        ) as tunnel: conn = psycopg2.connect(
-                    dbname=DB,
-                    user=DB_USER,
-                    password=DB_PASS,
-                    host=DB_HOST,
-                    port=DB_PORT
-                ) 
-    else:
-        conn = psycopg2.connect(
-                    dbname=DB,
-                    user=DB_USER,
-                    password=DB_PASS,
-                    host=DB_HOST,
-                    port=DB_PORT
-        ) 
-
-        return conn
-"""
-
-def db_localized():
-    # ssh = True if TS_IP == DB_SSH else False
-    return get_db_connection()
-
-
 def haversine(lat1, lon1, lat2, lon2):
     """ Calculate the great circle distance between two points on the earth specified in decimal degrees. """
     lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
@@ -444,30 +377,6 @@ def convert_degrees_to_cardinal(d):
     ix = round(d / (360. / len(dirs)))
     return dirs[ix % len(dirs)]  
 
-
-def localize_datetime(dt):
-    initial_dt = dt
-    try:
-        if isinstance(dt, str):
-            dt = dateutil_parse(dt)
-            DEBUG(f"{initial_dt} was a string so we attempted converting to datetime. Result: {dt}")
-        
-
-        if isinstance(dt, datetime):
-            DEBUG(f"{dt} is a datetime object, so we will ensure it is tz-aware.")
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=TZ) 
-                # DEBUG(f"{dt} should now be tz-aware. Returning it now.")
-                return dt
-            else:
-                # DEBUG(f"{dt} already was tz-aware. Returning it now.")
-                return dt
-        else:
-            ERR(f"Conversion failed")
-            raise TypeError("Conversion failed")
-    except Exception as e:
-        ERR(f"Error parsing datetime: {e}")
-        raise TypeError("Input must be a string or datetime object")
 
 
 HOURLY_COLUMNS_MAPPING = {
@@ -532,3 +441,21 @@ def resize_and_convert_image(image_path, max_size=2160, quality=80):
         img_byte_arr = img_byte_arr.getvalue()
 
     return img_byte_arr
+
+
+def load_geonames_data(path: str):
+    columns = ['geonameid', 'name', 'asciiname', 'alternatenames',
+               'latitude', 'longitude', 'feature_class', 'feature_code',
+               'country_code', 'cc2', 'admin1_code', 'admin2_code', 'admin3_code',
+               'admin4_code', 'population', 'elevation', 'dem', 'timezone', 'modification_date']
+
+    data = pd.read_csv(
+        path,
+        sep='\t',
+        header=None,
+        names=columns,
+        low_memory=False
+    )
+    
+    return data
+

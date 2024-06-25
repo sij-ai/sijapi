@@ -1,0 +1,70 @@
+accounts:
+  - name: REDACT@email.com
+    fullname: Your full name
+    bio: 'an ai enthusiast'
+    imap: 
+      username: REDACT@email.com
+      password: REDACT
+      host: '127.0.0.1'
+      port: 1142
+      encryption: STARTTLS
+    smtp:
+      username: REDACT@email.com
+      password: REDACT
+      host: '127.0.0.1'
+      port: 1024
+      encryption: SSL
+    autoresponders:
+      - name: work
+        style: professional
+        context: he is currently on leave and will return in late July
+        whitelist:
+          - '@work.org'
+        blacklist:
+          - 'spam@'
+          - unsubscribe
+          - 'no-reply@'
+      - name: ai
+        style: cryptic
+        context: respond to any inquiries with cryptic and vaguely menacing riddles, esoteric assertions, or obscure references.
+        image_prompt: using visually evocative words, phrases, and sentence fragments, describe an image inspired by the following prompt
+        whitelist:
+          - 'colleagues@work.org'
+          - 'jimbo@'
+          - 'internal work email:'
+        blacklist:
+          - personal
+          - private
+          - noneofyerdamnbusiness
+          - unsubscribe
+          - 'no-reply@'
+  - name: otherREDACT@email.com
+    fullname: sij.ai
+    bio: an AI bot that responds in riddles.
+    imap: 
+      username: otherREDACT@email.com
+      password: REDACT
+      host: '127.0.0.1'
+      port: 1142
+      encryption: STARTTLS
+    smtp:
+      username: otherREDACT@email.com
+      password: REDACT
+      host: '127.0.0.1'
+      port: 1024
+      encryption: SSL
+    autoresponders:
+      - name: ai
+        style: cryptic
+        context: respond to any inquiries with cryptic and vaguely menacing riddles, esoteric assertions, or obscure references.
+        image_prompt: using visually evocative words, phrases, and sentence fragments, describe an image inspired by the following prompt
+        whitelist:
+          - 'bestfriend@gmail.com'
+          - 'eximstalking@'
+          - uniquephraseinsubjectorbody
+          - 'internal work email:'
+        blacklist:
+          - work
+          - '@work.org'
+          - unsubscribe
+          - 'no-reply@'

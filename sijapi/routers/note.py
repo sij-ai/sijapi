@@ -17,13 +17,12 @@ from requests.adapters import HTTPAdapter
 import re
 import os
 from datetime import timedelta, datetime, time as dt_time, date as dt_date
-from sijapi.utilities import localize_datetime
 from fastapi import HTTPException, status
 from pathlib import Path
 from fastapi import APIRouter, Query, HTTPException
 from sijapi import DEBUG, INFO, WARN, ERR, CRITICAL, INFO
 from sijapi import YEAR_FMT, MONTH_FMT, DAY_FMT, DAY_SHORT_FMT, OBSIDIAN_VAULT_DIR, OBSIDIAN_RESOURCES_DIR, BASE_URL, OBSIDIAN_BANNER_SCENE, DEFAULT_11L_VOICE, DEFAULT_VOICE, TZ
-from sijapi.routers import tts, time, sd, locate, weather, asr, calendar, summarize
+from sijapi.routers import tts, llm, time, sd, locate, weather, asr, calendar
 from sijapi.routers.locate import Location
 from sijapi.utilities import assemble_journal_path, convert_to_12_hour_format, sanitize_filename, convert_degrees_to_cardinal, HOURLY_COLUMNS_MAPPING
 
@@ -39,7 +38,7 @@ async def build_daily_note_range_endpoint(dt_start: str, dt_end: str):
     results = []
     current_date = start_date
     while current_date <= end_date:
-        formatted_date = localize_datetime(current_date)
+        formatted_date = await locate.localize_datetime(current_date)
         result = await build_daily_note(formatted_date)
         results.append(result)
         current_date += timedelta(days=1)
@@ -58,7 +57,7 @@ Obsidian helper. Takes a datetime and creates a new daily note. Note: it uses th
     header = f"# [[{day_before}|← ]] {formatted_day} [[{day_after}| →]]\n\n"
     
     places = await locate.fetch_locations(date_time)
-    location = locate.reverse_geocode(places[0].latitude, places[0].longitude)
+    location = await locate.reverse_geocode(places[0].latitude, places[0].longitude)
     
     timeslips = await build_daily_timeslips(date_time)
 
@@ -271,9 +270,9 @@ async def process_document(
     with open(file_path, 'wb') as f:
         f.write(document_content)
 
-    parsed_content = await summarize.extract_text(file_path)  # Ensure extract_text is awaited
+    parsed_content = await llm.extract_text(file_path)  # Ensure extract_text is awaited
 
-    llm_title, summary = await summarize.title_and_summary(parsed_content)
+    llm_title, summary = await llm.title_and_summary(parsed_content)
     try:
         readable_title = sanitize_filename(title if title else document.filename)
 
@@ -342,7 +341,7 @@ async def process_article(
 
     timestamp = datetime.now().strftime('%b %d, %Y at %H:%M')
 
-    parsed_content = parse_article(url, source)
+    parsed_content = await parse_article(url, source)
     if parsed_content is None:
         return {"error": "Failed to retrieve content"}
 
@@ -350,7 +349,7 @@ async def process_article(
     markdown_filename, relative_path = assemble_journal_path(datetime.now(), subdir="Articles", filename=readable_title, extension=".md")
 
     try:
-        summary = await summarize.summarize_text(parsed_content["content"], "Summarize the provided text. Respond with the summary and nothing else. Do not otherwise acknowledge the request. Just provide the requested summary.")
+        summary = await llm.summarize_text(parsed_content["content"], "Summarize the provided text. Respond with the summary and nothing else. Do not otherwise acknowledge the request. Just provide the requested summary.")
         summary = summary.replace('\n', ' ')  # Remove line breaks
 
         if tts_mode == "full" or tts_mode == "content":
@@ -427,7 +426,7 @@ tags:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-def parse_article(url: str, source: Optional[str] = None):
+async def parse_article(url: str, source: Optional[str] = None):
     source = source if source else trafilatura.fetch_url(url)
     traf = trafilatura.extract_metadata(filecontent=source, default_url=url)
 
@@ -442,7 +441,12 @@ def parse_article(url: str, source: Optional[str] = None):
     title = np3k.title or traf.title
     authors = np3k.authors or traf.author
     authors = authors if isinstance(authors, List) else [authors]
-    date = np3k.publish_date or localize_datetime(traf.date)
+    date = np3k.publish_date or traf.date
+    try:
+        date = await locate.localize_datetime(date)
+    except:
+        DEBUG(f"Failed to localize {date}")
+        date = await locate.localize_datetime(datetime.now())
     excerpt = np3k.meta_description or traf.description
     content = trafilatura.extract(source, output_format="markdown", include_comments=False) or np3k.text
     image = np3k.top_image or traf.image
@@ -474,7 +478,7 @@ async def process_archive(
 
     timestamp = datetime.now().strftime('%b %d, %Y at %H:%M')
 
-    parsed_content = parse_article(url, source)
+    parsed_content = await parse_article(url, source)
     if parsed_content is None:
         return {"error": "Failed to retrieve content"}
     content = parsed_content["content"]
@@ -635,7 +639,7 @@ async def banner_endpoint(dt: str, location: str = None, mood: str = None, other
         Endpoint (POST) that generates a new banner image for the Obsidian daily note for a specified date, taking into account optional additional information, then updates the frontmatter if necessary.
     '''
     DEBUG(f"banner_endpoint requested with date: {dt} ({type(dt)})")
-    date_time = localize_datetime(dt)
+    date_time = await locate.localize_datetime(dt)
     DEBUG(f"date_time after localization: {date_time} ({type(date_time)})")
     jpg_path = await generate_banner(date_time, location, mood=mood, other_context=other_context)
     return jpg_path
@@ -643,7 +647,7 @@ async def banner_endpoint(dt: str, location: str = None, mood: str = None, other
 
 async def generate_banner(dt, location: Location = None, forecast: str = None, mood: str = None, other_context: str = None):
     DEBUG(f"Location: {location}, forecast: {forecast}, mood: {mood}, other_context: {other_context}")
-    date_time = localize_datetime(dt)
+    date_time = await locate.localize_datetime(dt)
     DEBUG(f"generate_banner called with date_time: {date_time}")
     destination_path, local_path = assemble_journal_path(date_time, filename="Banner", extension=".jpg", no_timestamp = True)
     DEBUG(f"destination path generated: {destination_path}")
@@ -699,7 +703,7 @@ async def note_weather_get(
 ):
 
     try:
-        date_time = datetime.now() if date == "0" else localize_datetime(date)
+        date_time = datetime.now() if date == "0" else locate.localize_datetime(date)
         DEBUG(f"date: {date} .. date_time: {date_time}")
         content = await update_dn_weather(date_time) #, lat, lon)
         return JSONResponse(content={"forecast": content}, status_code=200)
@@ -714,7 +718,7 @@ async def note_weather_get(
 
 @note.post("/update/note/{date}")
 async def post_update_daily_weather_and_calendar_and_timeslips(date: str) -> PlainTextResponse:
-    date_time = localize_datetime(date)
+    date_time = await locate.localize_datetime(date)
     await update_dn_weather(date_time)
     await update_daily_note_events(date_time)
     await build_daily_timeslips(date_time)
@@ -1091,7 +1095,7 @@ async def format_events_as_markdown(event_data: Dict[str, Union[str, List[Dict[s
            #     description = remove_characters(description)
            #     description = remove_characters(description)
                 if len(description) > 150:
-                    description = await summarize.summarize_text(description, length_override=150)
+                    description = await llm.summarize_text(description, length_override=150)
 
                 event_markdown += f"\n     * {description}"
             event_markdown += f"\n "
@@ -1117,7 +1121,7 @@ async def format_events_as_markdown(event_data: Dict[str, Union[str, List[Dict[s
 @note.get("/note/events", response_class=PlainTextResponse)
 async def note_events_endpoint(date: str = Query(None)):
         
-    date_time = localize_datetime(date) if date else datetime.now(TZ)
+    date_time = await locate.localize_datetime(date) if date else datetime.now(TZ)
     response = await update_daily_note_events(date_time)
     return PlainTextResponse(content=response, status_code=200)
 
