@@ -24,7 +24,7 @@ from sshtunnel import SSHTunnelForwarder
 from fastapi import Depends, HTTPException, Request, UploadFile
 from fastapi.security.api_key import APIKeyHeader
 from sijapi import DEBUG, INFO, WARN, ERR, CRITICAL
-from sijapi import DB, GLOBAL_API_KEY, DB, DB_HOST, DB_PORT, DB_USER, DB_PASS, TZ, YEAR_FMT, MONTH_FMT, DAY_FMT, DAY_SHORT_FMT, OBSIDIAN_VAULT_DIR
+from sijapi import DB, GLOBAL_API_KEY, DB, DB_HOST, DB_PORT, DB_USER, DB_PASS, TZ, YEAR_FMT, MONTH_FMT, DAY_FMT, DAY_SHORT_FMT, OBSIDIAN_VAULT_DIR, ALLOWED_FILENAME_CHARS, MAX_FILENAME_LENGTH
 
 api_key_header = APIKeyHeader(name="Authorization")
 
@@ -136,22 +136,110 @@ def get_extension(file):
         raise e
 
 
-def sanitize_filename(text, max_length=255):
-    """Sanitize a string to be used as a safe filename."""
+
+def sanitize_filename(text, max_length=MAX_FILENAME_LENGTH):
+    """Sanitize a string to be used as a safe filename while protecting the file extension."""
     DEBUG(f"Filename before sanitization: {text}")
-    
+
     # Replace multiple spaces with a single space and remove other whitespace
     text = re.sub(r'\s+', ' ', text)
-    
+
     # Remove any non-word characters except space, dot, and hyphen
-    sanitized = re.sub(r'[^\w \.-]', '', text)
-    
+    sanitized = re.sub(ALLOWED_FILENAME_CHARS, '', text)
+
     # Remove leading/trailing spaces
     sanitized = sanitized.strip()
-    
-    final_filename = sanitized[:max_length]
+
+    # Split the filename into base name and extension
+    base_name, extension = os.path.splitext(sanitized)
+
+    # Calculate the maximum length for the base name
+    max_base_length = max_length - len(extension)
+
+    # Truncate the base name if necessary
+    if len(base_name) > max_base_length:
+        base_name = base_name[:max_base_length].rstrip()
+
+    # Recombine the base name and extension
+    final_filename = base_name + extension
+
+    # In case the extension itself is too long, truncate the entire filename
+    if len(final_filename) > max_length:
+        final_filename = final_filename[:max_length]
+
     DEBUG(f"Filename after sanitization: {final_filename}")
     return final_filename
+
+
+
+def check_file_name(file_name, max_length=255):
+    """Check if the file name needs sanitization based on the criteria of the second sanitize_filename function."""
+    DEBUG(f"Checking filename: {file_name}")
+
+    needs_sanitization = False
+
+    # Check for length
+    if len(file_name) > max_length:
+        DEBUG(f"Filename exceeds maximum length of {max_length}")
+        needs_sanitization = True
+
+    # Check for non-word characters (except space, dot, and hyphen)
+    if re.search(ALLOWED_FILENAME_CHARS, file_name):
+        DEBUG("Filename contains non-word characters (except space, dot, and hyphen)")
+        needs_sanitization = True
+
+    # Check for multiple consecutive spaces
+    if re.search(r'\s{2,}', file_name):
+        DEBUG("Filename contains multiple consecutive spaces")
+        needs_sanitization = True
+
+    # Check for leading/trailing spaces
+    if file_name != file_name.strip():
+        DEBUG("Filename has leading or trailing spaces")
+        needs_sanitization = True
+
+    DEBUG(f"Filename {'needs' if needs_sanitization else 'does not need'} sanitization")
+    return needs_sanitization
+
+
+def list_and_correct_impermissible_files(root_dir, rename: bool = False):
+    """List and correct all files with impermissible names."""
+    impermissible_files = []
+    for dirpath, _, filenames in os.walk(root_dir):
+        for filename in filenames:
+            if check_file_name(filename):
+                file_path = Path(dirpath) / filename
+                impermissible_files.append(file_path)
+                print(f"Impermissible file found: {file_path}")
+                
+                # Sanitize the file name
+                new_filename = sanitize_filename(filename)
+                new_file_path = Path(dirpath) / new_filename
+                
+                # Ensure the new file name does not already exist
+                if new_file_path.exists():
+                    counter = 1
+                    base_name, ext = os.path.splitext(new_filename)
+                    while new_file_path.exists():
+                        new_filename = f"{base_name}_{counter}{ext}"
+                        new_file_path = Path(dirpath) / new_filename
+                        counter += 1
+                
+                # Rename the file
+                if rename:
+                    os.rename(file_path, new_file_path)
+                    print(f"Renamed: {file_path} -> {new_file_path}")
+    
+    return impermissible_files
+
+def fix_nextcloud_filenames(dir_to_fix, rename: bool = False):
+    impermissible_files = list_and_correct_impermissible_files(dir_to_fix, rename)
+    if impermissible_files:
+        print("\nList of impermissible files found and corrected:")
+        for file in impermissible_files:
+            print(file)
+    else:
+        print("No impermissible files found.")
 
 
 def bool_convert(value: str = Form(None)):
