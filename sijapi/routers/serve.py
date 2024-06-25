@@ -14,7 +14,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from pathlib import Path
 from sijapi import DEBUG, INFO, WARN, ERR, CRITICAL
-from sijapi.utilities import bool_convert, sanitize_filename, assemble_journal_path, localize_dt
+from sijapi.utilities import bool_convert, sanitize_filename, assemble_journal_path, localize_datetime
 from sijapi import DATA_DIR, SD_IMAGE_DIR, PUBLIC_KEY, OBSIDIAN_VAULT_DIR
 
 serve = APIRouter(tags=["public"])
@@ -50,7 +50,7 @@ def is_valid_date(date_str: str) -> bool:
 @serve.get("/notes/{file_path:path}")
 async def get_file(file_path: str):
     try:
-        date_time = localize_dt(file_path);
+        date_time = localize_datetime(file_path);
         absolute_path, local_path = assemble_journal_path(date_time, no_timestamp = True)
     except ValueError as e:
         DEBUG(f"Unable to parse {file_path} as a date, now trying to use it as a local path")

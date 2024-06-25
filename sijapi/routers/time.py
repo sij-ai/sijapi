@@ -17,7 +17,7 @@ from fastapi import APIRouter, UploadFile, File, Response, Header, Query, Depend
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 from datetime import datetime, timedelta
-from sijapi.utilities import localize_dt
+from sijapi.utilities import localize_datetime
 from decimal import Decimal, ROUND_UP
 from typing import Optional, List, Dict, Union, Tuple
 from collections import defaultdict
@@ -100,8 +100,8 @@ def truncate_project_title(title):
 
 
 async def fetch_and_prepare_timing_data(start: datetime, end: Optional[datetime] = None) -> List[Dict]:
-    # start_date = localize_dt(start)
-    # end_date = localize_dt(end) if end else None
+    # start_date = localize_datetime(start)
+    # end_date = localize_datetime(end) if end else None
     # Adjust the start date to include the day before and format the end date
     start_date_adjusted = (start - timedelta(days=1)).strftime("%Y-%m-%dT00:00:00")
     end_date_formatted = f"{datetime.strftime(end, '%Y-%m-%d')}T23:59:59" if end else f"{datetime.strftime(start, '%Y-%m-%d')}T23:59:59"
@@ -315,8 +315,8 @@ async def get_timing_markdown3(
 ):
 
     # Fetch and process timing data
-    start = localize_dt(start_date)
-    end = localize_dt(end_date) if end_date else None
+    start = localize_datetime(start_date)
+    end = localize_datetime(end_date) if end_date else None
     timing_data = await fetch_and_prepare_timing_data(start, end)
 
     # Retain these for processing Markdown data with the correct timezone
@@ -375,8 +375,8 @@ async def get_timing_markdown(
     start: str = Query(..., regex=r"\d{4}-\d{2}-\d{2}"),
     end: Optional[str] = Query(None, regex=r"\d{4}-\d{2}-\d{2}")
 ):
-    start_date = localize_dt(start)
-    end_date = localize_dt(end)
+    start_date = localize_datetime(start)
+    end_date = localize_datetime(end)
     markdown_formatted_data = await process_timing_markdown(start_date, end_date)
 
     return Response(content=markdown_formatted_data, media_type="text/markdown")
@@ -444,8 +444,8 @@ async def get_timing_json(
 ):
 
     # Fetch and process timing data
-    start = localize_dt(start_date)
-    end = localize_dt(end_date)
+    start = localize_datetime(start_date)
+    end = localize_datetime(end_date)
     timing_data = await fetch_and_prepare_timing_data(start, end)
 
     # Convert processed data to the required JSON structure

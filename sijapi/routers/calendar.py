@@ -17,7 +17,7 @@ from datetime import datetime, timedelta
 from Foundation import NSDate, NSRunLoop
 import EventKit as EK
 from sijapi import ICAL_TOGGLE, ICALENDARS, MS365_TOGGLE, MS365_CLIENT_ID, MS365_SECRET, MS365_AUTHORITY_URL, MS365_SCOPE, MS365_REDIRECT_PATH, MS365_TOKEN_PATH
-from sijapi.utilities import localize_dt, localize_dt
+from sijapi.utilities import localize_datetime, localize_datetime
 from sijapi import DEBUG, INFO, WARN, ERR, CRITICAL
 
 calendar = APIRouter()
@@ -215,8 +215,8 @@ def datetime_to_nsdate(dt: datetime) -> NSDate:
 
 @calendar.get("/events")
 async def get_events_endpoint(start_date: str, end_date: str):
-    start_dt = localize_dt(start_date)
-    end_dt = localize_dt(end_date)
+    start_dt = localize_datetime(start_date)
+    end_dt = localize_datetime(end_date)
     datetime.strptime(start_date, "%Y-%m-%d") or datetime.now()
     end_dt = datetime.strptime(end_date, "%Y-%m-%d") or datetime.now()
     response = await get_events(start_dt, end_dt)
@@ -342,8 +342,8 @@ async def get_ms365_events(start_date: datetime, end_date: datetime):
 
 
 async def parse_calendar_for_day(range_start: datetime, range_end: datetime, events: List[Dict[str, Any]]):
-    range_start = localize_dt(range_start)
-    range_end = localize_dt(range_end)
+    range_start = localize_datetime(range_start)
+    range_end = localize_datetime(range_end)
     event_list = []
 
     for event in events:
@@ -362,13 +362,13 @@ async def parse_calendar_for_day(range_start: datetime, range_end: datetime, eve
             INFO(f"End date string not a dict")
 
         try:
-            start_date = localize_dt(start_str) if start_str else None
+            start_date = localize_datetime(start_str) if start_str else None
         except (ValueError, TypeError) as e:
             ERR(f"Invalid start date format: {start_str}, error: {e}")
             continue
 
         try:
-            end_date = localize_dt(end_str) if end_str else None
+            end_date = localize_datetime(end_str) if end_str else None
         except (ValueError, TypeError) as e:
             ERR(f"Invalid end date format: {end_str}, error: {e}")
             continue
@@ -377,13 +377,13 @@ async def parse_calendar_for_day(range_start: datetime, range_end: datetime, eve
 
         if start_date:
             # Ensure start_date is timezone-aware
-            start_date = localize_dt(start_date)
+            start_date = localize_datetime(start_date)
             
             # If end_date is not provided, assume it's the same as start_date
             if not end_date:
                 end_date = start_date
             else:
-                end_date = localize_dt(end_date)
+                end_date = localize_datetime(end_date)
             
             # Check if the event overlaps with the given range
             if (start_date < range_end) and (end_date > range_start):

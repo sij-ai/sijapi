@@ -7,7 +7,7 @@ from typing import Dict
 from datetime import datetime
 from shapely.wkb import loads
 from binascii import unhexlify
-from sijapi.utilities import localize_dt
+from sijapi.utilities import localize_datetime
 from sijapi import DEBUG, INFO, WARN, ERR, CRITICAL
 from sijapi import VISUALCROSSING_API_KEY, TZ
 from sijapi.utilities import get_db_connection, haversine
@@ -25,7 +25,7 @@ async def get_weather(date_time: datetime, latitude: float, longitude: float):
         try:
             DEBUG(f"Daily weather data from db: {daily_weather_data}")
             last_updated = str(daily_weather_data['DailyWeather'].get('last_updated'))
-            last_updated = localize_dt(last_updated)
+            last_updated = localize_datetime(last_updated)
             stored_loc_data = unhexlify(daily_weather_data['DailyWeather'].get('location'))
             stored_loc = loads(stored_loc_data)
             stored_lat = stored_loc.y
@@ -103,7 +103,7 @@ async def store_weather_to_db(date_time: datetime, weather_data: dict):
         location_point = f"POINTZ({longitude} {latitude} {elevation})" if longitude and latitude and elevation else None
 
         # Correct for the datetime objects 
-        day_data['datetime'] = localize_dt(day_data.get('datetime')) #day_data.get('datetime'))
+        day_data['datetime'] = localize_datetime(day_data.get('datetime')) #day_data.get('datetime'))
         day_data['sunrise'] = day_data['datetime'].replace(hour=int(day_data.get('sunrise').split(':')[0]), minute=int(day_data.get('sunrise').split(':')[1]))
         day_data['sunset'] = day_data['datetime'].replace(hour=int(day_data.get('sunset').split(':')[0]), minute=int(day_data.get('sunset').split(':')[1])) 
 
@@ -160,7 +160,7 @@ async def store_weather_to_db(date_time: datetime, weather_data: dict):
                     await asyncio.sleep(0.1)
                 #    hour_data['datetime'] = parse_date(hour_data.get('datetime'))
                     hour_timestamp = date_str + ' ' + hour_data['datetime']
-                    hour_data['datetime'] = localize_dt(hour_timestamp)
+                    hour_data['datetime'] = localize_datetime(hour_timestamp)
                     DEBUG(f"Processing hours now...")
                     # DEBUG(f"Processing {hour_data['datetime']}")
 

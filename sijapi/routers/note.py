@@ -17,12 +17,12 @@ from requests.adapters import HTTPAdapter
 import re
 import os
 from datetime import timedelta, datetime, time as dt_time, date as dt_date
-from sijapi.utilities import localize_dt
+from sijapi.utilities import localize_datetime
 from fastapi import HTTPException, status
 from pathlib import Path
 from fastapi import APIRouter, Query, HTTPException
 from sijapi import DEBUG, INFO, WARN, ERR, CRITICAL, INFO
-from sijapi import YEAR_FMT, MONTH_FMT, DAY_FMT, DAY_SHORT_FMT, OBSIDIAN_VAULT_DIR, OBSIDIAN_RESOURCES_DIR, BASE_URL, OBSIDIAN_BANNER_SCENE, DEFAULT_VOICE, TZ
+from sijapi import YEAR_FMT, MONTH_FMT, DAY_FMT, DAY_SHORT_FMT, OBSIDIAN_VAULT_DIR, OBSIDIAN_RESOURCES_DIR, BASE_URL, OBSIDIAN_BANNER_SCENE, DEFAULT_11L_VOICE, DEFAULT_VOICE, TZ
 from sijapi.routers import tts, time, sd, locate, weather, asr, calendar, summarize
 from sijapi.routers.locate import Location
 from sijapi.utilities import assemble_journal_path, convert_to_12_hour_format, sanitize_filename, convert_degrees_to_cardinal, HOURLY_COLUMNS_MAPPING
@@ -39,7 +39,7 @@ async def build_daily_note_range_endpoint(dt_start: str, dt_end: str):
     results = []
     current_date = start_date
     while current_date <= end_date:
-        formatted_date = localize_dt(current_date)
+        formatted_date = localize_datetime(current_date)
         result = await build_daily_note(formatted_date)
         results.append(result)
         current_date += timedelta(days=1)
@@ -134,7 +134,7 @@ async def clip_post(
     source: Optional[str] = Form(None),
     title: Optional[str] = Form(None),
     tts: str = Form('summary'),
-    voice: str = Form('Luna'),
+    voice: str = Form(DEFAULT_VOICE),
     encoding: str = Form('utf-8')
 ):
     markdown_filename = await process_article(background_tasks, url, title, encoding, source, tts, voice)
@@ -159,7 +159,7 @@ async def clip_get(
     title: Optional[str] = Query(None),
     encoding: str = Query('utf-8'),
     tts: str = Query('summary'),
-    voice: str = Query('Luna')
+    voice: str = Query(DEFAULT_VOICE)
 ):
     markdown_filename = await process_article(background_tasks, url, title, encoding, tts=tts, voice=voice)
     return {"message": "Clip saved successfully", "markdown_filename": markdown_filename}
@@ -337,7 +337,7 @@ async def process_article(
     encoding: str = 'utf-8',
     source: Optional[str] = None,
     tts_mode: str = "summary", 
-    voice: str = DEFAULT_VOICE
+    voice: str = DEFAULT_11L_VOICE
 ):
 
     timestamp = datetime.now().strftime('%b %d, %Y at %H:%M')
@@ -442,7 +442,7 @@ def parse_article(url: str, source: Optional[str] = None):
     title = np3k.title or traf.title
     authors = np3k.authors or traf.author
     authors = authors if isinstance(authors, List) else [authors]
-    date = np3k.publish_date or localize_dt(traf.date)
+    date = np3k.publish_date or localize_datetime(traf.date)
     excerpt = np3k.meta_description or traf.description
     content = trafilatura.extract(source, output_format="markdown", include_comments=False) or np3k.text
     image = np3k.top_image or traf.image
@@ -635,7 +635,7 @@ async def banner_endpoint(dt: str, location: str = None, mood: str = None, other
         Endpoint (POST) that generates a new banner image for the Obsidian daily note for a specified date, taking into account optional additional information, then updates the frontmatter if necessary.
     '''
     DEBUG(f"banner_endpoint requested with date: {dt} ({type(dt)})")
-    date_time = localize_dt(dt)
+    date_time = localize_datetime(dt)
     DEBUG(f"date_time after localization: {date_time} ({type(date_time)})")
     jpg_path = await generate_banner(date_time, location, mood=mood, other_context=other_context)
     return jpg_path
@@ -643,7 +643,7 @@ async def banner_endpoint(dt: str, location: str = None, mood: str = None, other
 
 async def generate_banner(dt, location: Location = None, forecast: str = None, mood: str = None, other_context: str = None):
     DEBUG(f"Location: {location}, forecast: {forecast}, mood: {mood}, other_context: {other_context}")
-    date_time = localize_dt(dt)
+    date_time = localize_datetime(dt)
     DEBUG(f"generate_banner called with date_time: {date_time}")
     destination_path, local_path = assemble_journal_path(date_time, filename="Banner", extension=".jpg", no_timestamp = True)
     DEBUG(f"destination path generated: {destination_path}")
@@ -699,7 +699,7 @@ async def note_weather_get(
 ):
 
     try:
-        date_time = datetime.now() if date == "0" else localize_dt(date)
+        date_time = datetime.now() if date == "0" else localize_datetime(date)
         DEBUG(f"date: {date} .. date_time: {date_time}")
         content = await update_dn_weather(date_time) #, lat, lon)
         return JSONResponse(content={"forecast": content}, status_code=200)
@@ -714,7 +714,7 @@ async def note_weather_get(
 
 @note.post("/update/note/{date}")
 async def post_update_daily_weather_and_calendar_and_timeslips(date: str) -> PlainTextResponse:
-    date_time = localize_dt(date)
+    date_time = localize_datetime(date)
     await update_dn_weather(date_time)
     await update_daily_note_events(date_time)
     await build_daily_timeslips(date_time)
@@ -1117,7 +1117,7 @@ async def format_events_as_markdown(event_data: Dict[str, Union[str, List[Dict[s
 @note.get("/note/events", response_class=PlainTextResponse)
 async def note_events_endpoint(date: str = Query(None)):
         
-    date_time = localize_dt(date) if date else datetime.now(TZ)
+    date_time = localize_datetime(date) if date else datetime.now(TZ)
     response = await update_daily_note_events(date_time)
     return PlainTextResponse(content=response, status_code=200)
 

@@ -17,7 +17,7 @@ from typing import Optional, Any, Dict, List, Union
 from datetime import datetime, timedelta, time
 from sijapi import LOCATION_OVERRIDES, TZ
 from sijapi import DEBUG, INFO, WARN, ERR, CRITICAL
-from sijapi.utilities import get_db_connection, haversine, localize_dt
+from sijapi.utilities import get_db_connection, haversine, localize_datetime
 # from osgeo import gdal
 # import elevation
 
@@ -228,12 +228,12 @@ def get_elevation(latitude, longitude):
 
 
 async def fetch_locations(start: datetime, end: datetime = None) -> List[Location]:
-    start_datetime = localize_dt(start)
+    start_datetime = localize_datetime(start)
     
     if end is None:
-        end_datetime = localize_dt(start_datetime.replace(hour=23, minute=59, second=59))
+        end_datetime = localize_datetime(start_datetime.replace(hour=23, minute=59, second=59))
     else:
-        end_datetime = localize_dt(end)
+        end_datetime = localize_datetime(end)
         if start_datetime.time() == datetime.min.time() and end.time() == datetime.min.time():
             end_datetime = end_datetime.replace(hour=23, minute=59, second=59)
     
@@ -305,7 +305,7 @@ async def fetch_locations(start: datetime, end: datetime = None) -> List[Locatio
 
 # Function to fetch the last location before the specified datetime
 async def fetch_last_location_before(datetime: datetime) -> Optional[Location]:
-    datetime = localize_dt(datetime)
+    datetime = localize_datetime(datetime)
     
     DEBUG(f"Fetching last location before {datetime}")
     conn = await get_db_connection()
@@ -337,8 +337,8 @@ async def fetch_last_location_before(datetime: datetime) -> Optional[Location]:
 @locate.get("/map/start_date={start_date_str}&end_date={end_date_str}", response_class=HTMLResponse)
 async def generate_map_endpoint(start_date_str: str, end_date_str: str):
     try:
-        start_date = localize_dt(start_date_str)
-        end_date = localize_dt(end_date_str)
+        start_date = localize_datetime(start_date_str)
+        end_date = localize_datetime(end_date_str)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format")
 
@@ -349,8 +349,8 @@ async def generate_map_endpoint(start_date_str: str, end_date_str: str):
 @locate.get("/map", response_class=HTMLResponse)
 async def generate_alltime_map_endpoint():
     try:
-        start_date = localize_dt(datetime.fromisoformat("2022-01-01"))
-        end_date =  localize_dt(datetime.now())
+        start_date = localize_datetime(datetime.fromisoformat("2022-01-01"))
+        end_date =  localize_datetime(datetime.now())
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format")
 
@@ -397,7 +397,7 @@ async def post_location(location: Location):
         device_os = context.get('device_os', 'Unknown')
         
         # Parse and localize the datetime
-        localized_datetime = localize_dt(location.datetime)
+        localized_datetime = localize_datetime(location.datetime)
         
         await conn.execute('''
             INSERT INTO locations (datetime, location, city, state, zip, street, action, device_type, device_model, device_name, device_os)
@@ -452,7 +452,7 @@ async def post_locate_endpoint(locations: Union[Location, List[Location]]):
 
         DEBUG(f"datetime before localization: {location.datetime}")
         # Convert datetime string to timezone-aware datetime object
-        location.datetime = localize_dt(location.datetime)
+        location.datetime = localize_datetime(location.datetime)
         DEBUG(f"datetime after localization: {location.datetime}")
 
         location_entry = await post_location(location)
@@ -484,7 +484,7 @@ async def get_last_location() -> JSONResponse:
 @locate.get("/locate/{datetime_str}", response_model=List[Location])
 async def get_locate(datetime_str: str, all: bool = False):
     try:
-        date_time = localize_dt(datetime_str)
+        date_time = localize_datetime(datetime_str)
     except ValueError as e:
         ERR(f"Invalid datetime string provided: {datetime_str}")
         return ["ERROR: INVALID DATETIME PROVIDED. USE YYYYMMDDHHmmss or YYYYMMDD format."]
