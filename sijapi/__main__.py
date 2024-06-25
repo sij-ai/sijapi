@@ -18,8 +18,9 @@ from dotenv import load_dotenv
 from pathlib import Path
 from datetime import datetime
 import argparse
-from . import LOGGER, LOGS_DIR
+from . import LOGGER, LOGS_DIR, OBSIDIAN_VAULT_DIR
 from .logs import Logger
+from .utilities import fix_nextcloud_filenames
 
 parser = argparse.ArgumentParser(description='Personal API.')
 parser.add_argument('--debug', action='store_true', help='Set log level to INFO')
@@ -137,6 +138,8 @@ def main(argv):
         for router_name in ROUTERS:
             load_router(router_name)
 
+    journal = OBSIDIAN_VAULT_DIR / "journal"
+    fix_nextcloud_filenames(journal, rename=True)
     config = Config()
     config.keep_alive_timeout = 1200 
     config.bind = [HOST]

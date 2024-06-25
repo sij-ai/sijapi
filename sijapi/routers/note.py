@@ -12,7 +12,7 @@ from typing import Optional, Union, Dict, List, Tuple
 from urllib.parse import urlparse
 from urllib3.util.retry import Retry
 from newspaper import Article
-from trafilatura import fetch_url, extract
+import trafilatura
 from requests.adapters import HTTPAdapter
 import re
 import os
@@ -345,24 +345,16 @@ async def process_article(
     parsed_content = parse_article(url, source)
     if parsed_content is None:
         return {"error": "Failed to retrieve content"}
-    content = parsed_content["content"]
 
-    readable_title = sanitize_filename(title if title else parsed_content.get("title", "Untitled"))
-    if not readable_title:
-        readable_title = timestamp
+    readable_title = sanitize_filename(title or parsed_content.get("title") or timestamp)
     markdown_filename, relative_path = assemble_journal_path(datetime.now(), subdir="Articles", filename=readable_title, extension=".md")
 
     try:
-        tags = parsed_content.get('meta_keywords', [])
-        tags = [tag for tag in tags if tag]
-        tags.append('clipping')
-        tags_list = "\n  - ".join(tags)
-        
-        summary = await summarize.summarize_text(content, "Summarize the provided text. Respond with the summary and nothing else. Do not otherwise acknowledge the request. Just provide the requested summary.")
+        summary = await summarize.summarize_text(parsed_content["content"], "Summarize the provided text. Respond with the summary and nothing else. Do not otherwise acknowledge the request. Just provide the requested summary.")
         summary = summary.replace('\n', ' ')  # Remove line breaks
 
         if tts_mode == "full" or tts_mode == "content":
-            tts_text = content
+            tts_text = parsed_content["content"]
         elif tts_mode == "summary" or tts_mode == "excerpt":
             tts_text = summary
         else:
@@ -370,27 +362,30 @@ async def process_article(
 
         banner_markdown = ''
         try:
-            banner_url = parsed_content.get('lead_image_url', '')
+            banner_url = parsed_content.get('image', '')
             if banner_url != '':
-                banner_image = download_file(parsed_content.get('lead_image_url', ''), Path(OBSIDIAN_VAULT_DIR / OBSIDIAN_RESOURCES_DIR))
+                banner_image = download_file(banner_url, Path(OBSIDIAN_VAULT_DIR / OBSIDIAN_RESOURCES_DIR))
                 if banner_image:
                     banner_markdown = f"![[{OBSIDIAN_RESOURCES_DIR}/{banner_image}]]"
                 
         except Exception as e:
             ERR(f"No image found in article")
 
+        authors = ', '.join('[[{}]]'.format(author) for author in parsed_content.get('authors', ['Unknown']))
 
         frontmatter = f"""---
 title: {readable_title}
-author: {parsed_content.get('author', 'Unknown')}
+authors: {', '.join('[[{}]]'.format(author) for author in parsed_content.get('authors', ['Unknown']))}
 published: {parsed_content.get('date_published', 'Unknown')}
 added: {timestamp}
-tags: 
- - {tags_list}
 excerpt: {parsed_content.get('excerpt', '')}
 banner: "{banner_markdown}"
----
+tags:
+
 """
+        frontmatter += '\n'.join(f" - {tag}" for tag in parsed_content.get('tags', []))
+        frontmatter += '\n---\n'
+
         body = f"# {readable_title}\n\n"
 
         if tts_text:
@@ -403,20 +398,15 @@ banner: "{banner_markdown}"
                 obsidian_link = f"![[{OBSIDIAN_RESOURCES_DIR}/{audio_filename}{audio_ext}]]"
                 body += f"{obsidian_link}\n\n"
             except Exception as e:
-                ERR(f"Failed to generate TTS for article. {e}")
+                ERR(f"Failed to generate TTS for np3k. {e}")
 
         try:
-            authors = parsed_content.get('author', '')
-            authors_in_brackets = [f"[[{author.strip()}]]" for author in authors.split(",")]
-            authors_string = ", ".join(authors_in_brackets)
-
-            body += f"by {authors_string} in [{parsed_content.get('domain', urlparse(url).netloc.replace('www.', ''))}]({parsed_content.get('url', url)}).\n\n"
-
-                                                                        
+            body += f"by {authors} in [{parsed_content.get('domain', urlparse(url).netloc.replace('www.', ''))}]({url}).\n\n"
             body += f"> [!summary]+\n"
             body += f"> {summary}\n\n"
-            body += content
+            body += parsed_content["content"]
             markdown_content = frontmatter + body
+
         except Exception as e:
             ERR(f"Failed to combine elements of article markdown.")
 
@@ -438,31 +428,38 @@ banner: "{banner_markdown}"
 
 
 def parse_article(url: str, source: Optional[str] = None):
-    # Use trafilatura to download HTML content:
-    downloaded = source if source else fetch_url(url)
+    source = source if source else trafilatura.fetch_url(url)
+    traf = trafilatura.extract_metadata(filecontent=source, default_url=url)
 
     # Pass the HTML content to newspaper3k:
-    article = Article(url)
-    article.set_html(downloaded)
-    article.parse()
+    np3k = Article(url)
+    np3k.set_html(source)
+    np3k.parse()
 
-    # Use trafilatura to extract content in Markdown
-    trafilatura_result = extract(downloaded, output_format="markdown", include_comments=False)
-    content = trafilatura_result if trafilatura_result else article.text
+    INFO(f"Parsed {np3k.title}")
+    
 
-    domain = urlparse(url).netloc.replace('www.', '')
-    INFO(f"Parsed {article.title}")
+    title = np3k.title or traf.title
+    authors = np3k.authors or traf.author
+    authors = authors if isinstance(authors, List) else [authors]
+    date = np3k.publish_date or localize_dt(traf.date)
+    excerpt = np3k.meta_description or traf.description
+    content = trafilatura.extract(source, output_format="markdown", include_comments=False) or np3k.text
+    image = np3k.top_image or traf.image
+    domain = traf.sitename or urlparse(url).netloc.replace('www.', '').title()
+    tags = np3k.meta_keywords or traf.categories or traf.tags
+    tags = tags if isinstance(tags, List) else [tags]
 
     return {
-        'title': article.title.replace("  ", " "),
-        'author': ', '.join(article.authors) if article.authors else 'Unknown',
-        'date_published': article.publish_date.strftime("%b %d, %Y at %H:%M") if article.publish_date else None,
-        'excerpt': article.meta_description,
+        'title': title.replace("  ", " "),
+        'authors': authors,
+        'date': date.strftime("%b %d, %Y at %H:%M"),
+        'excerpt': excerpt,
         'content': content,
-        'lead_image_url': article.top_image,
+        'image': image,
         'url': url,
         'domain': domain,
-        'meta_keywords': article.meta_keywords
+        'tags': np3k.meta_keywords
     }
 
 
