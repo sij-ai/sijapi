@@ -1,0 +1,1 @@
+These two companion scripts are designed for use with Pythonista on iOS devices. GPS.py records and saves your latitude and longitude to a local file, and uploadGPS.py uploads it to your sijapi instance (assuming you've entered a valid URL and matching API key for your GLOBAL_API_KEY entered when configuring sijapi.
