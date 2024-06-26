@@ -1,3 +1,4 @@
+# IMPORTANT: This is just here as a placeholder. It will not work. Export your own widget.shell file from Secure Shellfish to enable the alert and widget functionalities.
 # Updates watch complications for Secure ShellFish
 #
 # This command sends encrypted data through push notifications such
@@ -32,9 +33,9 @@ widget --text "50/100"
 #	return 0
 # fi
 
-# local key=d7e810e7601cd296a05776c169b4fe97a6a5ee1fd46abe38de54f415732b3f4b
-# local user=WuqPwm1VpGijF4U5AnIKzqNMVWGioANTRjJoonPm
-# local iv=ab5bbeb426015da7eedcee8bee3dffb7
+# local key=SECRET
+# local user=SECRET
+# local iv=SECRET
 
 # local plain=$(
 # echo Secure ShellFish Widget 2.0
