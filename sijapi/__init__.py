@@ -24,7 +24,7 @@ ENV_PATH = CONFIG_DIR / ".env"
 LOGS_DIR = BASE_DIR / "logs"
 
 # Create logger instance
-L = Logger("your_logger_name", "your_logs_directory")
+L = Logger("Central", LOGS_DIR)
 
 os.makedirs(LOGS_DIR, exist_ok=True)
 load_dotenv(ENV_PATH)
