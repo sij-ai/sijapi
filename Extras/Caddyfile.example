@@ -1,0 +1,96 @@
+{
+	log {
+		output file /var/log/caddy/logfile.log
+		level INFO
+	}
+
+	admin localhost:2019
+
+	servers {
+		metrics
+	}
+
+	email !{!{ YOUR EMAIL ADDRESS }!}!
+}
+
+# This is an extremely permissive CORS config. Dial it back as your use case allows.
+(cors) {
+	@cors_preflight method OPTIONS
+	header {
+		Access-Control-Allow-Origin "*"
+		Access-Control-Expose-Headers "Authorization"
+		Access-Control-Allow-Credentials "true"
+		Access-Control-Allow-Headers "Authorization, Content-Type"
+	}
+
+	handle @cors_preflight {
+		header {
+			Access-Control-Allow-Methods "GET, POST, PUT, PATCH, DELETE"
+			Access-Control-Max-Age "3600"
+		}
+		respond "" 204
+	}
+}
+
+# Specify which endpoints are public, one or more methods of API key authentication, and your load balancing priority (if any)
+!{!{ YOUR SIJAPI SUBDOMAIN }!}! {
+	import cors
+	@public {
+		path /img/* /oauth /oauth/* /o365 /o365/* /ip /health /health* /health/* /id /identity
+	}
+	@apiKeyAuthHeader {
+		header Authorization "Bearer !{!{ YOUR GLOBAL_API_KEY }!}!"
+	}
+	@apiKeyAuthQuery {
+		query api_key=!{!{ YOUR GLOBAL_API_KEY }!}!
+	}
+	handle @public {
+		reverse_proxy {
+			to !{!{ YOUR IP(s) WHERE SIJAPI IS RUNNING, WITH PORTS, e.g. 100.64.64.20:4444 10.13.37.30:4444 localhost:4444 }!}!
+			lb_policy first
+			health_uri /health
+			health_interval 10s
+			health_timeout 5s
+			health_status 2xx
+			header_up X-Forwarded-For {remote}
+			header_up X-Forwarded-Proto {scheme}
+		}
+	}
+	handle @apiKeyAuthHeader {
+		reverse_proxy {
+			to !{!{ YOUR IP(s) WHERE SIJAPI IS RUNNING, WITH PORTS, e.g. 100.64.64.20:4444 10.13.37.30:4444 localhost:4444 }!}!
+			lb_policy first
+			health_uri /health
+			health_interval 10s
+			health_timeout 5s
+			health_status 2xx
+		}
+	}
+	handle @apiKeyAuthQuery {
+		reverse_proxy {
+			to !{!{ YOUR IP(s) WHERE SIJAPI IS RUNNING, WITH PORTS, e.g. 100.64.64.20:4444 10.13.37.30:4444 localhost:4444 }!}!
+			lb_policy first
+			health_uri /health
+			health_interval 10s
+			health_timeout 5s
+			health_status 2xx
+		}
+	}
+	handle {
+		respond "Unauthorized: Valid API key required" 401
+	}
+	tls {
+		dns cloudflare {env.CLOUDFLARE_API_TOKEN}
+	}
+	log {
+		output file /var/log/caddy/sijapi.log {
+			roll_size 100mb
+			roll_keep 5
+			roll_keep_for 720h
+		}
+		format json {
+			time_format "iso8601"
+			message_key "message"
+		}
+	}
+}
