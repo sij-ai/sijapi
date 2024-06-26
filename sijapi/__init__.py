@@ -161,7 +161,8 @@ ICS_PATH = DATA_DIR / 'calendar.ics' # deprecated now, but maybe revive?
 ICALENDARS = os.getenv('ICALENDARS', 'NULL,VOID').split(',')
 
 EMAIL_CONFIG = CONFIG_DIR / "email.yaml"
-AUTORESPOND = True
+EMAIL_LOGS = LOGS_DIR / "email"
+os.makedirs(EMAIL_LOGS, exist_ok = True)
 
 ### Courtlistener & other webhooks
 COURTLISTENER_DOCKETS_DIR = DATA_DIR / "courtlistener" / "dockets"

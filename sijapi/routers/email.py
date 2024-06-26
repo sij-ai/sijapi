@@ -15,21 +15,16 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.image import MIMEImage
 import ssl
-from datetime import datetime as dt_datetime
-from pydantic import BaseModel
-from typing import List, Optional, Any
 import yaml
-from typing import List, Dict, Optional
-from pydantic import BaseModel
-from sijapi import DEBUG, ERR, LLM_SYS_MSG
+from typing import List, Dict, Optional, Set
 from datetime import datetime as dt_datetime
-from typing import Dict
 from sijapi import DEBUG, INFO, WARN, ERR, CRITICAL
-from sijapi import PODCAST_DIR, DEFAULT_VOICE, EMAIL_CONFIG
+from sijapi import PODCAST_DIR, DEFAULT_VOICE, EMAIL_CONFIG, EMAIL_LOGS
 from sijapi.routers import tts, llm, sd, locate
 from sijapi.utilities import clean_text, assemble_journal_path, extract_text, prefix_lines
 from sijapi.classes import EmailAccount, IMAPConfig, SMTPConfig, IncomingEmail, EmailContact, AutoResponder
-
+from sijapi import DEBUG, INFO, ERR, LOGS_DIR
+from sijapi.classes import EmailAccount
 
 email = APIRouter(tags=["private"])
 
@@ -74,8 +69,6 @@ def get_smtp_connection(account: EmailAccount):
         return smtp
     else:
         return SMTP(account.smtp.host, account.smtp.port)
-
-
 
 
 def get_matching_autoresponders(this_email: IncomingEmail, account: EmailAccount) -> List[AutoResponder]:
@@ -161,50 +154,6 @@ async def extract_attachments(attachments) -> List[str]:
     return attachment_texts
 
 
-
-async def process_account(account: EmailAccount):
-    while True:
-        start_time = dt_datetime.now()
-        try:
-            DEBUG(f"Connecting to {account.name} to check for unread emails...")
-            with get_imap_connection(account) as inbox:
-                DEBUG(f"Connected to {account.name}, checking for unread emails now...")
-                unread_messages = inbox.messages(unread=True)
-                for uid, message in unread_messages:
-                    recipients = [EmailContact(email=recipient['email'], name=recipient.get('name', '')) for recipient in message.sent_to]
-                    localized_datetime = await locate.localize_datetime(message.date)
-                    this_email = IncomingEmail(
-                        sender=message.sent_from[0]['email'],
-                        datetime_received=localized_datetime,
-                        recipients=recipients,
-                        subject=message.subject,
-                        body=clean_email_content(message.body['html'][0]) if message.body['html'] else clean_email_content(message.body['plain'][0]) or "",
-                        attachments=message.attachments
-                    )
-                    DEBUG(f"\n\nProcessing email for account {account.name}: {this_email.subject}\n\n")
-                    save_success = await save_email(this_email, account)
-                    respond_success = await autorespond(this_email, account)
-                    if save_success and respond_success:
-                        inbox.mark_seen(uid)
-        except Exception as e:
-            ERR(f"An error occurred for account {account.name}: {e}")
-        
-        # Calculate the time taken for processing
-        processing_time = (dt_datetime.now() - start_time).total_seconds()
-        
-        # Calculate the remaining time to wait
-        wait_time = max(0, account.refresh - processing_time)
-        
-        # Wait for the remaining time
-        await asyncio.sleep(wait_time)
-
-
-async def process_all_accounts():
-    email_accounts = load_email_accounts(EMAIL_CONFIG)
-    tasks = [asyncio.create_task(process_account(account)) for account in email_accounts]
-    await asyncio.gather(*tasks)
-
-
 async def save_email(this_email: IncomingEmail, account: EmailAccount):
     try:
         md_path, md_relative = assemble_journal_path(this_email.datetime_received, "Emails", this_email.subject, ".md")
@@ -262,6 +211,7 @@ tags:
 
 async def autorespond(this_email: IncomingEmail, account: EmailAccount):
     matching_profiles = get_matching_autoresponders(this_email, account)
+    DEBUG(f"Matching profiles: {matching_profiles}")
     for profile in matching_profiles:
         DEBUG(f"Auto-responding to {this_email.subject} with profile: {profile.name}")
         auto_response_subject = f"Auto-Response Re: {this_email.subject}"
@@ -296,7 +246,84 @@ async def send_auto_response(to_email, subject, body, profile, account):
         ERR(f"Error in preparing/sending auto-response from account {account.name}: {e}")
         return False
 
-    
+
+
+
+async def load_processed_uids(filename: Path) -> Set[str]:
+    if filename.exists():
+        with open(filename, 'r') as f:
+            return set(line.strip().split(':')[-1] for line in f)
+    return set()
+
+async def save_processed_uid(filename: Path, account_name: str, uid: str):
+    with open(filename, 'a') as f:
+        f.write(f"{account_name}:{uid}\n")
+
+async def process_account_summarization(account: EmailAccount):
+    summarized_log = EMAIL_LOGS / "summarized.txt"
+    while True:
+        try:
+            processed_uids = await load_processed_uids(summarized_log)
+            with get_imap_connection(account) as inbox:
+                unread_messages = inbox.messages(unread=True)
+                for uid, message in unread_messages:
+                    uid_str = uid.decode() if isinstance(uid, bytes) else str(uid)
+                    if uid_str not in processed_uids:
+                        recipients = [EmailContact(email=recipient['email'], name=recipient.get('name', '')) for recipient in message.sent_to]
+                        localized_datetime = await locate.localize_datetime(message.date)
+                        this_email = IncomingEmail(
+                            sender=message.sent_from[0]['email'],
+                            datetime_received=localized_datetime,
+                            recipients=recipients,
+                            subject=message.subject,
+                            body=clean_email_content(message.body['html'][0]) if message.body['html'] else clean_email_content(message.body['plain'][0]) or "",
+                            attachments=message.attachments
+                        )
+                        if account.summarize:
+                            save_success = await save_email(this_email, account)
+                            if save_success:
+                                await save_processed_uid(summarized_log, account.name, uid_str)
+                                DEBUG(f"Summarized email: {uid_str}")
+        except Exception as e:
+            ERR(f"An error occurred during summarization for account {account.name}: {e}")
+        
+        await asyncio.sleep(account.refresh)
+
+async def process_account_autoresponding(account: EmailAccount):
+    autoresponded_log = EMAIL_LOGS / "autoresponded.txt"
+    while True:
+        try:
+            processed_uids = await load_processed_uids(autoresponded_log)
+            with get_imap_connection(account) as inbox:
+                unread_messages = inbox.messages(unread=True)
+                for uid, message in unread_messages:
+                    uid_str = uid.decode() if isinstance(uid, bytes) else str(uid)
+                    if uid_str not in processed_uids:
+                        recipients = [EmailContact(email=recipient['email'], name=recipient.get('name', '')) for recipient in message.sent_to]
+                        localized_datetime = await locate.localize_datetime(message.date)
+                        this_email = IncomingEmail(
+                            sender=message.sent_from[0]['email'],
+                            datetime_received=localized_datetime,
+                            recipients=recipients,
+                            subject=message.subject,
+                            body=clean_email_content(message.body['html'][0]) if message.body['html'] else clean_email_content(message.body['plain'][0]) or "",
+                            attachments=message.attachments
+                        )
+                        respond_success = await autorespond(this_email, account)
+                        if respond_success:
+                            await save_processed_uid(autoresponded_log, account.name, uid_str)
+                            DEBUG(f"Auto-responded to email: {uid_str}")
+        except Exception as e:
+            ERR(f"An error occurred during auto-responding for account {account.name}: {e}")
+        
+        await asyncio.sleep(account.refresh)
+
+async def process_all_accounts():
+    email_accounts = load_email_accounts(EMAIL_CONFIG)
+    summarization_tasks = [asyncio.create_task(process_account_summarization(account)) for account in email_accounts]
+    autoresponding_tasks = [asyncio.create_task(process_account_autoresponding(account)) for account in email_accounts]
+    await asyncio.gather(*summarization_tasks, *autoresponding_tasks)
+
 @email.on_event("startup")
 async def startup_event():
     asyncio.create_task(process_all_accounts())
