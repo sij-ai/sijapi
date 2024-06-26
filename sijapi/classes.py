@@ -109,8 +109,6 @@ class IncomingEmail(BaseModel):
 
 
 
-
-
 class Location(BaseModel):
     latitude: float
     longitude: float
