@@ -1,67 +1,50 @@
-'''
-Automatic Speech Recognition module relying on the `whisper_cpp` implementation of OpenAI's Whisper model.
-Depends on:
-  LOGGER, ASR_DIR, WHISPER_CPP_MODELS, GARBAGE_COLLECTION_INTERVAL, GARBAGE_TTL, WHISPER_CPP_DIR
-Notes: 
-  Performs exceptionally well on Apple Silicon. Other devices will benefit from future updates to optionally use `faster_whisper`, `insanely_faster_whisper`, and/or `whisper_jax`.
-'''
-
-from fastapi import APIRouter, HTTPException, Form, UploadFile, File
+import os
+import sys
+import uuid
+import json
+import asyncio
+import tempfile
+import subprocess
+from urllib.parse import unquote
+from fastapi import APIRouter, HTTPException, Form, UploadFile, File, BackgroundTasks
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from typing import Optional
-import tempfile
-from fastapi.responses import JSONResponse, FileResponse
-from pydantic import BaseModel, HttpUrl
-from whisperplus.pipelines import mlx_whisper
-from youtube_dl import YoutubeDL
-from urllib.parse import unquote
-import subprocess
-import os
-import uuid
-from threading import Thread
-import multiprocessing
-import asyncio
-import subprocess
-import tempfile
-from sijapi import DEBUG, INFO, WARN, ERR, CRITICAL, ASR_DIR, WHISPER_CPP_MODELS, GARBAGE_COLLECTION_INTERVAL, GARBAGE_TTL, WHISPER_CPP_DIR, MAX_CPU_CORES
 
+from sijapi import DEBUG, INFO, WARN, ERR, CRITICAL, ASR_DIR, WHISPER_CPP_MODELS, GARBAGE_COLLECTION_INTERVAL, GARBAGE_TTL, WHISPER_CPP_DIR, MAX_CPU_CORES
 
 asr = APIRouter()
 
 class TranscribeParams(BaseModel):
     model: str = Field(default="small")
-    output_srt : Optional[bool] = Field(default=False)
-    language : Optional[str] = Field(None)
-    split_on_word : Optional[bool] = Field(default=False)
-    temperature : Optional[float] = Field(default=0)
-    temp_increment : Optional[int] = Field(None)
-    translate : Optional[bool] = Field(default=False)
-    diarize : Optional[bool] = Field(default=False)
-    tiny_diarize : Optional[bool] = Field(default=False)
-    no_fallback : Optional[bool] = Field(default=False)
-    output_json : Optional[bool] = Field(default=False)
-    detect_language : Optional[bool] = Field(default=False)
-    dtw : Optional[str] = Field(None)
-    threads : Optional[int] = Field(None)
+    output_srt: Optional[bool] = Field(default=False)
+    language: Optional[str] = Field(None)
+    split_on_word: Optional[bool] = Field(default=False)
+    temperature: Optional[float] = Field(default=0)
+    temp_increment: Optional[int] = Field(None)
+    translate: Optional[bool] = Field(default=False)
+    diarize: Optional[bool] = Field(default=False)
+    tiny_diarize: Optional[bool] = Field(default=False)
+    no_fallback: Optional[bool] = Field(default=False)
+    output_json: Optional[bool] = Field(default=False)
+    detect_language: Optional[bool] = Field(default=False)
+    dtw: Optional[str] = Field(None)
+    threads: Optional[int] = Field(None)
 
-from urllib.parse import unquote
-import json
+# Global dictionary to store transcription results
+transcription_results = {}
 
 @asr.post("/asr")
 @asr.post("/transcribe")
 @asr.post("/v1/audio/transcription")
 async def transcribe_endpoint(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     params: str = Form(...)
 ):
     try:
-        # Decode the URL-encoded string
         decoded_params = unquote(params)
-        
-        # Parse the JSON string
         parameters_dict = json.loads(decoded_params)
-        
-        # Create TranscribeParams object
         parameters = TranscribeParams(**parameters_dict)
     except json.JSONDecodeError as json_err:
         raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(json_err)}")
@@ -72,12 +55,30 @@ async def transcribe_endpoint(
         temp_file.write(await file.read())
         temp_file_path = temp_file.name
     
-    transcription = await transcribe_audio(file_path=temp_file_path, params=parameters)
-    return transcription
+    transcription_job = await transcribe_audio(file_path=temp_file_path, params=parameters, background_tasks=background_tasks)
+    job_id = transcription_job["job_id"]
 
-async def transcribe_audio(file_path, params: TranscribeParams):
+    # Poll for completion
+    max_wait_time = 600  # 10 minutes
+    poll_interval = 2  # 2 seconds
+    elapsed_time = 0
 
-    file_path = convert_to_wav(file_path)
+    while elapsed_time < max_wait_time:
+        if job_id in transcription_results:
+            result = transcription_results[job_id]
+            if result["status"] == "completed":
+                return JSONResponse(content={"status": "completed", "result": result["result"]})
+            elif result["status"] == "failed":
+                return JSONResponse(content={"status": "failed", "error": result["error"]}, status_code=500)
+        
+        await asyncio.sleep(poll_interval)
+        elapsed_time += poll_interval
+
+    # If we've reached this point, the transcription has taken too long
+    return JSONResponse(content={"status": "timeout", "message": "Transcription is taking longer than expected. Please check back later."}, status_code=202)
+
+async def transcribe_audio(file_path, params: TranscribeParams, background_tasks: BackgroundTasks):
+    file_path = await convert_to_wav(file_path)
     model = params.model if params.model in WHISPER_CPP_MODELS else 'small' 
     model_path = WHISPER_CPP_DIR / 'models' / f'ggml-{model}.bin'
     command = [str(WHISPER_CPP_DIR / 'build' / 'bin' / 'main')]
@@ -115,35 +116,50 @@ async def transcribe_audio(file_path, params: TranscribeParams):
     command.extend(['-f', file_path])
   
     DEBUG(f"Command: {command}")
+
+    # Create a unique ID for this transcription job
+    job_id = str(uuid.uuid4())
+
+    # Store the job status
+    transcription_results[job_id] = {"status": "processing", "result": None}
+
+    # Run the transcription in a background task
+    background_tasks.add_task(process_transcription, command, file_path, job_id)
+
+    return {"job_id": job_id}
+
+async def process_transcription(command, file_path, job_id):
+    try:
+        result = await run_transcription(command, file_path)
+        transcription_results[job_id] = {"status": "completed", "result": result}
+    except Exception as e:
+        transcription_results[job_id] = {"status": "failed", "error": str(e)}
+    finally:
+        # Clean up the temporary file
+        os.remove(file_path)
+
+async def run_transcription(command, file_path):
     proc = await asyncio.create_subprocess_exec(
         *command,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE
     )
     stdout, stderr = await proc.communicate()
-
     if proc.returncode != 0:
         raise Exception(f"Error running command: {stderr.decode()}")
-    
-    result = stdout.decode().strip()
-    DEBUG(f"Result: {result}")
-    return result
+    return stdout.decode().strip()
 
-
-def convert_to_wav(file_path: str):
+async def convert_to_wav(file_path: str):
     wav_file_path = os.path.join(ASR_DIR, f"{uuid.uuid4()}.wav")
-    subprocess.run(["ffmpeg", "-y", "-i", file_path, "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1", wav_file_path], check=True)
+    proc = await asyncio.create_subprocess_exec(
+        "ffmpeg", "-y", "-i", file_path, "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1", wav_file_path,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE
+    )
+    stdout, stderr = await proc.communicate()
+    if proc.returncode != 0:
+        raise Exception(f"Error converting file to WAV: {stderr.decode()}")
     return wav_file_path
-def download_from_youtube(url: str):
-    temp_file = os.path.join(ASR_DIR, f"{uuid.uuid4()}.mp3")
-    ytdl_opts = {
-        'outtmpl': temp_file,
-        'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}],
-        'nooverwrites': True
-    }
-    with YoutubeDL(ytdl_opts) as ydl:
-        ydl.download([url])
-    return convert_to_wav(temp_file)
 
 def format_srt_timestamp(seconds: float):
     milliseconds = round(seconds * 1000.0)
