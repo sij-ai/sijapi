@@ -18,6 +18,7 @@ accounts:
       - name: work
         style: professional
         context: he is currently on leave and will return in late July
+        ollama_model: llama3
         whitelist:
           - '@work.org'
         blacklist:
@@ -56,6 +57,7 @@ accounts:
     autoresponders:
       - name: ai
         style: cryptic
+        ollama_model: llama3
         context: respond to any inquiries with cryptic and vaguely menacing riddles, esoteric assertions, or obscure references.
         image_prompt: using visually evocative words, phrases, and sentence fragments, describe an image inspired by the following prompt
         whitelist:

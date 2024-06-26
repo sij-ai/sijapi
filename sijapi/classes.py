@@ -65,6 +65,7 @@ class AutoResponder(BaseModel):
     name: str
     style: str
     context: str
+    ollama_model: str = "llama3"
     whitelist: List[str]
     blacklist: List[str]
     image_prompt: Optional[str] = None
