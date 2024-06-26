@@ -28,7 +28,7 @@ from sijapi import DEBUG, INFO, WARN, ERR, CRITICAL
 from sijapi import PODCAST_DIR, DEFAULT_VOICE, EMAIL_CONFIG
 from sijapi.routers import tts, llm, sd, locate
 from sijapi.utilities import clean_text, assemble_journal_path, extract_text, prefix_lines
-from sijapi.classes import EmailAccount, IMAPConfig, SMTPConfig, IncomingEmail, EmailContact
+from sijapi.classes import EmailAccount, IMAPConfig, SMTPConfig, IncomingEmail, EmailContact, AutoResponder
 
 
 email = APIRouter(tags=["private"])
@@ -39,19 +39,19 @@ def load_email_accounts(yaml_path: str) -> List[EmailAccount]:
     return [EmailAccount(**account) for account in config['accounts']]
 
 
-def get_account_by_email(email: str) -> Optional[EmailAccount]:
+def get_account_by_email(this_email: str) -> Optional[EmailAccount]:
     email_accounts = load_email_accounts(EMAIL_CONFIG)
     for account in email_accounts:
-        if account.imap.username.lower() == email.lower():
+        if account.imap.username.lower() == this_email.lower():
             return account
     return None
 
-def get_imap_details(email: str) -> Optional[IMAPConfig]:
-    account = get_account_by_email(email)
+def get_imap_details(this_email: str) -> Optional[IMAPConfig]:
+    account = get_account_by_email(this_email)
     return account.imap if account else None
 
-def get_smtp_details(email: str) -> Optional[SMTPConfig]:
-    account = get_account_by_email(email)
+def get_smtp_details(this_email: str) -> Optional[SMTPConfig]:
+    account = get_account_by_email(this_email)
     return account.smtp if account else None
 
 
@@ -75,55 +75,49 @@ def get_smtp_connection(account: EmailAccount):
     else:
         return SMTP(account.smtp.host, account.smtp.port)
 
-def get_matching_autoresponders(email: IncomingEmail, account: EmailAccount) -> List[Dict]:
-    matching_profiles = []
 
-    def matches_list(item: str, email: IncomingEmail) -> bool:
+
+
+def get_matching_autoresponders(this_email: IncomingEmail, account: EmailAccount) -> List[AutoResponder]:
+    def matches_list(item: str, this_email: IncomingEmail) -> bool:
         if '@' in item:
-            return item in email.sender
+            return item in this_email.sender
         else:
-            return item.lower() in email.subject.lower() or item.lower() in email.body.lower()
-
+            return item.lower() in this_email.subject.lower() or item.lower() in this_email.body.lower()
+    matching_profiles = []
     for profile in account.autoresponders:
-        whitelist_match = not profile.whitelist or any(matches_list(item, email) for item in profile.whitelist)
-        blacklist_match = any(matches_list(item, email) for item in profile.blacklist)
-
+        whitelist_match = not profile.whitelist or any(matches_list(item, this_email) for item in profile.whitelist)
+        blacklist_match = any(matches_list(item, this_email) for item in profile.blacklist)
         if whitelist_match and not blacklist_match:
-            matching_profiles.append({
-                'USER_FULLNAME': account.fullname,
-                'RESPONSE_STYLE': profile.style,
-                'AUTORESPONSE_CONTEXT': profile.context,
-                'IMG_GEN_PROMPT': profile.image_prompt,
-                'USER_BIO': account.bio
-            })
-
+            matching_profiles.append(profile)
     return matching_profiles
 
 
-async def generate_auto_response_body(email: IncomingEmail, profile: Dict) -> str:
+
+async def generate_auto_response_body(this_email: IncomingEmail, profile: AutoResponder, account: EmailAccount) -> str:
     now = await locate.localize_datetime(dt_datetime.now())
-    then = await locate.localize_datetime(email.datetime_received)
+    then = await locate.localize_datetime(this_email.datetime_received)
     age = now - then
     usr_prompt = f'''
-Generate a personalized auto-response to the following email:
-From: {email.sender}
-Sent: {age} ago
-Subject: "{email.subject}"
-Body:
-{email.body}
-
-Respond on behalf of {profile['USER_FULLNAME']}, who is unable to respond personally because {profile['AUTORESPONSE_CONTEXT']}.
-Keep the response {profile['RESPONSE_STYLE']} and to the point, but responsive to the sender's inquiry.
-Do not mention or recite this context information in your response.
-'''
-    
-    sys_prompt = f"You are an AI assistant helping {profile['USER_FULLNAME']} with email responses. {profile['USER_FULLNAME']} is described as: {profile['USER_BIO']}"
-    
+    Generate a personalized auto-response to the following email:
+    From: {this_email.sender}
+    Sent: {age} ago
+    Subject: "{this_email.subject}"
+    Body:
+    {this_email.body}
+    Respond on behalf of {account.fullname}, who is unable to respond personally because {profile.context}.
+    Keep the response {profile.style} and to the point, but responsive to the sender's inquiry.
+    Do not mention or recite this context information in your response.
+    '''
+    sys_prompt = f"You are an AI assistant helping {account.fullname} with email responses. {account.fullname} is described as: {account.bio}"
     try:
-        response = await llm.query_ollama(usr_prompt, sys_prompt, 400)
+        # async def query_ollama(usr: str, sys: str = LLM_SYS_MSG, model: str = DEFAULT_LLM, max_tokens: int = 200):
+        response = await llm.query_ollama(usr_prompt, sys_prompt, profile.ollama_model, 400)
+
         DEBUG(f"query_ollama response: {response}")
         
         if isinstance(response, str):
+            response += "\n\n"
             return response
         elif isinstance(response, dict):
             if "message" in response and "content" in response["message"]:
@@ -138,7 +132,7 @@ Do not mention or recite this context information in your response.
         
     except Exception as e:
         ERR(f"Error generating auto-response: {str(e)}")
-        return f"Thank you for your email regarding '{email.subject}'. We are currently experiencing technical difficulties with our auto-response system. We will review your email and respond as soon as possible. We apologize for any inconvenience."
+        return f"Thank you for your email regarding '{this_email.subject}'. We are currently experiencing technical difficulties with our auto-response system. We will review your email and respond as soon as possible. We apologize for any inconvenience."
 
 
 def clean_email_content(html_content):
@@ -252,7 +246,7 @@ tags:
             
         markdown_content += f'''
 ---
-{email.body}
+{this_email.body}
 '''
             
         with open(md_path, 'w', encoding='utf-8') as md_file:
@@ -269,9 +263,9 @@ tags:
 async def autorespond(this_email: IncomingEmail, account: EmailAccount):
     matching_profiles = get_matching_autoresponders(this_email, account)
     for profile in matching_profiles:
-        DEBUG(f"Auto-responding to {this_email.subject} with profile: {profile['USER_FULLNAME']}")
+        DEBUG(f"Auto-responding to {this_email.subject} with profile: {profile.name}")
         auto_response_subject = f"Auto-Response Re: {this_email.subject}"
-        auto_response_body = await generate_auto_response_body(this_email, profile)
+        auto_response_body = await generate_auto_response_body(this_email, profile, account)
         DEBUG(f"Auto-response: {auto_response_body}")
         await send_auto_response(this_email.sender, auto_response_subject, auto_response_body, profile, account)
 
@@ -284,8 +278,8 @@ async def send_auto_response(to_email, subject, body, profile, account):
         message['Subject'] = subject
         message.attach(MIMEText(body, 'plain'))
 
-        if profile['IMG_GEN_PROMPT']:
-            jpg_path = await sd.workflow(profile['IMG_GEN_PROMPT'], earlyout=False, downscale_to_fit=True)
+        if profile.image_prompt:
+            jpg_path = await sd.workflow(profile.image_prompt, earlyout=False, downscale_to_fit=True)
             if jpg_path and os.path.exists(jpg_path):
                 with open(jpg_path, 'rb') as img_file:
                     img = MIMEImage(img_file.read(), name=os.path.basename(jpg_path))
