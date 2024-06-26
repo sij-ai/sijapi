@@ -3,11 +3,12 @@ import os
 import json
 
 filename = 'location_log.json'
-server = 'https://api.sij.ai'
+server = '!{!{ ENTER A PUBLIC URL TO YOUR SIJAPI INSTANCE }!}!'
+api_key = !{!{ ENTER YOUR GLOBAL_API_KEY HERE }!}!
 
 def upload_location_data(data):
     headers = {
-        'Authorization': 'Bearer sk-NhrtQwCHNdK5sRZC',
+        'Authorization': f'Bearer {api_key}',
         'Content-Type': 'application/json'
     }
 
