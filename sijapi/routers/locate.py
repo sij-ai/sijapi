@@ -29,7 +29,7 @@ from sijapi.utilities import haversine
 
 locate = APIRouter()
 
-async def reverse_geocode(latitude: float, longitude: float) -> Optional[Location]:
+async def reverse_geocode(latitude: float, longitude: float, elevation: float = None) -> Optional[Location]:
     url = f"https://nominatim.openstreetmap.org/reverse?format=json&lat={latitude}&lon={longitude}"
     L.INFO(f"Calling Nominatim API at {url}")
     headers = {
@@ -42,21 +42,22 @@ async def reverse_geocode(latitude: float, longitude: float) -> Optional[Locatio
                 data = await response.json()
         
         address = data.get("address", {})
+        elevation = elevation or await get_elevation(latitude, longitude)
         location = Location(
-            latitude=float(data.get("lat", latitude)),
-            longitude=float(data.get("lon", longitude)),
+            latitude=latitude,
+            longitude=longitude,
+            elevation=elevation,
             datetime=datetime.now(timezone.utc),
             zip=address.get("postcode"),
             street=address.get("road"),
             city=address.get("city"),
             state=address.get("state"),
             country=address.get("country"),
-            context={},  # Initialize with an empty dict, to be filled as needed
+            context={}, 
             class_=data.get("class"),
             type=data.get("type"),
             name=data.get("name"),
             display_name=data.get("display_name"),
-            boundingbox=data.get("boundingbox"),
             amenity=address.get("amenity"),
             house_number=address.get("house_number"),
             road=address.get("road"),
@@ -197,7 +198,8 @@ def find_override_locations(lat: float, lon: float) -> Optional[str]:
     
     return closest_location
 
-def get_elevation(latitude, longitude):
+
+async def get_elevation(latitude, longitude):
     url = "https://api.open-elevation.com/api/v1/lookup"
     
     payload = {
@@ -209,21 +211,23 @@ def get_elevation(latitude, longitude):
         ]
     }
     
-    try:
-        response = requests.post(url, json=payload)
-        response.raise_for_status()  # Raise an exception for unsuccessful requests
+    async with aiohttp.ClientSession() as session:
+        try:
+            async with session.post(url, json=payload) as response:
+                response.raise_for_status()  # Raise an exception for unsuccessful requests
+                
+                data = await response.json()
+                
+                if "results" in data:
+                    elevation = data["results"][0]["elevation"]
+                    return elevation
+                else:
+                    return None
         
-        data = response.json()
-        
-        if "results" in data:
-            elevation = data["results"][0]["elevation"]
-            return elevation
-        else:
+        except aiohttp.ClientError as e:
+            L.ERR(f"Error: {e}")
             return None
-    
-    except requests.exceptions.RequestException as e:
-        L.ERR(f"Error: {e}")
-        return None
+
 
 
 
@@ -385,7 +389,6 @@ async def generate_map(start_date: datetime, end_date: datetime):
 
     return html_content
 
-
 async def post_location(location: Location):
     L.DEBUG(f"post_location called with {location.datetime}")
 
@@ -400,32 +403,57 @@ async def post_location(location: Location):
             
             # Parse and localize the datetime
             localized_datetime = await localize_datetime(location.datetime)
+
             
             await conn.execute('''
-                INSERT INTO locations (datetime, location, city, state, zip, street, action, device_type, device_model, device_name, device_os)
-                VALUES ($1, ST_SetSRID(ST_MakePoint($2, $3, $4), 4326), $5, $6, $7, $8, $9, $10, $11, $12, $13)
-            ''', localized_datetime, location.longitude, location.latitude, location.elevation, location.city, location.state, location.zip, location.street, action, device_type, device_model, device_name, device_os)
+                INSERT INTO locations (
+                    datetime, location, city, state, zip, street, action, device_type, device_model, device_name, device_os,
+                    class_, type, name, display_name, amenity, house_number, road, quarter, neighbourhood, 
+                    suburb, county, country_code, country
+                )
+                VALUES ($1, ST_SetSRID(ST_MakePoint($2, $3, $4), 4326), $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 
+                        $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)
+            ''', localized_datetime, location.longitude, location.latitude, location.elevation, location.city, location.state, 
+                    location.zip, location.street, action, device_type, device_model, device_name, device_os, 
+                    location.class_, location.type, location.name, location.display_name, 
+                    location.amenity, location.house_number, location.road, location.quarter, location.neighbourhood, 
+                    location.suburb, location.county, location.country_code, location.country)
+                
             await conn.close()
-            L.INFO(f"Successfully posted location: {location.latitude}, {location.longitude} on {localized_datetime}")
+            L.INFO(f"Successfully posted location: {location.latitude}, {location.longitude}, {location.elevation} on {localized_datetime}")
             return {
                 'datetime': localized_datetime,
                 'latitude': location.latitude,
                 'longitude': location.longitude,
+                'elevation': location.elevation,
                 'city': location.city,
                 'state': location.state,
                 'zip': location.zip,
                 'street': location.street,
-                'elevation': location.elevation,
                 'action': action,
                 'device_type': device_type,
                 'device_model': device_model,
                 'device_name': device_name,
-                'device_os': device_os
+                'device_os': device_os,
+                'class_': location.class_,
+                'type': location.type,
+                'name': location.name,
+                'display_name': location.display_name,
+                'amenity': location.amenity,
+                'house_number': location.house_number,
+                'road': location.road,
+                'quarter': location.quarter,
+                'neighbourhood': location.neighbourhood,
+                'suburb': location.suburb,
+                'county': location.county,
+                'country_code': location.country_code,
+                'country': location.country
             }
         except Exception as e:
             L.ERR(f"Error posting location {e}")
             L.ERR(traceback.format_exc())
             return None
+
 
 
 @locate.post("/locate")
@@ -451,22 +479,26 @@ async def post_locate_endpoint(locations: Union[Location, List[Location]]):
                 "device_os": "Unknown"
             }
         
-        L.DEBUG(f"datetime before localization: {location.datetime}")
-        # Convert datetime string to timezone-aware datetime object
+        # L.DEBUG(f"datetime before localization: {location.datetime}")
         location.datetime = await localize_datetime(location.datetime)
-        L.DEBUG(f"datetime after localization: {location.datetime}")
-        
+        # L.DEBUG(f"datetime after localization: {location.datetime}")
+        L.DEBUG(f"Location received for processing: {location}")
         # Perform reverse geocoding
         geocoded_location = await reverse_geocode(location.latitude, location.longitude)
         if geocoded_location:
-            # Update location with geocoded information
+            L.DEBUG(f"Reverse geocoding result: {geocoded_location}")
             for field in location.__fields__:
                 if getattr(location, field) is None:
                     setattr(location, field, getattr(geocoded_location, field))
+        else:
+            L.WARN(f"Geocoding failed!")
+        L.DEBUG(f"Final location submitted to database: {location}")
         
         location_entry = await post_location(location)
         if location_entry:
             responses.append({"location_data": location_entry})  # Add weather data if necessary
+        else:
+            L.WARN(f"Posing location to database appears to have failed.")
     
     return {"message": "Locations and weather updated", "results": responses}
 

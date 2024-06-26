@@ -667,7 +667,7 @@ async def generate_banner(dt, location: Location = None, forecast: str = None, m
         if location.display_name:
             display_name += f"{location.display_name}"
 
-        else:
+        elif:
             display_name += f"{location.road}, " if location.road else ""
             display_name += f"the {location.neighbourhood} neighbourhood of " if location.neighbourhood else ""
             display_name += f"the {location.suburb} suburb of " if location.suburb else ""
