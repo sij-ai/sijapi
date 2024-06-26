@@ -100,17 +100,17 @@ def get_matching_autoresponders(email: IncomingEmail, account: EmailAccount) -> 
     return matching_profiles
 
 
-async def generate_auto_response_body(e: IncomingEmail, profile: Dict) -> str:
+async def generate_auto_response_body(email: IncomingEmail, profile: Dict) -> str:
     now = await locate.localize_datetime(dt_datetime.now())
-    then = await locate.localize_datetime(e.datetime_received)
+    then = await locate.localize_datetime(email.datetime_received)
     age = now - then
     usr_prompt = f'''
 Generate a personalized auto-response to the following email:
-From: {e.sender}
+From: {email.sender}
 Sent: {age} ago
-Subject: "{e.subject}"
+Subject: "{email.subject}"
 Body:
-{e.body}
+{email.body}
 
 Respond on behalf of {profile['USER_FULLNAME']}, who is unable to respond personally because {profile['AUTORESPONSE_CONTEXT']}.
 Keep the response {profile['RESPONSE_STYLE']} and to the point, but responsive to the sender's inquiry.
@@ -138,7 +138,7 @@ Do not mention or recite this context information in your response.
         
     except Exception as e:
         ERR(f"Error generating auto-response: {str(e)}")
-        return f"Thank you for your email regarding '{e.subject}'. We are currently experiencing technical difficulties with our auto-response system. We will review your email and respond as soon as possible. We apologize for any inconvenience."
+        return f"Thank you for your email regarding '{email.subject}'. We are currently experiencing technical difficulties with our auto-response system. We will review your email and respond as soon as possible. We apologize for any inconvenience."
 
 
 def clean_email_content(html_content):
@@ -227,33 +227,33 @@ async def save_email(this_email: IncomingEmail, account: EmailAccount):
         
         # Create the markdown content
         markdown_content = f'''---
-    date: {email.datetime_received.strftime('%Y-%m-%d')}
-    tags:
-    - email
-    ---
-    |     |     |     | 
-    | --: | :--: |  :--: | 
-    |  *received* | **{email.datetime_received.strftime('%B %d, %Y at %H:%M:%S %Z')}**    |    |
-    |  *from* | **[[{email.sender}]]**    |    |
-    |  *to* | {', '.join([f'**[[{recipient}]]**' for recipient in email.recipients])}   |    |
-    |  *subject* | **{email.subject}**    |    |
-    '''
-        
+date: {this_email.datetime_received.strftime('%Y-%m-%d')}
+tags:
+- email
+---
+|     |     |     | 
+| --: | :--: |  :--: | 
+|  *received* | **{this_email.datetime_received.strftime('%B %d, %Y at %H:%M:%S %Z')}**    |    |
+|  *from* | **[[{this_email.sender}]]**    |    |
+|  *to* | {', '.join([f'**[[{recipient.email}]]**' if not recipient.name else f'**[[{recipient.name}|{recipient.email}]]**' for recipient in this_email.recipients])}   |    |
+|  *subject* | **{this_email.subject}**    |    |
+'''
+    
         if summary:
             markdown_content += f'''
-    > [!summary]  Summary
-    >  {summary}
-    '''
-            
+> [!summary]  Summary
+>  {summary}
+'''
+  
         if tts_path.exists():
             markdown_content += f'''
-    ![[{tts_path}]]
-    '''
+![[{tts_path}]]
+'''
             
         markdown_content += f'''
-    ---
-    {email.body}
-    '''
+---
+{email.body}
+'''
             
         with open(md_path, 'w', encoding='utf-8') as md_file:
             md_file.write(markdown_content)
