@@ -34,7 +34,7 @@ import json
 from ollama import Client as oLlama
 from sd import sd
 from dotenv import load_dotenv
-from sijapi import DEBUG, INFO, WARN, ERR, CRITICAL, COMFYUI_DIR
+from sijapi import L, COMFYUI_DIR
 
 import io
 from io import BytesIO
@@ -186,7 +186,7 @@ def get_user_media(username, amount=30):
     Fetch recent media for a given username, return List of medias
     """
 
-    DEBUG(f"Fetching recent media for {username}...")
+    L.DEBUG(f"Fetching recent media for {username}...")
     user_id = cl.user_id_from_username(username)
     medias = cl.user_medias(user_id, amount)
     final_medias = []
@@ -201,7 +201,7 @@ def get_user_image_urls(username, amount=30) -> List[str]:
     """
     Fetch recent media URLs for a given username, return List of media URLs
     """
-    DEBUG(f"Fetching recent media URLs for {username}...")
+    L.DEBUG(f"Fetching recent media URLs for {username}...")
     user_id = cl.user_id_from_username(username)
     medias = cl.user_medias(user_id, amount)
 
@@ -229,7 +229,7 @@ def get_random_follower():
 def get_medias_by_hashtag(hashtag: str, days_ago_max:int = 14, ht_type:str = None, amount:int = args.count):
     if not ht_type:
         ht_type = args.commentmode
-    DEBUG(f"Fetching {ht_type} media for hashtag: {hashtag}")
+    L.DEBUG(f"Fetching {ht_type} media for hashtag: {hashtag}")
     ht_medias = []
     while True:
         sleep(SHORT)
@@ -239,10 +239,10 @@ def get_medias_by_hashtag(hashtag: str, days_ago_max:int = 14, ht_type:str = Non
             ht_medias.extend(cl.hashtag_medias_recent(name=hashtag, amount=amount*10))
             
         filtered_medias = filter_medias(ht_medias, days_ago_max=days_ago_max)
-        DEBUG(f"Filtered {ht_type} media count obtained for '#{hashtag}': {len(filtered_medias)}")
+        L.DEBUG(f"Filtered {ht_type} media count obtained for '#{hashtag}': {len(filtered_medias)}")
         
         if len(filtered_medias) >= amount:
-            DEBUG(f"Desired amount of {amount} filtered media reached.")
+            L.DEBUG(f"Desired amount of {amount} filtered media reached.")
             break
     
     return filtered_medias
@@ -250,11 +250,11 @@ def get_medias_by_hashtag(hashtag: str, days_ago_max:int = 14, ht_type:str = Non
 def get_medias_from_all_hashtags(days_ago_max=14, ht_type:str = None, amount:int = args.count):
     if not ht_type:
         ht_type = args.commentmode
-    DEBUG(f"Fetching {ht_type} media.")
+    L.DEBUG(f"Fetching {ht_type} media.")
     filtered_medias = []
     while len(filtered_medias) < amount:
         hashtag = random.choice(HASHTAGS)
-        DEBUG(f"Using hashtag: {hashtag}")
+        L.DEBUG(f"Using hashtag: {hashtag}")
         fetched_medias = []
         sleep(SHORT)
         if ht_type == "top":
@@ -264,15 +264,15 @@ def get_medias_from_all_hashtags(days_ago_max=14, ht_type:str = None, amount:int
         
         current_filtered_medias = filter_medias(fetched_medias, days_ago_max=days_ago_max)
         filtered_medias.extend(current_filtered_medias)
-        DEBUG(f"Filtered {ht_type} media count obtained for '#{hashtag}': {len(current_filtered_medias)}")
+        L.DEBUG(f"Filtered {ht_type} media count obtained for '#{hashtag}': {len(current_filtered_medias)}")
         
         # Trim the list if we've collected more than needed
         if len(filtered_medias) > amount:
             filtered_medias = filtered_medias[:amount]
-            DEBUG(f"Desired amount of {amount} filtered media reached.")
+            L.DEBUG(f"Desired amount of {amount} filtered media reached.")
             break
         else:
-            DEBUG(f"Total filtered media count so far: {len(filtered_medias)}")
+            L.DEBUG(f"Total filtered media count so far: {len(filtered_medias)}")
     
     return filtered_medias
 
@@ -345,7 +345,7 @@ def download_and_resize_image(url: str, download_path: str = None, max_dimension
                 return download_path
         except Exception as e:
             # Handle or log the error as needed
-            DEBUG(f"Error downloading or resizing image: {e}")
+            L.DEBUG(f"Error downloading or resizing image: {e}")
     return None
 
 
@@ -365,17 +365,17 @@ def comment_on_user_media(user: str, comment_type: str = "default", amount=5):
                     comment_text = llava(encoded_media, COMMENT_PROMPT_SYS, comment_prompt_usr) if args.llava or not args.openai else gpt4v(encoded_media, COMMENT_PROMPT_SYS, comment_prompt_usr)
                     if comment_text:
                         cl.media_comment(media.pk, comment_text)
-                        DEBUG(f"Commented on media: {media.pk}")
+                        L.DEBUG(f"Commented on media: {media.pk}")
                     else:
-                        DEBUG(f"Failed to generate comment for media: {media.pk}")
+                        L.DEBUG(f"Failed to generate comment for media: {media.pk}")
                     add_media_to_completed_lists(media)
                     sleep(SHORT)
                 else:
-                    DEBUG(f"We received a nonetype! {media_path}")
+                    L.DEBUG(f"We received a nonetype! {media_path}")
             else:
-                DEBUG(f"URL for {media.pk} disappeared it seems...")
+                L.DEBUG(f"URL for {media.pk} disappeared it seems...")
         else:
-            DEBUG(f"Media already interacted with: {media.pk}")
+            L.DEBUG(f"Media already interacted with: {media.pk}")
 
 def comment_on_hashtagged_media(comment_type: str = args.commenttype, amount=3, hashtag: str = None):
     """
@@ -400,22 +400,22 @@ def comment_on_hashtagged_media(comment_type: str = args.commenttype, amount=3, 
                 try:
                     like_result = cl.media_like(media)
                     if like_result:
-                        DEBUG(f"Liked media: https://instagram.com/p/{media.pk}/")
+                        L.DEBUG(f"Liked media: https://instagram.com/p/{media.pk}/")
                 except instagrapi.exceptions.FeedbackRequired as e:
-                    DEBUG(f"Cannot like media {media.pk}: {str(e)}")
+                    L.DEBUG(f"Cannot like media {media.pk}: {str(e)}")
 
             if comment_text:
                 try:
                     cl.media_comment(media.pk, comment_text)
-                    DEBUG(f"Commented on media: https://instagram.com/p/{media.pk}/")
+                    L.DEBUG(f"Commented on media: https://instagram.com/p/{media.pk}/")
                 except instagrapi.exceptions.FeedbackRequired as e:
-                    DEBUG(f"Cannot comment on media {media.pk}: {str(e)}")
+                    L.DEBUG(f"Cannot comment on media {media.pk}: {str(e)}")
             else:
-                DEBUG(f"Failed to generate comment for media: https://instagram.com/p/{media.pk}")
+                L.DEBUG(f"Failed to generate comment for media: https://instagram.com/p/{media.pk}")
             add_media_to_completed_lists(media)
             sleep(SHORT)
         else:
-            DEBUG(f"Media already interacted with: {media.pk}")
+            L.DEBUG(f"Media already interacted with: {media.pk}")
 
 
 def comment_on_specific_media(media_url, comment_type: str = "default"):
@@ -436,11 +436,11 @@ def comment_on_specific_media(media_url, comment_type: str = "default"):
     if comment_text:
         try:
             cl.media_comment(media.pk, comment_text)
-            DEBUG(f"Commented on specific media: https://instagram.com/p/{media.pk}/")
+            L.DEBUG(f"Commented on specific media: https://instagram.com/p/{media.pk}/")
         except instagrapi.exceptions.FeedbackRequired as e:
-            DEBUG(f"Failed to comment on specific media: https://instagram.com/p/{media.pk}/ due to error: {str(e)}")
+            L.DEBUG(f"Failed to comment on specific media: https://instagram.com/p/{media.pk}/ due to error: {str(e)}")
     else:
-        DEBUG(f"Failed to generate comment for specific media: https://instagram.com/p/{media.pk}/")
+        L.DEBUG(f"Failed to generate comment for specific media: https://instagram.com/p/{media.pk}/")
 
 
 
@@ -485,16 +485,16 @@ def update_prompt(workflow: dict, post: dict, positive: str, found_key=[None], p
 
                 if value == "API_PPrompt":
                     workflow[key] = post.get(value, "") + positive
-                    DEBUG(f"Updated API_PPrompt to: {workflow[key]}")
+                    L.DEBUG(f"Updated API_PPrompt to: {workflow[key]}")
                 elif value == "API_SPrompt":
                     workflow[key] = post.get(value, "")
-                    DEBUG(f"Updated API_SPrompt to: {workflow[key]}")
+                    L.DEBUG(f"Updated API_SPrompt to: {workflow[key]}")
                 elif value == "API_NPrompt":
                     workflow[key] = post.get(value, "")  
-                    DEBUG(f"Updated API_NPrompt to: {workflow[key]}")
+                    L.DEBUG(f"Updated API_NPrompt to: {workflow[key]}")
                 elif key == "seed" or key == "noise_seed":
                     workflow[key] = random.randint(1000000000000, 9999999999999)
-                    DEBUG(f"Updated seed to: {workflow[key]}")
+                    L.DEBUG(f"Updated seed to: {workflow[key]}")
                 elif (key == "width" or key == "max_width" or key == "scaled_width" or key == "side_length") and (value == 1023 or value == 1025):
                     # workflow[key] = post.get(value, "")
                     workflow[key] = post.get("width", 1024)
@@ -502,7 +502,7 @@ def update_prompt(workflow: dict, post: dict, positive: str, found_key=[None], p
                     # workflow[key] = post.get(value, "")
                     workflow[key] = post.get("height", 1024)
     except Exception as e:
-        DEBUG(f"Error in update_prompt at path {' -> '.join(path)}: {e}")
+        L.DEBUG(f"Error in update_prompt at path {' -> '.join(path)}: {e}")
         raise
 
     return found_key[0]
@@ -527,22 +527,22 @@ def update_prompt_custom(workflow: dict, API_PPrompt: str, API_SPrompt: str, API
 
                 if value == "API_PPrompt":
                     workflow[key] = API_PPrompt
-                    DEBUG(f"Updated API_PPrompt to: {workflow[key]}")
+                    L.DEBUG(f"Updated API_PPrompt to: {workflow[key]}")
                 elif value == "API_SPrompt":
                     workflow[key] = API_SPrompt
-                    DEBUG(f"Updated API_SPrompt to: {workflow[key]}")
+                    L.DEBUG(f"Updated API_SPrompt to: {workflow[key]}")
                 elif value == "API_NPrompt":
                     workflow[key] = API_NPrompt
-                    DEBUG(f"Updated API_NPrompt to: {workflow[key]}")
+                    L.DEBUG(f"Updated API_NPrompt to: {workflow[key]}")
                 elif key == "seed" or key == "noise_seed":
                     workflow[key] = random.randint(1000000000000, 9999999999999)
-                    DEBUG(f"Updated seed to: {workflow[key]}")
+                    L.DEBUG(f"Updated seed to: {workflow[key]}")
                 elif (key == "width" or key == "max_width" or key == "scaled_width") and (value == 1023 or value == 1025):
                     workflow[key] = 1024
                 elif (key == "dimension" or key == "height" or key == "max_height" or key == "scaled_height") and (value == 1023 or value == 1025):
                     workflow[key] = 1024
     except Exception as e:
-        DEBUG(f"Error in update_prompt_custom at path {' -> '.join(path)}: {e}")
+        L.DEBUG(f"Error in update_prompt_custom at path {' -> '.join(path)}: {e}")
         raise
 
     return found_key[0]
@@ -582,14 +582,14 @@ def poll_status(prompt_id):
         elapsed_time = int(time.time() - start_time)  # Calculate elapsed time in seconds
         status_response = requests.get(f"{COMFYUI_URL}/history/{prompt_id}")
         # Use \r to return to the start of the line, and end='' to prevent newline
-        DEBUG(f"\rGenerating {prompt_id}. Elapsed time: {elapsed_time} seconds", end='')
+        L.DEBUG(f"\rGenerating {prompt_id}. Elapsed time: {elapsed_time} seconds", end='')
         if status_response.status_code != 200:
             raise Exception("Failed to get job status")
         status_data = status_response.json()
         job_data = status_data.get(prompt_id, {})
         if job_data.get("status", {}).get("completed", False):
-            DEBUG()
-            DEBUG(f"{prompt_id} completed in {elapsed_time} seconds.")
+            L.DEBUG()
+            L.DEBUG(f"{prompt_id} completed in {elapsed_time} seconds.")
             return job_data
         time.sleep(1)
 
@@ -600,14 +600,14 @@ def poll_status(prompt_id):
         elapsed_time = int(time.time() - start_time)  # Calculate elapsed time in seconds
         status_response = requests.get(f"{COMFYUI_URL}/history/{prompt_id}")
         # Use \r to return to the start of the line, and end='' to prevent newline
-        DEBUG(f"\rGenerating {prompt_id}. Elapsed time: {elapsed_time} seconds", end='')
+        L.DEBUG(f"\rGenerating {prompt_id}. Elapsed time: {elapsed_time} seconds", end='')
         if status_response.status_code != 200:
             raise Exception("Failed to get job status")
         status_data = status_response.json()
         job_data = status_data.get(prompt_id, {})
         if job_data.get("status", {}).get("completed", False):
-            DEBUG()
-            DEBUG(f"{prompt_id} completed in {elapsed_time} seconds.")
+            L.DEBUG()
+            L.DEBUG(f"{prompt_id} completed in {elapsed_time} seconds.")
             return job_data
         time.sleep(1)
 
@@ -618,12 +618,12 @@ def poll_status(prompt_id):
 def load_post(chosen_post: str = "default"):
     if chosen_post in PROFILE_CONFIG['posts']:
         post = PROFILE_CONFIG['posts'][chosen_post]
-        DEBUG(f"Loaded post for {chosen_post}")
+        L.DEBUG(f"Loaded post for {chosen_post}")
     else:
-        DEBUG(f"Unable to load post for {chosen_post}. Choosing a default post.")
+        L.DEBUG(f"Unable to load post for {chosen_post}. Choosing a default post.")
         chosen_post = choose_post(PROFILE_CONFIG['posts'])
         post = PROFILE_CONFIG['posts'][chosen_post]
-        DEBUG(f"Defaulted to {chosen_post}")
+        L.DEBUG(f"Defaulted to {chosen_post}")
 
     return post
 
@@ -639,12 +639,12 @@ def handle_image_workflow(chosen_post=None):
 
     workflow_name = args.workflow if args.workflow else random.choice(post['workflows'])
 
-    DEBUG(f"Workflow name: {workflow_name}")
+    L.DEBUG(f"Workflow name: {workflow_name}")
 
-    DEBUG(f"Generating image concept for {chosen_post} and {workflow_name} now.")
+    L.DEBUG(f"Generating image concept for {chosen_post} and {workflow_name} now.")
     image_concept = query_ollama(llmPrompt = post['llmPrompt'], max_tokens = 180) if args.local or not args.openai else query_gpt4(llmPrompt = post['llmPrompt'], max_tokens = 180)
     
-    DEBUG(f"Image concept for {chosen_post}: {image_concept}")
+    L.DEBUG(f"Image concept for {chosen_post}: {image_concept}")
 
     workflow_data = None
 
@@ -658,9 +658,9 @@ def handle_image_workflow(chosen_post=None):
         jpg_file_path = image_gen(image_concept, "dall-e-3")
     else:
         saved_file_key = update_prompt(workflow=workflow_data, post=post, positive=image_concept)
-        DEBUG(f"Saved file key: {saved_file_key}")
+        L.DEBUG(f"Saved file key: {saved_file_key}")
         prompt_id = queue_prompt(workflow_data)
-        DEBUG(f"Prompt ID: {prompt_id}")
+        L.DEBUG(f"Prompt ID: {prompt_id}")
         status_data = poll_status(prompt_id)
         image_data = get_image(status_data, saved_file_key)
         if chosen_post == "landscape":
@@ -699,17 +699,17 @@ def handle_custom_image(custom_post: str):
     system_msg = "You are a helpful AI who assists in generating prompts that will be used to generate highly realistic images. Always use the most visually descriptive terms possible, and avoid any vague or abstract concepts. Do not include any words or descriptions based on other senses or emotions. Strive to show rather than tell. Space is limited, so be efficient with your words."
     image_concept = query_ollama(system_msg=system_msg, user_msg=custom_post, max_tokens = 180) if args.local or not args.openai else query_gpt4(system_msg=system_msg, user_msg=custom_post, max_tokens = 180)
     
-    DEBUG(f"Image concept: {image_concept}")    
+    L.DEBUG(f"Image concept: {image_concept}")    
 
     if args.dalle and not args.local:
         jpg_file_path = image_gen(image_concept, "dall-e-3")
 
     else:  
         saved_file_key = update_prompt(workflow=workflow_data, post=post, positive=image_concept)
-        DEBUG(f"Saved file key: {saved_file_key}")
+        L.DEBUG(f"Saved file key: {saved_file_key}")
 
         prompt_id = queue_prompt(workflow_data)
-        DEBUG(f"Prompt ID: {prompt_id}")
+        L.DEBUG(f"Prompt ID: {prompt_id}")
 
         status_data = poll_status(prompt_id)
         image_data = get_image(status_data, saved_file_key)
@@ -728,7 +728,7 @@ def image_aftergen(jpg_file_path: str, chosen_post: str = None, post: Dict = Non
     if chosen_post and not prompt:
         prompt = PROFILE_CONFIG['posts'][chosen_post]['Vision_Prompt']
     encoded_string = encode_image_to_base64(jpg_file_path)
-    DEBUG(f"Image successfully encoded from {jpg_file_path}")
+    L.DEBUG(f"Image successfully encoded from {jpg_file_path}")
     instagram_description = llava(encoded_string, prompt) if args.local or args.llava or not args.openai else gpt4v(encoded_string, prompt, 150)
     instagram_description = re.sub(r'^["\'](.*)["\']$', r'\1', instagram_description)
 
@@ -759,24 +759,24 @@ Tags: {', '.join(ghost_tags)}
     with open(markdown_filename, "w") as md_file:
         md_file.write(markdown_content)
 
-    DEBUG(f"Markdown file created at {markdown_filename}")
+    L.DEBUG(f"Markdown file created at {markdown_filename}")
 
     if args.wallpaper:
         change_wallpaper(jpg_file_path)
-        DEBUG(f"Wallpaper changed.")
+        L.DEBUG(f"Wallpaper changed.")
 
 
     if not args.local:
         ig_footer = ""
         if not args.noig:
             post_url = upload_photo(jpg_file_path, instagram_description)
-            DEBUG(f"Image posted at {post_url}")
+            L.DEBUG(f"Image posted at {post_url}")
             ig_footer = f"\n<a href=\"{post_url}\">Instagram link</a>"
 
         if not args.noghost:
             ghost_text = f"{instagram_description}"
             ghost_url = post_to_ghost(img_title, jpg_file_path, ghost_text, ghost_tags)    
-            DEBUG(f"Ghost post: {ghost_url}\n{ig_footer}")
+            L.DEBUG(f"Ghost post: {ghost_url}\n{ig_footer}")
 
 
 def choose_post(posts):
@@ -836,12 +836,12 @@ def save_as_jpg(image_data, prompt_id, chosen_post:str = None, max_size=2160, qu
         
         return new_file_path
     except Exception as e:
-        DEBUG(f"Error processing image: {e}")
+        L.DEBUG(f"Error processing image: {e}")
         return None
 
 
 def upload_photo(path, caption, title: str=None):
-    DEBUG(f"Uploading photo from {path}...")
+    L.DEBUG(f"Uploading photo from {path}...")
     media = cl.photo_upload(path, caption)
     post_url = f"https://www.instagram.com/p/{media.code}/"
     return post_url
@@ -958,16 +958,16 @@ async def ig_flow_endpoint(new_session: bool = False):
     time_remaining = 30 - (time_since_rollover % 30)
 
     if time_remaining < 4:
-        DEBUG("Too close to end of TOTP counter. Waiting.")
+        L.DEBUG("Too close to end of TOTP counter. Waiting.")
         sleepupto(5, 5)
 
         if not new_session and os.path.exists(IG_SESSION_PATH):
             cl.load_settings(IG_SESSION_PATH)
-            DEBUG("Loaded past session.")
+            L.DEBUG("Loaded past session.")
 
         elif new_session and cl.login(IG_USERNAME, IG_PASSWORD, verification_code=TOTP.now()):
             cl.dump_settings(IG_SESSION_PATH)
-            DEBUG("Logged in and saved new session.")
+            L.DEBUG("Logged in and saved new session.")
 
         else:
             raise Exception(f"Failed to login as {IG_USERNAME}.")

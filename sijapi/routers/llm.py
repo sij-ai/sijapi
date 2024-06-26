@@ -1,4 +1,6 @@
-#routers/llm.py
+'''
+Interfaces with Ollama and creates an OpenAI-compatible relay API.
+'''
 from fastapi import APIRouter, HTTPException, Request, Response, BackgroundTasks, File, Form, UploadFile
 from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
 from datetime import datetime as dt_datetime
@@ -22,7 +24,7 @@ import tempfile
 import shutil
 import html2text
 import markdown
-from sijapi import LLM_SYS_MSG, DEFAULT_LLM, DEFAULT_VISION, REQUESTS_DIR, OBSIDIAN_CHROMADB_COLLECTION, OBSIDIAN_VAULT_DIR, DOC_DIR, OPENAI_API_KEY, DEBUG, INFO, WARN, ERR, CRITICAL, DEFAULT_VOICE, SUMMARY_INSTRUCT, SUMMARY_CHUNK_SIZE, SUMMARY_TPW, SUMMARY_CHUNK_OVERLAP, SUMMARY_LENGTH_RATIO, SUMMARY_TOKEN_LIMIT, SUMMARY_MIN_LENGTH, SUMMARY_MODEL
+from sijapi import L, LLM_SYS_MSG, DEFAULT_LLM, DEFAULT_VISION, REQUESTS_DIR, OBSIDIAN_CHROMADB_COLLECTION, OBSIDIAN_VAULT_DIR, DOC_DIR, OPENAI_API_KEY, DEFAULT_VOICE, SUMMARY_INSTRUCT, SUMMARY_CHUNK_SIZE, SUMMARY_TPW, SUMMARY_CHUNK_OVERLAP, SUMMARY_LENGTH_RATIO, SUMMARY_TOKEN_LIMIT, SUMMARY_MIN_LENGTH, SUMMARY_MODEL
 from sijapi.utilities import convert_to_unix_time, sanitize_filename, ocr_pdf, clean_text, should_use_ocr, extract_text_from_pdf, extract_text_from_docx, read_text_file, str_to_bool, get_extension
 from sijapi.routers.tts import generate_speech
 from sijapi.routers.asr import transcribe_audio
@@ -84,13 +86,13 @@ async def query_ollama(usr: str, sys: str = LLM_SYS_MSG, model: str = DEFAULT_LL
     LLM = Ollama()
     response = await LLM.chat(model=model, messages=messages, options={"num_predict": max_tokens})
 
-    DEBUG(response)
+    L.DEBUG(response)
     if "message" in response:
         if "content" in response["message"]:
             content = response["message"]["content"]
             return content
     else:
-        DEBUG("No choices found in response")
+        L.DEBUG("No choices found in response")
         return None
 
 def is_vision_request(content):
@@ -111,21 +113,21 @@ async def chat_completions(request: Request):
         raise HTTPException(status_code=400, detail="Message data is required in the request body.")
 
     requested_model = body.get('model', 'default-model')
-    DEBUG(f"Requested model: {requested_model}")
+    L.DEBUG(f"Requested model: {requested_model}")
     stream = body.get('stream')
     token_limit = body.get('max_tokens') or body.get('num_predict')
 
     # Check if the most recent message contains an image_url
     recent_message = messages[-1]
     if recent_message.get('role') == 'user' and is_vision_request(recent_message.get('content')):
-        DEBUG("Processing as a vision request")
+        L.DEBUG("Processing as a vision request")
         model = "llava"
-        DEBUG(f"Using model: {model}")
+        L.DEBUG(f"Using model: {model}")
         return StreamingResponse(stream_messages_with_vision(recent_message, model, token_limit), media_type="application/json")
     else:
-        DEBUG("Processing as a standard request")
+        L.DEBUG("Processing as a standard request")
         model = requested_model
-        DEBUG(f"Using model: {model}")
+        L.DEBUG(f"Using model: {model}")
         if stream:
             return StreamingResponse(stream_messages(messages, model, token_limit), media_type="application/json")
         else:
@@ -250,17 +252,17 @@ async def generate_messages(messages: list, model: str = "llama3"):
 def is_model_available(model_name):
     model_data = OllamaList()
     available_models = [model['name'] for model in model_data['models']]
-    DEBUG(f"Available models: {available_models}")  # Log using the configured LOGGER
+    L.DEBUG(f"Available models: {available_models}")  # Log using the configured LOGGER
 
     matching_models = [model for model in available_models if model.startswith(model_name + ':') or model == model_name]
     if len(matching_models) == 1:
-        DEBUG(f"Unique match found: {matching_models[0]}")
+        L.DEBUG(f"Unique match found: {matching_models[0]}")
         return True
     elif len(matching_models) > 1:
-        ERR(f"Ambiguous match found, models: {matching_models}")
+        L.ERR(f"Ambiguous match found, models: {matching_models}")
         return True
     else:
-        ERR(f"No match found for model: {model_name}")
+        L.ERR(f"No match found for model: {model_name}")
     return False
 
 
@@ -383,12 +385,12 @@ def query_gpt4(llmPrompt: List = [], system_msg: str = "", user_msg: str = "", m
         if hasattr(first_choice, "message") and hasattr(first_choice.message, "content"):
             return first_choice.message.content
         else:
-            DEBUG("No content attribute in the first choice's message")
-            DEBUG(f"No content found in message string: {response.choices}")
-            DEBUG("Trying again!")
+            L.DEBUG("No content attribute in the first choice's message")
+            L.DEBUG(f"No content found in message string: {response.choices}")
+            L.DEBUG("Trying again!")
             query_gpt4(messages, max_tokens)
     else:
-        DEBUG(f"No content found in message string: {response}")
+        L.DEBUG(f"No content found in message string: {response}")
         return ""
 
 def llava(image_base64, prompt):
@@ -398,7 +400,7 @@ def llava(image_base64, prompt):
         prompt = f"This is a chat between a user and an assistant. The assistant is helping the user to describe an image. {prompt}",
         images = [image_base64]
     )
-    DEBUG(response)
+    L.DEBUG(response)
     return "" if "pass" in response["response"].lower() else response["response"] 
 
 def gpt4v(image_base64, prompt_sys: str, prompt_usr: str, max_tokens: int = 150):
@@ -429,7 +431,7 @@ def gpt4v(image_base64, prompt_sys: str, prompt_usr: str, max_tokens: int = 150)
                 comment_content = first_choice.message.content
                 if "PASS" in comment_content:
                     return ""
-                DEBUG(f"Generated comment: {comment_content}")
+                L.DEBUG(f"Generated comment: {comment_content}")
 
                 response_2 = VISION_LLM.chat.completions.create(
                     model="gpt-4-vision-preview",
@@ -467,15 +469,15 @@ def gpt4v(image_base64, prompt_sys: str, prompt_usr: str, max_tokens: int = 150)
                         first_choice = response_2.choices[0]
                         if first_choice.message and first_choice.message.content:
                             final_content = first_choice.message.content
-                            DEBUG(f"Generated comment: {final_content}")
+                            L.DEBUG(f"Generated comment: {final_content}")
                             if "PASS" in final_content:
                                 return ""
                             else:
                                 return final_content
 
 
-    DEBUG("Vision response did not contain expected data.")
-    DEBUG(f"Vision response: {response_1}")
+    L.DEBUG("Vision response did not contain expected data.")
+    L.DEBUG(f"Vision response: {response_1}")
     asyncio.sleep(15)
 
     try_again = gpt4v(image_base64, prompt_sys, prompt_usr, max_tokens)
@@ -520,7 +522,7 @@ async def summarize_tts(
     
     background_tasks = BackgroundTasks()
     final_output_path = await generate_speech(background_tasks, summarized_text, voice, "xtts", speed=speed, podcast=podcast, title=filename)
-    DEBUG(f"summary_tts completed with final_output_path: {final_output_path}")
+    L.DEBUG(f"summary_tts completed with final_output_path: {final_output_path}")
     return final_output_path
     
 
@@ -539,7 +541,7 @@ def split_text_into_chunks(text: str) -> List[str]:
     adjusted_overlap = max(0, int(SUMMARY_CHUNK_OVERLAP / SUMMARY_TPW))  # Ensure non-negative
     chunks = []
     for i in range(0, len(words), adjusted_chunk_size - adjusted_overlap):
-        DEBUG(f"We are on iteration # {i} if split_text_into_chunks.")
+        L.DEBUG(f"We are on iteration # {i} if split_text_into_chunks.")
         chunk = ' '.join(words[i:i + adjusted_chunk_size])
         chunks.append(chunk)
     return chunks
@@ -609,7 +611,7 @@ async def summarize_text(text: str, instruction: str = SUMMARY_INSTRUCT, length_
     corrected_total_summary_length = min(total_summary_length, SUMMARY_TOKEN_LIMIT)
     individual_summary_length = max(1, corrected_total_summary_length // total_parts)  # Ensure at least 1
 
-    DEBUG(f"Text split into {total_parts} chunks.")
+    L.DEBUG(f"Text split into {total_parts} chunks.")
     summaries = await asyncio.gather(*[
         process_chunk(instruction, chunk, i+1, total_parts, individual_summary_length, LLM) for i, chunk in enumerate(chunked_text)
     ])
@@ -635,14 +637,14 @@ async def process_chunk(instruction: str, text: str, part: int, total_parts: int
         max_tokens = min(fraction_tokens, SUMMARY_CHUNK_SIZE // max(1, total_parts))  # Ensure at least 1
         max_tokens = max(max_tokens, SUMMARY_MIN_LENGTH)  # Ensure a minimum token count to avoid tiny processing chunks
     
-    DEBUG(f"Summarizing part {part} of {total_parts}: Max_tokens: {max_tokens}")
+    L.DEBUG(f"Summarizing part {part} of {total_parts}: Max_tokens: {max_tokens}")
     
     if part and total_parts > 1:
         prompt = f"{instruction}. Part {part} of {total_parts}:\n{text}"
     else:
         prompt = f"{instruction}:\n\n{text}"
     
-    DEBUG(f"Starting LLM.generate for part {part} of {total_parts}")
+    L.DEBUG(f"Starting LLM.generate for part {part} of {total_parts}")
     response = await LLM.generate(
         model=SUMMARY_MODEL, 
         prompt=prompt,
@@ -651,7 +653,7 @@ async def process_chunk(instruction: str, text: str, part: int, total_parts: int
     )
     
     text_response = response['response']
-    DEBUG(f"Completed LLM.generate for part {part} of {total_parts}")
+    L.DEBUG(f"Completed LLM.generate for part {part} of {total_parts}")
     
     return text_response
 

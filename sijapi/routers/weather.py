@@ -1,3 +1,6 @@
+'''
+Uses the VisualCrossing API and Postgres/PostGIS to source local weather forecasts and history.
+'''
 import asyncio
 from fastapi import APIRouter, HTTPException
 from fastapi import HTTPException
@@ -7,8 +10,7 @@ from typing import Dict
 from datetime import datetime
 from shapely.wkb import loads
 from binascii import unhexlify
-from sijapi import DEBUG, INFO, WARN, ERR, CRITICAL
-from sijapi import VISUALCROSSING_API_KEY, TZ, DB
+from sijapi import L, VISUALCROSSING_API_KEY, TZ, DB
 from sijapi.utilities import haversine
 from sijapi.routers import locate
 
@@ -17,12 +19,12 @@ weather = APIRouter()
 
 async def get_weather(date_time: datetime, latitude: float, longitude: float):
     # request_date_str = date_time.strftime("%Y-%m-%d")
-    DEBUG(f"Called get_weather with lat: {latitude}, lon: {longitude}, date_time: {date_time}")
+    L.DEBUG(f"Called get_weather with lat: {latitude}, lon: {longitude}, date_time: {date_time}")
     daily_weather_data = await get_weather_from_db(date_time, latitude, longitude)
     fetch_new_data = True
     if daily_weather_data:
         try:
-            DEBUG(f"Daily weather data from db: {daily_weather_data}")
+            L.DEBUG(f"Daily weather data from db: {daily_weather_data}")
             last_updated = str(daily_weather_data['DailyWeather'].get('last_updated'))
             last_updated = await locate.localize_datetime(last_updated)
             stored_loc_data = unhexlify(daily_weather_data['DailyWeather'].get('location'))
@@ -34,50 +36,50 @@ async def get_weather(date_time: datetime, latitude: float, longitude: float):
             
             hourly_weather = daily_weather_data.get('HourlyWeather')
 
-            DEBUG(f"Hourly: {hourly_weather}")
+            L.DEBUG(f"Hourly: {hourly_weather}")
 
-            DEBUG(f"\nINFO:\nlast updated {last_updated}\nstored lat: {stored_lat} - requested lat: {latitude}\nstored lon: {stored_lon} - requested lon: {longitude}\n")
+            L.DEBUG(f"\nINFO:\nlast updated {last_updated}\nstored lat: {stored_lat} - requested lat: {latitude}\nstored lon: {stored_lon} - requested lon: {longitude}\n")
 
             request_haversine = haversine(latitude, longitude, stored_lat, stored_lon)
-            DEBUG(f"\nINFO:\nlast updated {last_updated}\nstored lat: {stored_lat} - requested lat: {latitude}\nstored lon: {stored_lon} - requested lon: {longitude}\nHaversine: {request_haversine}")
+            L.DEBUG(f"\nINFO:\nlast updated {last_updated}\nstored lat: {stored_lat} - requested lat: {latitude}\nstored lon: {stored_lon} - requested lon: {longitude}\nHaversine: {request_haversine}")
             
             if last_updated and (date_time <= datetime.now(TZ) and last_updated > date_time and request_haversine < 8) and hourly_weather and len(hourly_weather) > 0:
-                DEBUG(f"We can use existing data... :')")
+                L.DEBUG(f"We can use existing data... :')")
                 fetch_new_data = False
                 
         except Exception as e:
-            ERR(f"Error in get_weather: {e}")
+            L.ERR(f"Error in get_weather: {e}")
 
     if fetch_new_data:
-        DEBUG(f"We require new data!")
+        L.DEBUG(f"We require new data!")
         request_date_str = date_time.strftime("%Y-%m-%d")
         url = f"https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/{latitude},{longitude}/{request_date_str}/{request_date_str}?unitGroup=us&key={VISUALCROSSING_API_KEY}"
         try:
             async with AsyncClient() as client:
                 response = await client.get(url)
                 if response.status_code == 200:
-                    DEBUG(f"Successfully obtained data from VC...")
+                    L.DEBUG(f"Successfully obtained data from VC...")
                     try:
                         weather_data = response.json()
                         store_result = await store_weather_to_db(date_time, weather_data)
                         if store_result == "SUCCESS":
-                            DEBUG(f"New weather data for {request_date_str} stored in database...")
+                            L.DEBUG(f"New weather data for {request_date_str} stored in database...")
                         else:
-                            ERR(f"Failed to store weather data for {request_date_str} in database! {store_result}")
+                            L.ERR(f"Failed to store weather data for {request_date_str} in database! {store_result}")
 
-                        DEBUG(f"Attempting to retrieve data for {date_time}, {latitude}, {longitude}")
+                        L.DEBUG(f"Attempting to retrieve data for {date_time}, {latitude}, {longitude}")
                         daily_weather_data = await get_weather_from_db(date_time, latitude, longitude)
                         if daily_weather_data is not None:
                             return daily_weather_data
                         else:
                             raise HTTPException(status_code=500, detail="Weather data was not properly stored.")
                     except Exception as e:
-                        ERR(f"Problem parsing VC response or storing data: {e}")
+                        L.ERR(f"Problem parsing VC response or storing data: {e}")
                         raise HTTPException(status_code=500, detail="Weather data was not properly stored.")
                 else:
-                    ERR(f"Failed to fetch weather data: {response.status_code}, {response.text}")
+                    L.ERR(f"Failed to fetch weather data: {response.status_code}, {response.text}")
         except Exception as e:
-            ERR(f"Exception during API call: {e}")
+            L.ERR(f"Exception during API call: {e}")
 
     return daily_weather_data
 
@@ -86,7 +88,7 @@ async def store_weather_to_db(date_time: datetime, weather_data: dict):
     async with DB.get_connection() as conn:
         try:
             day_data = weather_data.get('days')[0]
-            DEBUG(f"day_data.get('sunrise'): {day_data.get('sunrise')}")
+            L.DEBUG(f"day_data.get('sunrise'): {day_data.get('sunrise')}")
 
             # Handle preciptype and stations as PostgreSQL arrays
             preciptype_array = day_data.get('preciptype', []) or []
@@ -127,7 +129,7 @@ async def store_weather_to_db(date_time: datetime, weather_data: dict):
                 location_point
             )
         except Exception as e:
-            ERR(f"Failed to prepare database query in store_weather_to_db! {e}")
+            L.ERR(f"Failed to prepare database query in store_weather_to_db! {e}")
         
         try:
             daily_weather_query = '''
@@ -144,8 +146,8 @@ async def store_weather_to_db(date_time: datetime, weather_data: dict):
             '''
         
             # Debug logs for better insights
-            # DEBUG("Executing query: %s", daily_weather_query)
-            # DEBUG("With parameters: %s", daily_weather_params)
+            # L.DEBUG("Executing query: %s", daily_weather_query)
+            # L.DEBUG("With parameters: %s", daily_weather_params)
 
             # Execute the query to insert daily weather data
             async with conn.transaction():
@@ -159,8 +161,8 @@ async def store_weather_to_db(date_time: datetime, weather_data: dict):
                     #    hour_data['datetime'] = parse_date(hour_data.get('datetime'))
                         hour_timestamp = date_str + ' ' + hour_data['datetime']
                         hour_data['datetime'] = await locate.localize_datetime(hour_timestamp)
-                        DEBUG(f"Processing hours now...")
-                        # DEBUG(f"Processing {hour_data['datetime']}")
+                        L.DEBUG(f"Processing hours now...")
+                        # L.DEBUG(f"Processing {hour_data['datetime']}")
 
                         hour_preciptype_array = hour_data.get('preciptype', []) or []
                         hour_stations_array = hour_data.get('stations', []) or []
@@ -202,24 +204,24 @@ async def store_weather_to_db(date_time: datetime, weather_data: dict):
                             RETURNING id
                             '''
                             # Debug logs for better insights
-                            # DEBUG("Executing query: %s", hourly_weather_query)
-                            # DEBUG("With parameters: %s", hourly_weather_params)
+                            # L.DEBUG("Executing query: %s", hourly_weather_query)
+                            # L.DEBUG("With parameters: %s", hourly_weather_params)
 
                             # Execute the query to insert hourly weather data
                             async with conn.transaction():
                                 hourly_weather_id = await conn.fetchval(hourly_weather_query, *hourly_weather_params)
-                            # ERR(f"\n{hourly_weather_id}")
+                            # L.ERR(f"\n{hourly_weather_id}")
                                     
                         except Exception as e:
-                            ERR(f"EXCEPTION: {e}")
+                            L.ERR(f"EXCEPTION: {e}")
 
                     except Exception as e:
-                        ERR(f"EXCEPTION: {e}")
+                        L.ERR(f"EXCEPTION: {e}")
 
             return "SUCCESS"
             
         except Exception as e:
-            ERR(f"Error in dailyweather storage: {e}")
+            L.ERR(f"Error in dailyweather storage: {e}")
    
 
 
@@ -239,10 +241,10 @@ async def get_weather_from_db(date_time: datetime, latitude: float, longitude: f
             daily_weather_data = await conn.fetchrow(query, query_date, longitude, latitude, longitude, latitude)
 
             if daily_weather_data is None:
-                DEBUG(f"No daily weather data retrieved from database.")
+                L.DEBUG(f"No daily weather data retrieved from database.")
                 return None
             # else:
-                # DEBUG(f"Daily_weather_data: {daily_weather_data}")
+                # L.DEBUG(f"Daily_weather_data: {daily_weather_data}")
             # Query to get hourly weather data
             query = '''
                 SELECT HW.* FROM HourlyWeather HW
@@ -254,9 +256,9 @@ async def get_weather_from_db(date_time: datetime, latitude: float, longitude: f
                 'DailyWeather': dict(daily_weather_data),
                 'HourlyWeather': [dict(row) for row in hourly_weather_data],
             }
-            # DEBUG(f"day: {day}")
+            # L.DEBUG(f"day: {day}")
             return day
         except Exception as e:
-            ERR(f"Unexpected error occurred: {e}")
+            L.ERR(f"Unexpected error occurred: {e}")
 
 

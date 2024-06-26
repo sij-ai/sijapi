@@ -1,3 +1,6 @@
+'''
+Uses whisper_cpp to create an OpenAI-compatible Whisper web service.
+'''
 import os
 import sys
 import uuid
@@ -11,7 +14,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from typing import Optional
 
-from sijapi import DEBUG, INFO, WARN, ERR, CRITICAL, ASR_DIR, WHISPER_CPP_MODELS, GARBAGE_COLLECTION_INTERVAL, GARBAGE_TTL, WHISPER_CPP_DIR, MAX_CPU_CORES
+from sijapi import L, ASR_DIR, WHISPER_CPP_MODELS, GARBAGE_COLLECTION_INTERVAL, GARBAGE_TTL, WHISPER_CPP_DIR, MAX_CPU_CORES
 
 asr = APIRouter()
 
@@ -115,7 +118,7 @@ async def transcribe_audio(file_path, params: TranscribeParams, background_tasks
 
     command.extend(['-f', file_path])
   
-    DEBUG(f"Command: {command}")
+    L.DEBUG(f"Command: {command}")
 
     # Create a unique ID for this transcription job
     job_id = str(uuid.uuid4())
