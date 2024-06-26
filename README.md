@@ -37,3 +37,11 @@
 ────────────────────────────────────────────── S̝͖̦͓̪̻ O̡͖̘̫͇̟   H̢͔͔̫͉͜ O̢̢͉̞͍̘ T̟͍͍̪̦̞    R N )───────
 
 ```
+## Overview
+IN DRAFT
+
+## Installation
+IN DRAFT
+
+## Extras
+[Apple Shortcut for companion Pythonista script](https://www.icloud.com/shortcuts/d63b179f9c664b0cbbacb1a607767ef7)
