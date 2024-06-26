@@ -13,6 +13,8 @@ sijapi/config/*.yaml
 sijapi/config/O365/
 sijapi/local_only/
 sijapi/testbed/
+khoj/
+r2r/
 
 **/.env
 **/.config.yaml
