@@ -21,21 +21,60 @@ class Logger:
         logger.add(handler_path, rotation="2 MB", compression="zip", level="DEBUG", format="{time:YYYY-MM-DD HH:mm:ss} - {name} - {level} - {message}")
         
         # Console handler
-        log_format = "<cyan>{time:YYYY-MM-DD HH:mm:ss}</cyan> - <cyan>{name}</cyan> - <level>{level: <8}</level> - <level>{message}</level>"
+        log_format = (
+            "{time:YYYY-MM-DD HH:mm:ss} - "
+            "{name} - "
+            "<level>{level: <8}</level> - "
+            "<level>"
+            "{message}"
+            "</level>"
+        )
         console_level = "DEBUG" if args.debug else "INFO"
-        logger.add(sys.stdout, format=log_format, level=console_level, colorize=True)
+        logger.add(
+            sys.stdout,
+            format=log_format,
+            level=console_level,
+            colorize=True,
+            filter=lambda record: record["level"].name != "INFO",  # Apply colors to all levels except INFO
+        )
+        
+        # Add a separate handler for INFO level without colors
+        logger.add(
+            sys.stdout,
+            format="{time:YYYY-MM-DD HH:mm:ss} - {name} - {level: <8} - {message}",
+            level="INFO",
+            filter=lambda record: record["level"].name == "INFO",
+        )
+
+
+        # Custom color and style mappings
+        logger.level("CRITICAL", color="<yellow><bold><MAGENTA>")
+        logger.level("ERROR", color="<red><bold>")
+        logger.level("WARNING", color="<yellow><bold>") 
+        logger.level("DEBUG", color="<green><bold>")
 
         # Test color output
-        self.logger.debug("Debug message (should be Cyan)")
-        self.logger.info("Info message (should be Green)")
-        self.logger.warning("Warning message (should be Yellow)")
-        self.logger.error("Error message (should be Red)")
-        self.logger.critical("Critical message (should be Magenta)")
+        self.logger.debug("Debug message (should be italic green)")
+        self.logger.info("Info message (should be uncolored)")
+        self.logger.warning("Warning message (should be bold orange/yellow)")
+        self.logger.error("Error message (should be bold red)")
+        self.logger.critical("Critical message (should be bold yellow on magenta)")
+
+    
+    def DEBUG(self, log_message): self.logger.debug(log_message)
+    def INFO(self, log_message): self.logger.info(log_message)
+    def WARN(self, log_message): self.logger.warning(log_message)
+    def ERR(self, log_message):
+        self.logger.error(log_message)
+        self.logger.error(traceback.format_exc())
+    def CRIT(self, log_message):
+        self.logger.critical(log_message)
+        self.logger.critical(traceback.format_exc())
 
     def get_logger(self):
-        return self.logger
+        return self
 
-# Add this at the end of the file for testing
+
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()

@@ -18,12 +18,10 @@ import ssl
 import yaml
 from typing import List, Dict, Optional, Set
 from datetime import datetime as dt_datetime
-from sijapi import DEBUG, INFO, WARN, ERR, CRITICAL
-from sijapi import PODCAST_DIR, DEFAULT_VOICE, EMAIL_CONFIG, EMAIL_LOGS
+from sijapi import L, PODCAST_DIR, DEFAULT_VOICE, EMAIL_CONFIG, EMAIL_LOGS
 from sijapi.routers import tts, llm, sd, locate
 from sijapi.utilities import clean_text, assemble_journal_path, extract_text, prefix_lines
 from sijapi.classes import EmailAccount, IMAPConfig, SMTPConfig, IncomingEmail, EmailContact, AutoResponder
-from sijapi import DEBUG, INFO, ERR, LOGS_DIR
 from sijapi.classes import EmailAccount
 
 email = APIRouter(tags=["private"])
@@ -72,6 +70,7 @@ def get_smtp_connection(account: EmailAccount):
 
 
 def get_matching_autoresponders(this_email: IncomingEmail, account: EmailAccount) -> List[AutoResponder]:
+    L.DEBUG(f"Called get_matching_autoresponders for email \"{this_email.subject},\" account name \"{account.name}\"")
     def matches_list(item: str, this_email: IncomingEmail) -> bool:
         if '@' in item:
             return item in this_email.sender
@@ -82,9 +81,13 @@ def get_matching_autoresponders(this_email: IncomingEmail, account: EmailAccount
         whitelist_match = not profile.whitelist or any(matches_list(item, this_email) for item in profile.whitelist)
         blacklist_match = any(matches_list(item, this_email) for item in profile.blacklist)
         if whitelist_match and not blacklist_match:
+            L.DEBUG(f"We have a match for {whitelist_match} and no blacklist matches.")
             matching_profiles.append(profile)
+        elif whitelist_match and blacklist_match:
+            L.DEBUG(f"Matched whitelist for {whitelist_match}, but also matched blacklist for {blacklist_match}")
+        else:
+            L.DEBUG(f"No whitelist or blacklist matches.")
     return matching_profiles
-
 
 
 async def generate_auto_response_body(this_email: IncomingEmail, profile: AutoResponder, account: EmailAccount) -> str:
@@ -107,7 +110,7 @@ async def generate_auto_response_body(this_email: IncomingEmail, profile: AutoRe
         # async def query_ollama(usr: str, sys: str = LLM_SYS_MSG, model: str = DEFAULT_LLM, max_tokens: int = 200):
         response = await llm.query_ollama(usr_prompt, sys_prompt, profile.ollama_model, 400)
 
-        DEBUG(f"query_ollama response: {response}")
+        L.DEBUG(f"query_ollama response: {response}")
         
         if isinstance(response, str):
             response += "\n\n"
@@ -116,15 +119,15 @@ async def generate_auto_response_body(this_email: IncomingEmail, profile: AutoRe
             if "message" in response and "content" in response["message"]:
                 return response["message"]["content"]
             else:
-                ERR(f"Unexpected response structure from query_ollama: {response}")
+                L.ERR(f"Unexpected response structure from query_ollama: {response}")
         else:
-            ERR(f"Unexpected response type from query_ollama: {type(response)}")
+            L.ERR(f"Unexpected response type from query_ollama: {type(response)}")
         
         # If we reach here, we couldn't extract a valid response
         raise ValueError("Could not extract valid response from query_ollama")
         
     except Exception as e:
-        ERR(f"Error generating auto-response: {str(e)}")
+        L.ERR(f"Error generating auto-response: {str(e)}")
         return f"Thank you for your email regarding '{this_email.subject}'. We are currently experiencing technical difficulties with our auto-response system. We will review your email and respond as soon as possible. We apologize for any inconvenience."
 
 
@@ -201,26 +204,26 @@ tags:
         with open(md_path, 'w', encoding='utf-8') as md_file:
             md_file.write(markdown_content)
 
-        DEBUG(f"Saved markdown to {md_path}")
+        L.INFO(f"Saved markdown to {md_path}")
 
         return True
     
     except Exception as e:
-        ERR(f"Exception: {e}")
+        L.ERR(f"Exception: {e}")
         return False
 
 async def autorespond(this_email: IncomingEmail, account: EmailAccount):
+    L.DEBUG(f"Evaluating {this_email.subject} for autoresponse-worthiness...")
     matching_profiles = get_matching_autoresponders(this_email, account)
-    DEBUG(f"Matching profiles: {matching_profiles}")
+    L.DEBUG(f"Matching profiles: {matching_profiles}")
     for profile in matching_profiles:
-        DEBUG(f"Auto-responding to {this_email.subject} with profile: {profile.name}")
+        L.INFO(f"Generating auto-response to {this_email.subject} with profile: {profile.name}")
         auto_response_subject = f"Auto-Response Re: {this_email.subject}"
         auto_response_body = await generate_auto_response_body(this_email, profile, account)
-        DEBUG(f"Auto-response: {auto_response_body}")
+        L.DEBUG(f"Auto-response: {auto_response_body}")
         await send_auto_response(this_email.sender, auto_response_subject, auto_response_body, profile, account)
 
 async def send_auto_response(to_email, subject, body, profile, account):
-    DEBUG(f"Sending auto response to {to_email}...")
     try:
         message = MIMEMultipart()
         message['From'] = account.smtp.username
@@ -235,15 +238,16 @@ async def send_auto_response(to_email, subject, body, profile, account):
                     img = MIMEImage(img_file.read(), name=os.path.basename(jpg_path))
                     message.attach(img)
 
+        L.DEBUG(f"Sending auto-response {to_email} concerning {subject} from account {account.name}...")
         with get_smtp_connection(account) as server:
             server.login(account.smtp.username, account.smtp.password)
             server.send_message(message)
 
-        INFO(f"Auto-response sent to {to_email} concerning {subject} from account {account.name}")
+        L.INFO(f"Auto-response sent to {to_email} concerning {subject} from account {account.name}!")
         return True
 
     except Exception as e:
-        ERR(f"Error in preparing/sending auto-response from account {account.name}: {e}")
+        L.ERR(f"Error in preparing/sending auto-response from account {account.name}: {e}")
         return False
 
 
@@ -261,6 +265,7 @@ async def save_processed_uid(filename: Path, account_name: str, uid: str):
 
 async def process_account_summarization(account: EmailAccount):
     summarized_log = EMAIL_LOGS / "summarized.txt"
+
     while True:
         try:
             processed_uids = await load_processed_uids(summarized_log)
@@ -283,17 +288,19 @@ async def process_account_summarization(account: EmailAccount):
                             save_success = await save_email(this_email, account)
                             if save_success:
                                 await save_processed_uid(summarized_log, account.name, uid_str)
-                                DEBUG(f"Summarized email: {uid_str}")
+                                L.INFO(f"Summarized email: {uid_str}")
         except Exception as e:
-            ERR(f"An error occurred during summarization for account {account.name}: {e}")
+            L.ERR(f"An error occurred during summarization for account {account.name}: {e}")
         
         await asyncio.sleep(account.refresh)
 
 async def process_account_autoresponding(account: EmailAccount):
     autoresponded_log = EMAIL_LOGS / "autoresponded.txt"
+
     while True:
         try:
             processed_uids = await load_processed_uids(autoresponded_log)
+            L.DEBUG(f"{len(processed_uids)} already processed emails are being ignored.")
             with get_imap_connection(account) as inbox:
                 unread_messages = inbox.messages(unread=True)
                 for uid, message in unread_messages:
@@ -309,16 +316,18 @@ async def process_account_autoresponding(account: EmailAccount):
                             body=clean_email_content(message.body['html'][0]) if message.body['html'] else clean_email_content(message.body['plain'][0]) or "",
                             attachments=message.attachments
                         )
+                        L.DEBUG(f"Attempting autoresponse on {this_email.subject}")
                         respond_success = await autorespond(this_email, account)
                         if respond_success:
                             await save_processed_uid(autoresponded_log, account.name, uid_str)
-                            DEBUG(f"Auto-responded to email: {uid_str}")
+                            L.WARN(f"Auto-responded to email: {uid_str}")
         except Exception as e:
-            ERR(f"An error occurred during auto-responding for account {account.name}: {e}")
+            L.ERR(f"An error occurred during auto-responding for account {account.name}: {e}")
         
         await asyncio.sleep(account.refresh)
 
 async def process_all_accounts():
+    
     email_accounts = load_email_accounts(EMAIL_CONFIG)
     summarization_tasks = [asyncio.create_task(process_account_summarization(account)) for account in email_accounts]
     autoresponding_tasks = [asyncio.create_task(process_account_autoresponding(account)) for account in email_accounts]
@@ -326,4 +335,5 @@ async def process_all_accounts():
 
 @email.on_event("startup")
 async def startup_event():
+    await asyncio.sleep(5)
     asyncio.create_task(process_all_accounts())

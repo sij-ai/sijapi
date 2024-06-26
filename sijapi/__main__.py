@@ -18,28 +18,20 @@ from dotenv import load_dotenv
 from pathlib import Path
 from datetime import datetime
 import argparse
-from . import LOGGER, LOGS_DIR, OBSIDIAN_VAULT_DIR
+from . import L, LOGS_DIR, OBSIDIAN_VAULT_DIR
 from .logs import Logger
 from .utilities import list_and_correct_impermissible_files
 
 parser = argparse.ArgumentParser(description='Personal API.')
-parser.add_argument('--debug', action='store_true', help='Set log level to INFO')
+parser.add_argument('--debug', action='store_true', help='Set log level to L.INFO')
 parser.add_argument('--test', type=str, help='Load only the specified module.')
 args = parser.parse_args()
 
-# Using the package logger
-main_logger = Logger("main", LOGS_DIR)
-main_logger.setup_from_args(args)
-logger = LOGGER
-
-# Use the logger
-logger.debug("Debug Log")
-logger.info("Info Log")
-
-
-from sijapi import DEBUG, INFO, WARN, ERR, CRITICAL
+from sijapi import L
+L.setup_from_args(args)
 
 from sijapi import HOST, ENV_PATH, GLOBAL_API_KEY, REQUESTS_DIR, ROUTER_DIR, REQUESTS_LOG_PATH, PUBLIC_SERVICES, TRUSTED_SUBNETS, ROUTERS
+
 
 
 # Initialize a FastAPI application
@@ -68,13 +60,13 @@ class SimpleAPIKeyMiddleware(BaseHTTPMiddleware):
                 if api_key_header:
                     api_key_header = api_key_header.lower().split("bearer ")[-1]
                 if api_key_header != GLOBAL_API_KEY and api_key_query != GLOBAL_API_KEY:
-                    ERR(f"Invalid API key provided by a requester.")
+                    L.ERR(f"Invalid API key provided by a requester.")
                     return JSONResponse(
                         status_code=401,
                         content={"detail": "Invalid or missing API key"}
                     )
         response = await call_next(request)
-        # DEBUG(f"Request from {client_ip} is complete")
+        # L.DEBUG(f"Request from {client_ip} is complete")
         return response
 
 api.add_middleware(SimpleAPIKeyMiddleware)
@@ -82,22 +74,22 @@ api.add_middleware(SimpleAPIKeyMiddleware)
 canceled_middleware = """
 @api.middleware("http")
 async def log_requests(request: Request, call_next):
-    DEBUG(f"Incoming request: {request.method} {request.url}")
-    DEBUG(f"Request headers: {request.headers}")
-    DEBUG(f"Request body: {await request.body()}")
+    L.DEBUG(f"Incoming request: {request.method} {request.url}")
+    L.DEBUG(f"Request headers: {request.headers}")
+    L.DEBUG(f"Request body: {await request.body()}")
     response = await call_next(request)
     return response
 
 async def log_outgoing_request(request):
-    INFO(f"Outgoing request: {request.method} {request.url}")
-    DEBUG(f"Request headers: {request.headers}")
-    DEBUG(f"Request body: {request.content}")
+    L.INFO(f"Outgoing request: {request.method} {request.url}")
+    L.DEBUG(f"Request headers: {request.headers}")
+    L.DEBUG(f"Request body: {request.content}")
 """
 
 @api.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
-    ERR(f"HTTP Exception: {exc.status_code} - {exc.detail}")
-    ERR(f"Request: {request.method} {request.url}")
+    L.ERR(f"HTTP Exception: {exc.status_code} - {exc.detail}")
+    L.ERR(f"Request: {request.method} {request.url}")
     return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
 
 @api.middleware("http")
@@ -116,25 +108,25 @@ async def handle_exception_middleware(request: Request, call_next):
 
 def load_router(router_name):
     router_file = ROUTER_DIR / f'{router_name}.py'
-    DEBUG(f"Attempting to load {router_name.capitalize()}...")
+    L.DEBUG(f"Attempting to load {router_name.capitalize()}...")
     if router_file.exists():
         module_path = f'sijapi.routers.{router_name}'
         try:
             module = importlib.import_module(module_path)
             router = getattr(module, router_name)
             api.include_router(router)
-            INFO(f"{router_name.capitalize()} router loaded.")
+            L.INFO(f"{router_name.capitalize()} router loaded.")
         except (ImportError, AttributeError) as e:
-            CRITICAL(f"Failed to load router {router_name}: {e}")
+            L.CRIT(f"Failed to load router {router_name}: {e}")
     else:
-        ERR(f"Router file for {router_name} does not exist.")
+        L.ERR(f"Router file for {router_name} does not exist.")
 
 def main(argv):
     if args.test:
         load_router(args.test)
     else:
-        CRITICAL(f"sijapi launched")
-        CRITICAL(f"{args._get_args}")
+        L.CRIT(f"sijapi launched")
+        L.CRIT(f"{args._get_args}")
         for router_name in ROUTERS:
             load_router(router_name)
 

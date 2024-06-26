@@ -8,8 +8,7 @@ import httpx
 import socket
 from fastapi import APIRouter
 from tailscale import Tailscale
-from sijapi import DEBUG, INFO, WARN, ERR, CRITICAL
-from sijapi import TS_ID, ROUTERS, SUBNET_BROADCAST
+from sijapi import L, TS_ID, ROUTERS, SUBNET_BROADCAST
 
 health = APIRouter(tags=["public", "trusted", "private"])
 
@@ -49,7 +48,7 @@ async def get_wan_ip():
             wan_info = response.json()
             return wan_info.get('ip', 'Unavailable')
         except Exception as e:
-            ERR(f"Error fetching WAN IP: {e}")
+            L.ERR(f"Error fetching WAN IP: {e}")
             return "Unavailable"
 
 @health.get("/ts_ip")

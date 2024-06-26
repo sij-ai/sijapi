@@ -1,3 +1,6 @@
+'''
+Uses the Timing.app API to get nicely formatted timeslip charts and spreadsheets.
+'''
 import tempfile
 import os
 import json
@@ -22,8 +25,7 @@ from typing import Optional, List, Dict, Union, Tuple
 from collections import defaultdict
 from dotenv import load_dotenv
 from traceback import format_exc
-from sijapi import DEBUG, INFO, WARN, ERR, CRITICAL
-from sijapi import HOME_DIR, TIMING_API_KEY, TIMING_API_URL
+from sijapi import L, HOME_DIR, TIMING_API_KEY, TIMING_API_URL
 from sijapi.routers.locate import localize_datetime
 
 ### INITIALIZATIONS ###
@@ -61,17 +63,17 @@ async def post_time_entry_to_timing(entry: Dict):
         'Accept': 'application/json',
         'X-Time-Zone': 'America/Los_Angeles'
     }
-    DEBUG(f"Received entry: {entry}")
+    L.DEBUG(f"Received entry: {entry}")
     response = None  # Initialize response
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(url, headers=headers, json=entry)
             response.raise_for_status()  # This will only raise for 4xx and 5xx responses
     except httpx.HTTPStatusError as exc:
-        DEBUG(f"HTTPStatusError caught: Status code: {exc.response.status_code}, Detail: {exc.response.text}")
+        L.DEBUG(f"HTTPStatusError caught: Status code: {exc.response.status_code}, Detail: {exc.response.text}")
         raise HTTPException(status_code=exc.response.status_code, detail=str(exc.response.text))
     except Exception as exc:
-        DEBUG(f"General exception caught: {exc}")
+        L.DEBUG(f"General exception caught: {exc}")
         raise HTTPException(status_code=500, detail="An unexpected error occurred")
 
     if response:

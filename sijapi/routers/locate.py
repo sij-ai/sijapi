@@ -1,3 +1,6 @@
+'''
+Uses Postgres/PostGIS for for location tracking (data obtained via the companion mobile Pythonista scripts), and for geocoding purposes.
+'''
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import HTMLResponse, JSONResponse
 import requests
@@ -17,8 +20,7 @@ from pathlib import Path
 from pydantic import BaseModel
 from typing import Optional, Any, Dict, List, Union
 from datetime import datetime, timedelta, time
-from sijapi import NAMED_LOCATIONS, TZ, DynamicTZ
-from sijapi import DEBUG, INFO, WARN, ERR, CRITICAL, DB
+from sijapi import L, DB, TZ, NAMED_LOCATIONS, DynamicTZ
 from sijapi.classes import Location
 from sijapi.utilities import haversine
 # from osgeo import gdal
@@ -29,7 +31,7 @@ locate = APIRouter()
 
 async def reverse_geocode(latitude: float, longitude: float) -> Optional[Location]:
     url = f"https://nominatim.openstreetmap.org/reverse?format=json&lat={latitude}&lon={longitude}"
-    INFO(f"Calling Nominatim API at {url}")
+    L.INFO(f"Calling Nominatim API at {url}")
     headers = {
         'User-Agent': 'sij.law/1.0 (sij@sij.law)',  # replace with your app name and email
     }
@@ -64,10 +66,10 @@ async def reverse_geocode(latitude: float, longitude: float) -> Optional[Locatio
             county=address.get("county"),
             country_code=address.get("country_code")
         )
-        INFO(f"Created Location object: {location}")
+        L.INFO(f"Created Location object: {location}")
         return location
     except aiohttp.ClientError as e:
-        ERR(f"Error: {e}")
+        L.ERR(f"Error: {e}")
         return None
 
 
@@ -75,7 +77,7 @@ async def reverse_geocode(latitude: float, longitude: float) -> Optional[Locatio
 ## NOT YET IMPLEMENTED
 async def geocode(zip_code: Optional[str] = None, latitude: Optional[float] = None, longitude: Optional[float] = None, city: Optional[str] = None, state: Optional[str] = None, country_code: str = 'US') -> Location:
     if (latitude is None or longitude is None) and (zip_code is None) and (city is None or state is None):
-        ERR(f"Must provide sufficient information for geocoding!")
+        L.ERR(f"Must provide sufficient information for geocoding!")
         return None
     
     try:
@@ -105,7 +107,7 @@ async def geocode(zip_code: Optional[str] = None, latitude: Optional[float] = No
             
             query += " ORDER BY distance LIMIT 1;"
             
-            DEBUG(f"Executing query: {query} with params: {params}")
+            L.DEBUG(f"Executing query: {query} with params: {params}")
             
             # Execute the query with the provided parameters
             result = await conn.fetchrow(query, *params)
@@ -126,14 +128,14 @@ async def geocode(zip_code: Optional[str] = None, latitude: Optional[float] = No
                     elevation=result.get('elevation', 0),
                     distance=result.get('distance')
                 )
-                DEBUG(f"Found location: {location_info}")
+                L.DEBUG(f"Found location: {location_info}")
                 return location_info
             else:
-                DEBUG("No location found with provided parameters.")
+                L.DEBUG("No location found with provided parameters.")
                 return Location()
         
     except Exception as e:
-        ERR(f"Error occurred: {e}")
+        L.ERR(f"Error occurred: {e}")
         raise Exception("An error occurred while processing your request")
 
 
@@ -149,22 +151,22 @@ async def localize_datetime(dt, fetch_loc: bool = False):
     try:
         if isinstance(dt, str):
             dt = dateutil_parse(dt)
-            DEBUG(f"{initial_dt} was a string so we attempted converting to datetime. Result: {dt}")
+            L.DEBUG(f"{initial_dt} was a string so we attempted converting to datetime. Result: {dt}")
 
         if isinstance(dt, datetime):
-            DEBUG(f"{dt} is a datetime object, so we will ensure it is tz-aware.")
+            L.DEBUG(f"{dt} is a datetime object, so we will ensure it is tz-aware.")
             if dt.tzinfo is None:
                 dt = dt.replace(tzinfo=TZ) 
-                # DEBUG(f"{dt} should now be tz-aware. Returning it now.")
+                # L.DEBUG(f"{dt} should now be tz-aware. Returning it now.")
                 return dt
             else:
-                # DEBUG(f"{dt} already was tz-aware. Returning it now.")
+                # L.DEBUG(f"{dt} already was tz-aware. Returning it now.")
                 return dt
         else:
-            ERR(f"Conversion failed")
+            L.ERR(f"Conversion failed")
             raise TypeError("Conversion failed")
     except Exception as e:
-        ERR(f"Error parsing datetime: {e}")
+        L.ERR(f"Error parsing datetime: {e}")
         raise TypeError("Input must be a string or datetime object")
 
 
@@ -220,7 +222,7 @@ def get_elevation(latitude, longitude):
             return None
     
     except requests.exceptions.RequestException as e:
-        ERR(f"Error: {e}")
+        L.ERR(f"Error: {e}")
         return None
 
 
@@ -235,7 +237,7 @@ async def fetch_locations(start: datetime, end: datetime = None) -> List[Locatio
     if start_datetime.time() == datetime.min.time() and end_datetime.time() == datetime.min.time():
         end_datetime = end_datetime.replace(hour=23, minute=59, second=59)
 
-    DEBUG(f"Fetching locations between {start_datetime} and {end_datetime}")
+    L.DEBUG(f"Fetching locations between {start_datetime} and {end_datetime}")
 
     async with DB.get_connection() as conn:
         locations = []
@@ -252,7 +254,7 @@ async def fetch_locations(start: datetime, end: datetime = None) -> List[Locatio
             ORDER BY datetime DESC
             ''', start_datetime.replace(tzinfo=None), end_datetime.replace(tzinfo=None))
         
-        DEBUG(f"Range locations query returned: {range_locations}")
+        L.DEBUG(f"Range locations query returned: {range_locations}")
         locations.extend(range_locations)
 
         if not locations and (end is None or start_datetime.date() == end_datetime.date()):
@@ -269,11 +271,11 @@ async def fetch_locations(start: datetime, end: datetime = None) -> List[Locatio
                 LIMIT 1
                 ''', start_datetime.replace(tzinfo=None))
             
-            DEBUG(f"Fallback query returned: {location_data}")
+            L.DEBUG(f"Fallback query returned: {location_data}")
             if location_data:
                 locations.append(location_data)
 
-    DEBUG(f"Locations found: {locations}")
+    L.DEBUG(f"Locations found: {locations}")
 
     # Sort location_data based on the datetime field in descending order
     sorted_locations = sorted(locations, key=lambda x: x['datetime'], reverse=True)
@@ -305,7 +307,7 @@ async def fetch_locations(start: datetime, end: datetime = None) -> List[Locatio
 async def fetch_last_location_before(datetime: datetime) -> Optional[Location]:
     datetime = await localize_datetime(datetime)
     
-    DEBUG(f"Fetching last location before {datetime}")
+    L.DEBUG(f"Fetching last location before {datetime}")
 
     async with DB.get_connection() as conn:
 
@@ -325,10 +327,10 @@ async def fetch_last_location_before(datetime: datetime) -> Optional[Location]:
         await conn.close()
 
         if location_data:
-            DEBUG(f"Last location found: {location_data}")
+            L.DEBUG(f"Last location found: {location_data}")
             return Location(**location_data)
         else:
-            DEBUG("No location found before the specified datetime")
+            L.DEBUG("No location found before the specified datetime")
             return None
 
 
@@ -385,7 +387,7 @@ async def generate_map(start_date: datetime, end_date: datetime):
 
 
 async def post_location(location: Location):
-    DEBUG(f"post_location called with {location.datetime}")
+    L.DEBUG(f"post_location called with {location.datetime}")
 
     async with DB.get_connection() as conn:
         try:
@@ -404,7 +406,7 @@ async def post_location(location: Location):
                 VALUES ($1, ST_SetSRID(ST_MakePoint($2, $3, $4), 4326), $5, $6, $7, $8, $9, $10, $11, $12, $13)
             ''', localized_datetime, location.longitude, location.latitude, location.elevation, location.city, location.state, location.zip, location.street, action, device_type, device_model, device_name, device_os)
             await conn.close()
-            INFO(f"Successfully posted location: {location.latitude}, {location.longitude} on {localized_datetime}")
+            L.INFO(f"Successfully posted location: {location.latitude}, {location.longitude} on {localized_datetime}")
             return {
                 'datetime': localized_datetime,
                 'latitude': location.latitude,
@@ -421,8 +423,8 @@ async def post_location(location: Location):
                 'device_os': device_os
             }
         except Exception as e:
-            ERR(f"Error posting location {e}")
-            ERR(traceback.format_exc())
+            L.ERR(f"Error posting location {e}")
+            L.ERR(traceback.format_exc())
             return None
 
 
@@ -449,10 +451,10 @@ async def post_locate_endpoint(locations: Union[Location, List[Location]]):
                 "device_os": "Unknown"
             }
         
-        DEBUG(f"datetime before localization: {location.datetime}")
+        L.DEBUG(f"datetime before localization: {location.datetime}")
         # Convert datetime string to timezone-aware datetime object
         location.datetime = await localize_datetime(location.datetime)
-        DEBUG(f"datetime after localization: {location.datetime}")
+        L.DEBUG(f"datetime after localization: {location.datetime}")
         
         # Perform reverse geocoding
         geocoded_location = await reverse_geocode(location.latitude, location.longitude)
@@ -474,12 +476,12 @@ async def post_locate_endpoint(locations: Union[Location, List[Location]]):
 
 async def get_last_location() -> Optional[Location]:
     query_datetime = datetime.now(TZ)
-    DEBUG(f"Query_datetime: {query_datetime}")
+    L.DEBUG(f"Query_datetime: {query_datetime}")
 
     location = await fetch_last_location_before(query_datetime)
 
     if location:
-        DEBUG(f"location: {location}")
+        L.DEBUG(f"location: {location}")
         return location
     
     return None
@@ -500,7 +502,7 @@ async def get_locate(datetime_str: str, all: bool = False):
     try:
         date_time = await localize_datetime(datetime_str)
     except ValueError as e:
-        ERR(f"Invalid datetime string provided: {datetime_str}")
+        L.ERR(f"Invalid datetime string provided: {datetime_str}")
         return ["ERROR: INVALID DATETIME PROVIDED. USE YYYYMMDDHHmmss or YYYYMMDD format."]
     
     locations = await fetch_locations(date_time)
@@ -537,7 +539,7 @@ def get_elevation_srtm(latitude, longitude, srtm_file):
         return elevation
     
     except Exception as e:
-        ERR(f"Error: {e}")
+        L.ERR(f"Error: {e}")
         return None
 """
 

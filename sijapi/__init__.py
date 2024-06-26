@@ -24,20 +24,7 @@ ENV_PATH = CONFIG_DIR / ".env"
 LOGS_DIR = BASE_DIR / "logs"
 
 # Create logger instance
-package_logger = Logger(__name__, LOGS_DIR)
-LOGGER = package_logger.get_logger()
-
-def DEBUG(log_message): LOGGER.debug(log_message)
-def INFO(log_message): LOGGER.info(log_message)
-def WARN(log_message): LOGGER.warning(log_message)
-
-def ERR(log_message): 
-    LOGGER.error(log_message)
-    LOGGER.error(traceback.format_exc())
-
-def CRITICAL(log_message):
-    LOGGER.critical(log_message)
-    LOGGER.critical(traceback.format_exc())
+L = Logger("your_logger_name", "your_logs_directory")
 
 os.makedirs(LOGS_DIR, exist_ok=True)
 load_dotenv(ENV_PATH)

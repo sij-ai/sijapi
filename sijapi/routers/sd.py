@@ -30,8 +30,7 @@ import shutil
 # from photoprism.Photo import Photo
 # from webdav3.client import Client
 from sijapi.routers.llm import query_ollama
-from sijapi import DEBUG, INFO, WARN, ERR, CRITICAL
-from sijapi import COMFYUI_URL, COMFYUI_LAUNCH_CMD, COMFYUI_DIR, COMFYUI_OUTPUT_DIR, HOST_PORT, TS_SUBNET, SD_CONFIG_PATH, SD_IMAGE_DIR, SD_WORKFLOWS_DIR, LOCAL_HOSTS, BASE_URL
+from sijapi import L, COMFYUI_URL, COMFYUI_LAUNCH_CMD, COMFYUI_DIR, COMFYUI_OUTPUT_DIR, HOST_PORT, TS_SUBNET, SD_CONFIG_PATH, SD_IMAGE_DIR, SD_WORKFLOWS_DIR, LOCAL_HOSTS, BASE_URL
 
 sd = APIRouter()
 
@@ -79,12 +78,12 @@ async def workflow(prompt: str, scene: str = None, size: str = None, style: str 
 
     scene_workflow = random.choice(scene_data['workflows'])
     if size:
-        DEBUG(f"Specified size: {size}")
+        L.DEBUG(f"Specified size: {size}")
 
     size = size if size else scene_workflow.get('size', '1024x1024')
     
     width, height = map(int, size.split('x'))
-    DEBUG(f"Parsed width: {width}; parsed height: {height}")
+    L.DEBUG(f"Parsed width: {width}; parsed height: {height}")
 
     workflow_path = Path(SD_WORKFLOWS_DIR) / scene_workflow['workflow']
     workflow_data = json.loads(workflow_path.read_text())
@@ -123,7 +122,7 @@ async def generate_and_save_image(prompt_id, saved_file_key, max_size, destinati
         jpg_file_path = await save_as_jpg(image_data, prompt_id, quality=90, max_size=max_size, destination_path=destination_path)
 
         if Path(jpg_file_path) != Path(destination_path):
-            ERR(f"Mismatch between jpg_file_path, {jpg_file_path}, and detination_path, {destination_path}")
+            L.ERR(f"Mismatch between jpg_file_path, {jpg_file_path}, and detination_path, {destination_path}")
 
     except Exception as e:
         print(f"Error in generate_and_save_image: {e}")
@@ -215,11 +214,11 @@ def set_presets(workflow_data, preset_values):
             if 'inputs' in workflow_data.get(preset_node, {}):
                 workflow_data[preset_node]['inputs'][preset_key] = preset_value
             else:
-                DEBUG("Node not found in workflow_data")
+                L.DEBUG("Node not found in workflow_data")
         else:
-            DEBUG("Required data missing in preset_values")
+            L.DEBUG("Required data missing in preset_values")
     else:
-        DEBUG("No preset_values found")
+        L.DEBUG("No preset_values found")
 
 
 def get_return_path(destination_path):
@@ -318,10 +317,10 @@ async def ensure_comfy(retries: int = 4, timeout: float = 6.0):
  #           shareable_link = f"https://{PHOTOPRISM_URL}/p/{photo_uuid}"
  #           return shareable_link
  #       else:
- #           ERR("Could not find the uploaded photo details.")
+ #           L.ERR("Could not find the uploaded photo details.")
  #           return None
  #   except Exception as e:
- #       ERR(f"Error in upload_and_get_shareable_link: {e}")
+ #       L.ERR(f"Error in upload_and_get_shareable_link: {e}")
  #       return None
 
 
@@ -434,13 +433,13 @@ Even more important, it finds and returns the key to the filepath where the file
                     workflow[key] = random.randint(1000000000000, 9999999999999)
 
                 elif key in ["width", "max_width", "scaled_width", "height", "max_height", "scaled_height", "side_length", "size", "value", "dimension", "dimensions", "long", "long_side", "short", "short_side", "length"]:
-                    DEBUG(f"Got a hit for a dimension: {key} {value}")
+                    L.DEBUG(f"Got a hit for a dimension: {key} {value}")
                     if value == 1023:
                         workflow[key] = post.get("width", 1024)
-                        DEBUG(f"Set {key} to {workflow[key]}.")
+                        L.DEBUG(f"Set {key} to {workflow[key]}.")
                     elif value == 1025:
                         workflow[key] = post.get("height", 1024)
-                        DEBUG(f"Set {key} to {workflow[key]}.")
+                        L.DEBUG(f"Set {key} to {workflow[key]}.")
 
     update_recursive(workflow)
     return found_key[0]

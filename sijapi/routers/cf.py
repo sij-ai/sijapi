@@ -5,8 +5,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from fastapi.responses import PlainTextResponse, JSONResponse
 from typing import Optional
-from sijapi import DEBUG, INFO, WARN, ERR, CRITICAL
-from sijapi import CF_TOKEN, CADDYFILE_PATH, CF_API_BASE_URL, CF_IP
+from sijapi import L, CF_TOKEN, CADDYFILE_PATH, CF_API_BASE_URL, CF_IP
 import httpx
 import asyncio
 from asyncio import sleep
@@ -70,7 +69,7 @@ async def retry_request(url, headers, max_retries=5, backoff_factor=1):
             response.raise_for_status()
             return response
         except (httpx.HTTPError, httpx.ConnectTimeout) as e:
-            ERR(f"Request failed: {e}. Retrying {retry + 1}/{max_retries}...")
+            L.ERR(f"Request failed: {e}. Retrying {retry + 1}/{max_retries}...")
             await sleep(backoff_factor * (2 ** retry))
     raise HTTPException(status_code=500, detail="Max retries exceeded for Cloudflare API request")
 
