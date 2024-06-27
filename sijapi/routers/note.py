@@ -647,8 +647,29 @@ async def banner_endpoint(dt: str, location: str = None, mood: str = None, other
     return jpg_path
 
 
+async def get_note(date_time: datetime):
+    date_time = await locate.localize_datetime(date_time);
+    absolute_path, local_path = assemble_journal_path(date_time, filename = "Notes", extension = ".md", no_timestamp = True)
+
+    if absolute_path.is_file():
+        with open(absolute_path, 'r', encoding='utf-8') as file:
+            content = file.read()
+        return content if content else None
+
+async def sentiment_analysis(date_time: datetime):
+    most_recent_note = await get_note(date_time)
+    most_recent_note = most_recent_note or await get_note(date_time - timedelta(days=1))
+    if most_recent_note:
+        sys_msg = "You are a sentiment analysis AI bot. Your task is to analyze text and give a one-word description of the mood it contains, such as 'optimistic', 'pensive', 'nostalgic', 'livid', et cetera."
+        prompt = f"Provide sentiment analysis of the following notes: {most_recent_note}"
+        multishot_prompt = ["Provide sentiment analysis of the following notes: I am sad today my girlfriend broke up with me", "lonely", "Provide sentiment analysis of the following notes: Work has been so busy lately it is like there are not enough hours in the day", "hectic", prompt]
+        analysis = await llm.query_ollama_multishot(multishot_prompt, sys_msg, max_tokens = 10)
+        return analysis
+    else:
+        return ""
+
 async def generate_banner(dt, location: Location = None, forecast: str = None, mood: str = None, other_context: str = None):
-    L.DEBUG(f"Location: {location}, forecast: {forecast}, mood: {mood}, other_context: {other_context}")
+    # L.DEBUG(f"Location: {location}, forecast: {forecast}, mood: {mood}, other_context: {other_context}")
     date_time = await locate.localize_datetime(dt)
     L.DEBUG(f"generate_banner called with date_time: {date_time}")
     destination_path, local_path = assemble_journal_path(date_time, filename="Banner", extension=".jpg", no_timestamp = True)
@@ -662,12 +683,12 @@ async def generate_banner(dt, location: Location = None, forecast: str = None, m
     display_name = "Location: "
     if location:
         lat, lon = location.latitude, location.longitude
-        override_location = locate.find_override_locations(lat, lon)
+        override_location = await locate.find_override_locations(lat, lon)
         display_name += f"{override_location}, " if override_location else ""
         if location.display_name:
             display_name += f"{location.display_name}"
 
-        elif:
+        else:
             display_name += f"{location.road}, " if location.road else ""
             display_name += f"the {location.neighbourhood} neighbourhood of " if location.neighbourhood else ""
             display_name += f"the {location.suburb} suburb of " if location.suburb else ""
@@ -676,18 +697,43 @@ async def generate_banner(dt, location: Location = None, forecast: str = None, m
             display_name += f"{location.state} " if location.state else ""
             display_name += f"{location.country} " if location.country else ""
 
+        if display_name == "Location: ":
+            geocoded_location = await locate.reverse_geocode(lat, lon)
+            if geocoded_location.display_name or geocoded_location.city or geocoded_location.country:
+                return await generate_banner(dt, geocoded_location, forecast, mood, other_context)
+            else:
+                L.WARN(f"Failed to get a useable location for purposes of generating a banner, but we'll generate one anyway.")
     
     if not forecast:
         forecast = "The weather forecast is: " + await update_dn_weather(date_time)
-    
+
+    sentiment = await sentiment_analysis(date_time)
+    mood = sentiment if not mood else mood
     mood = f"Mood: {mood}" if mood else ""
-    other_context = f"Additional information: {other_context}" if other_context else ""
-    
+
+    if mood and sentiment: mood = f"Mood: {mood}, {sentiment}"
+    elif mood and not sentiment: mood = f"Mood: {mood}"
+    elif sentiment and not mood: mood = f"Mood: {sentiment}"
+    else: mood = ""
+
+    events = await calendar.get_events(date_time, date_time)
+    formatted_events = []
+    for event in events:
+        event_str = event.get('name')
+        if event.get('location'):
+            event_str += f" at {event.get('location')}"
+        formatted_events.append(event_str)
+
+    additional_info = ', '.join(formatted_events) if formatted_events else ''
+
+    other_context = f"{other_context}, {additional_info}" if other_context else additional_info
+    other_context = f"Additional information: {other_context}" if other_context else "" 
+
     prompt = "Generate an aesthetically appealing banner image for a daily note that helps to visualize the following scene information: "
     prompt += "\n".join([display_name, forecast, mood, other_context])
     L.DEBUG(f"Prompt: {prompt}")
     # sd.workflow(prompt: str, scene: str = None, size: str = None, style: str = "photorealistic", earlyurl: bool = False, destination_path: str = None):
-    final_path = await sd.workflow(prompt, scene=OBSIDIAN_BANNER_SCENE, size="1080x512", style="romantic", earlyout="local", destination_path=destination_path)
+    final_path = await sd.workflow(prompt, scene=OBSIDIAN_BANNER_SCENE, size="1080x512", style="romantic", destination_path=destination_path)
     if not str(local_path) in str(final_path):
         L.INFO(f"Apparent mismatch between local path, {local_path}, and final_path, {final_path}")
 
@@ -705,7 +751,7 @@ async def note_weather_get(
 ):
 
     try:
-        date_time = datetime.now() if date == "0" else locate.localize_datetime(date)
+        date_time = datetime.now() if date == "0" else await locate.localize_datetime(date)
         L.DEBUG(f"date: {date} .. date_time: {date_time}")
         content = await update_dn_weather(date_time) #, lat, lon)
         return JSONResponse(content={"forecast": content}, status_code=200)
@@ -735,7 +781,7 @@ async def update_dn_weather(date_time: datetime):
         lat = place.latitude
         lon = place.longitude
 
-        city = locate.find_override_locations(lat, lon)
+        city = await locate.find_override_locations(lat, lon)
         if city:
             L.INFO(f"Using override location: {city}")
 
@@ -745,7 +791,7 @@ async def update_dn_weather(date_time: datetime):
                 L.INFO(f"City in data: {city}")
 
             else:
-                loc = locate.reverse_geocode(lat, lon)
+                loc = await locate.reverse_geocode(lat, lon)
                 L.DEBUG(f"loc: {loc}")
                 city = loc.name
                 city = city if city else loc.city
@@ -801,7 +847,8 @@ async def update_dn_weather(date_time: datetime):
                     detailed_forecast = (
                         f"---\n"
                         f"date: {date_str}\n"
-                        f"zip: {zip}\n"
+                        f"latitude: {lat}"
+                        f"longitude: {lon}"
                         f"tags:\n"
                         f" - weather\n"
                         f"updated: {now}\n"

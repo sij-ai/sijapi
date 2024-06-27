@@ -99,7 +99,7 @@ async def store_weather_to_db(date_time: datetime, weather_data: dict):
             # Get location details from weather data if available
             longitude = weather_data.get('longitude')
             latitude = weather_data.get('latitude')
-            elevation = locate.get_elevation(latitude, longitude) # 152.4  # default until we add a geocoder that can look up actual elevation; weather_data.get('elevation')  # assuming 'elevation' key, replace if different
+            elevation = await locate.get_elevation(latitude, longitude) # 152.4  # default until we add a geocoder that can look up actual elevation; weather_data.get('elevation')  # assuming 'elevation' key, replace if different
             location_point = f"POINTZ({longitude} {latitude} {elevation})" if longitude and latitude and elevation else None
 
             # Correct for the datetime objects 
