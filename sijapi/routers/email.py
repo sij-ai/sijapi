@@ -204,7 +204,7 @@ tags:
         with open(md_path, 'w', encoding='utf-8') as md_file:
             md_file.write(markdown_content)
 
-        L.INFO(f"Saved markdown to {md_path}")
+        L.DEBUG(f"Saved markdown to {md_path}")
 
         return True
     
@@ -221,7 +221,12 @@ async def autorespond(this_email: IncomingEmail, account: EmailAccount):
         auto_response_subject = f"Auto-Response Re: {this_email.subject}"
         auto_response_body = await generate_auto_response_body(this_email, profile, account)
         L.DEBUG(f"Auto-response: {auto_response_body}")
-        await send_auto_response(this_email.sender, auto_response_subject, auto_response_body, profile, account)
+        success = await send_auto_response(this_email.sender, auto_response_subject, auto_response_body, profile, account)
+        if success == True:
+            return True
+        
+    L.WARN(f"We were not able to successfully auto-respond to {this_email.subject}")
+    return False
 
 async def send_auto_response(to_email, subject, body, profile, account):
     try:
@@ -264,13 +269,16 @@ async def save_processed_uid(filename: Path, account_name: str, uid: str):
         f.write(f"{account_name}:{uid}\n")
 
 async def process_account_summarization(account: EmailAccount):
-    summarized_log = EMAIL_LOGS / "summarized.txt"
+    summarized_log = EMAIL_LOGS / account.name / "summarized.txt"
+    os.makedirs(summarized_log.parent, exist_ok = True)
 
     while True:
         try:
             processed_uids = await load_processed_uids(summarized_log)
+            L.DEBUG(f"{len(processed_uids)} emails marked as already summarized are being ignored.")
             with get_imap_connection(account) as inbox:
                 unread_messages = inbox.messages(unread=True)
+                L.DEBUG(f"There are {len(unread_messages)} unread messages.")
                 for uid, message in unread_messages:
                     uid_str = uid.decode() if isinstance(uid, bytes) else str(uid)
                     if uid_str not in processed_uids:
@@ -282,27 +290,35 @@ async def process_account_summarization(account: EmailAccount):
                             recipients=recipients,
                             subject=message.subject,
                             body=clean_email_content(message.body['html'][0]) if message.body['html'] else clean_email_content(message.body['plain'][0]) or "",
-                            attachments=message.attachments
+                            attachments=message.attachments 
                         )
                         if account.summarize:
                             save_success = await save_email(this_email, account)
                             if save_success:
                                 await save_processed_uid(summarized_log, account.name, uid_str)
                                 L.INFO(f"Summarized email: {uid_str}")
+                            else:
+                                L.WARN(f"Failed to summarize {this_email.subject}")
+                        else:
+                            L.INFO(f"account.summarize shows as false.")
+                    else:
+                        L.DEBUG(f"Skipping {uid_str} because it was already processed.")
         except Exception as e:
             L.ERR(f"An error occurred during summarization for account {account.name}: {e}")
         
         await asyncio.sleep(account.refresh)
 
 async def process_account_autoresponding(account: EmailAccount):
-    autoresponded_log = EMAIL_LOGS / "autoresponded.txt"
+    autoresponded_log = EMAIL_LOGS / account.name / "autoresponded.txt"
+    os.makedirs(autoresponded_log.parent, exist_ok = True)
 
     while True:
         try:
             processed_uids = await load_processed_uids(autoresponded_log)
-            L.DEBUG(f"{len(processed_uids)} already processed emails are being ignored.")
+            L.DEBUG(f"{len(processed_uids)} emails marked as already responded to are being ignored.")
             with get_imap_connection(account) as inbox:
                 unread_messages = inbox.messages(unread=True)
+                L.DEBUG(f"There are {len(unread_messages)} unread messages.")
                 for uid, message in unread_messages:
                     uid_str = uid.decode() if isinstance(uid, bytes) else str(uid)
                     if uid_str not in processed_uids:
@@ -320,7 +336,10 @@ async def process_account_autoresponding(account: EmailAccount):
                         respond_success = await autorespond(this_email, account)
                         if respond_success:
                             await save_processed_uid(autoresponded_log, account.name, uid_str)
-                            L.WARN(f"Auto-responded to email: {uid_str}")
+                            L.WARN(f"Auto-responded to email: {this_email.subject}")
+                        else:
+                            L.WARN(f"Failed auto-response to {this_email.subject}")
+                    L.DEBUG(f"Skipping {uid_str} because it was already processed.")
         except Exception as e:
             L.ERR(f"An error occurred during auto-responding for account {account.name}: {e}")
         

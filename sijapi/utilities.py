@@ -295,7 +295,7 @@ async def extract_text_from_pdf(file_path: str) -> str:
         L.ERR(f"Error extracting text with pdfminer.six: {e}")
 
     # If both methods fail or are deemed insufficient, use OCR as the last resort
-    L.INFO("Falling back to OCR for text extraction...")
+    L.DEBUG("Falling back to OCR for text extraction...")
     return await ocr_pdf(file_path)
 
 async def is_valid_pdf(file_path: str) -> bool:
@@ -331,7 +331,7 @@ async def extract_text_from_pdf(file_path: str) -> str:
         L.ERR(f"Error extracting text with pdfminer.six: {str(e)}")
 
     # Fall back to OCR
-    L.INFO("Falling back to OCR for text extraction...")
+    L.DEBUG("Falling back to OCR for text extraction...")
     try:
         images = convert_from_path(file_path)
         ocr_texts = await asyncio.gather(*(asyncio.to_thread(pytesseract.image_to_string, img) for img in images))

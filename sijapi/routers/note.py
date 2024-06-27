@@ -211,7 +211,7 @@ async def process_for_daily_note(file: Optional[UploadFile] = File(None), text: 
     
 
     text_entry = text if text else ""
-    L.INFO(f"transcription: {transcription}\nfile_entry: {file_entry}\ntext_entry: {text_entry}")
+    L.DEBUG(f"transcription: {transcription}\nfile_entry: {file_entry}\ntext_entry: {text_entry}")
     return await add_to_daily_note(transcription, file_entry, text_entry, now)
 
 
@@ -520,19 +520,22 @@ async def process_archive(
     markdown_content = f"---\n"
     markdown_content += f"title: {readable_title}\n"
     markdown_content += f"added: {timestamp}\n"
+    markdown_content += f"url: {url}"
+    markdown_content += f"date: {datetime.now().strftime('%Y-%m-%d')}"
     markdown_content += f"---\n\n"
     markdown_content += f"# {readable_title}\n\n"
+    markdown_content += f"Clipped from [{url}]({url}) on {timestamp}"
     markdown_content += content
     
     try:
         markdown_path.parent.mkdir(parents=True, exist_ok=True)
         with open(markdown_path, 'w', encoding=encoding) as md_file:
             md_file.write(markdown_content)
-        L.INFO(f"Successfully saved to {markdown_path}")
+        L.DEBUG(f"Successfully saved to {markdown_path}")
         return markdown_path
     except Exception as e:
-        L.ERR(f"Failed to write markdown file: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to write markdown file: {str(e)}")
+        L.WARN(f"Failed to write markdown file: {str(e)}")
+        return None
 
 def download_file(url, folder):
     os.makedirs(folder, exist_ok=True)
@@ -800,7 +803,7 @@ async def update_dn_weather(date_time: datetime):
                 city = city if city else loc.city
                 city = city if city else loc.house_number + ' ' + loc.road
                 
-                L.INFO(f"City geocoded: {city}")
+                L.DEBUG(f"City geocoded: {city}")
 
         # Assemble journal path
         absolute_path, relative_path = assemble_journal_path(date_time, filename="Weather", extension=".md", no_timestamp = True)
