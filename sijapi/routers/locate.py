@@ -16,12 +16,15 @@ import aiohttp
 import folium
 import time as timer
 from dateutil.parser import parse as dateutil_parse
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
+from srtm import get_data
 from pathlib import Path
 from pydantic import BaseModel
 from typing import Optional, Any, Dict, List, Union
 from datetime import datetime, timedelta, time
-from sijapi import L, DB, TZ, NAMED_LOCATIONS, DynamicTZ
-from sijapi.classes import Location
+from sijapi import L, DB, TZ, NAMED_LOCATIONS, DynamicTZ, GEOLOCATOR
+from sijapi.classes import Location, PyGeolocator
 from sijapi.utilities import haversine
 # from osgeo import gdal
 # import elevation
@@ -29,9 +32,23 @@ from sijapi.utilities import haversine
 
 locate = APIRouter()
 
+async def reverse_geocode_local_1(lat, lon, date_time: datetime = datetime.now()) -> Optional[Location]:
+    date_time = await localize_datetime(date_time)
+    loc = GEOLOCATOR.lookup(lat, lon)
+    location = Location(
+        latitude = lat,
+        longitude = lon,
+        elevation = loc['elevation'],
+        datetime = date_time,
+        city = loc['city'],
+        state = loc['state'],
+        country = loc['country']
+    )
+    return location
+
 async def reverse_geocode(latitude: float, longitude: float, elevation: float = None) -> Optional[Location]:
     url = f"https://nominatim.openstreetmap.org/reverse?format=json&lat={latitude}&lon={longitude}"
-    L.INFO(f"Calling Nominatim API at {url}")
+    L.DEBUG(f"Calling Nominatim API at {url}")
     headers = {
         'User-Agent': 'sij.law/1.0 (sij@sij.law)',  # replace with your app name and email
     }
@@ -67,7 +84,7 @@ async def reverse_geocode(latitude: float, longitude: float, elevation: float = 
             county=address.get("county"),
             country_code=address.get("country_code")
         )
-        L.INFO(f"Created Location object: {location}")
+        L.DEBUG(f"Created Location object: {location}")
         return location
     except aiohttp.ClientError as e:
         L.ERR(f"Error: {e}")
@@ -140,35 +157,55 @@ async def geocode(zip_code: Optional[str] = None, latitude: Optional[float] = No
         raise Exception("An error occurred while processing your request")
 
 
-async def localize_datetime(dt, fetch_loc: bool = False):
-    initial_dt = dt
 
-    if fetch_loc:
-        loc = await get_last_location()
-        tz = await DynamicTZ.get_current(loc)
-    else:
-        tz = await DynamicTZ.get_last()
+async def localize_datetime(dt: Union[str, datetime], fetch_loc: bool = False) -> datetime:
+    """
+    Localize a datetime object or string to the appropriate timezone.
 
+    Args:
+    dt (Union[str, datetime]): The datetime to localize.
+    fetch_loc (bool): Whether to fetch the current location for timezone.
+
+    Returns:
+    datetime: A timezone-aware datetime object.
+
+    Raises:
+    ValueError: If the input cannot be parsed as a datetime.
+    """
     try:
+        # Convert string to datetime if necessary
         if isinstance(dt, str):
             dt = dateutil_parse(dt)
-            L.DEBUG(f"{initial_dt} was a string so we attempted converting to datetime. Result: {dt}")
+            L.DEBUG(f"Converted string '{dt}' to datetime object.")
 
-        if isinstance(dt, datetime):
-            L.DEBUG(f"{dt} is a datetime object, so we will ensure it is tz-aware.")
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=TZ) 
-                # L.DEBUG(f"{dt} should now be tz-aware. Returning it now.")
-                return dt
-            else:
-                # L.DEBUG(f"{dt} already was tz-aware. Returning it now.")
-                return dt
+        if not isinstance(dt, datetime):
+            raise ValueError("Input must be a string or datetime object.")
+
+        # Fetch timezone
+        if fetch_loc:
+            loc = await get_last_location()
+            tz = await DynamicTZ.get_current(loc)
+            L.DEBUG(f"Fetched current timezone: {tz}")
         else:
-            L.ERR(f"Conversion failed")
-            raise TypeError("Conversion failed")
-    except Exception as e:
+            tz = await DynamicTZ.get_last()
+            L.DEBUG(f"Using last known timezone: {tz}")
+
+        # Localize datetime
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=tz)
+            L.DEBUG(f"Localized naive datetime to {tz}")
+        elif dt.tzinfo != tz:
+            dt = dt.astimezone(tz)
+            L.DEBUG(f"Converted datetime from {dt.tzinfo} to {tz}")
+
+        return dt
+
+    except ValueError as e:
         L.ERR(f"Error parsing datetime: {e}")
-        raise TypeError("Input must be a string or datetime object")
+        raise
+    except Exception as e:
+        L.ERR(f"Unexpected error in localize_datetime: {e}")
+        raise ValueError(f"Failed to localize datetime: {e}")
 
 
 
@@ -199,37 +236,27 @@ async def find_override_locations(lat: float, lon: float) -> Optional[str]:
     return closest_location
 
 
-async def get_elevation(latitude, longitude):
-    url = "https://api.open-elevation.com/api/v1/lookup"
+async def get_elevation(latitude: float, longitude: float, unit: str = "m") -> float:
+    loop = asyncio.get_running_loop()
     
-    payload = {
-        "locations": [
-            {
-                "latitude": latitude,
-                "longitude": longitude
-            }
-        ]
-    }
-    
-    async with aiohttp.ClientSession() as session:
-        try:
-            async with session.post(url, json=payload) as response:
-                response.raise_for_status()  # Raise an exception for unsuccessful requests
-                
-                data = await response.json()
-                
-                if "results" in data:
-                    elevation = data["results"][0]["elevation"]
-                    return elevation
-                else:
-                    return None
+    # Create a thread pool executor
+    with ThreadPoolExecutor() as pool:
+        # Run get_data() in a separate thread
+        srtm_data = await loop.run_in_executor(pool, get_data)
         
-        except aiohttp.ClientError as e:
-            L.ERR(f"Error: {e}")
-            return None
-
-
-
+        # Run get_elevation() in a separate thread
+        elevation = await loop.run_in_executor(
+            pool, 
+            partial(srtm_data.get_elevation, latitude, longitude)
+        )
+    if unit == "m":
+        return elevation
+    elif unit == "km":
+        return elevation / 1000
+    elif unit == "ft" or unit == "'":
+        return elevation * 3.280839895
+    else:
+        raise ValueError(f"Unsupported unit: {unit}")
 
 async def fetch_locations(start: datetime, end: datetime = None) -> List[Location]:
     start_datetime = await localize_datetime(start)
@@ -501,8 +528,6 @@ async def post_locate_endpoint(locations: Union[Location, List[Location]]):
             L.WARN(f"Posing location to database appears to have failed.")
     
     return {"message": "Locations and weather updated", "results": responses}
-
-# Assuming post_location and get_elevation are async functions. If not, they should be modified to be async as well.
 
 
 

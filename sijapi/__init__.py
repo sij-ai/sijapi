@@ -12,7 +12,7 @@ from typing import List, Optional
 import traceback
 import logging
 from .logs import Logger
-from .classes import AutoResponder, IMAPConfig, SMTPConfig, EmailAccount, EmailContact, IncomingEmail, TimezoneTracker, Database
+from .classes import AutoResponder, IMAPConfig, SMTPConfig, EmailAccount, EmailContact, IncomingEmail, TimezoneTracker, Database, PyGeolocator
 
 # from sijapi.config.config import load_config
 # cfg = load_config()
@@ -56,7 +56,6 @@ os.makedirs(REQUESTS_DIR, exist_ok=True)
 REQUESTS_LOG_PATH = LOGS_DIR / "requests.log"
 
 
-
 ### LOCATE AND WEATHER LOCALIZATIONS
 USER_FULLNAME = os.getenv('USER_FULLNAME')
 USER_BIO = os.getenv('USER_BIO')
@@ -68,7 +67,8 @@ VISUALCROSSING_API_KEY = os.getenv("VISUALCROSSING_API_KEY")
 GEONAMES_TXT = DATA_DIR / "geonames.txt"
 LOCATIONS_CSV = DATA_DIR / "US.csv"
 TZ = tz.gettz(os.getenv("TZ", "America/Los_Angeles"))
-DynamicTZ = TimezoneTracker(DB)
+TZ_CACHE = DATA_DIR / "tzcache.json"
+DynamicTZ = TimezoneTracker(TZ_CACHE)
 
 ### Obsidian & notes
 ALLOWED_FILENAME_CHARS = r'[^\w \.-]'
@@ -90,13 +90,14 @@ YEAR_FMT = os.getenv("YEAR_FMT")
 MONTH_FMT = os.getenv("MONTH_FMT")
 DAY_FMT = os.getenv("DAY_FMT")
 DAY_SHORT_FMT = os.getenv("DAY_SHORT_FMT")
+GEOLOCATOR = PyGeolocator
 
 ### Large language model
 LLM_URL = os.getenv("LLM_URL", "http://localhost:11434")
 LLM_SYS_MSG = os.getenv("SYSTEM_MSG", "You are a helpful AI assistant.")
 SUMMARY_INSTRUCT = os.getenv('SUMMARY_INSTRUCT', "You are an AI assistant that provides accurate summaries of text -- nothing more and nothing less. You must not include ANY extraneous text other than the sumary. Do not include comments apart from the summary, do not preface the summary, and do not provide any form of postscript. Do not add paragraph breaks. Do not add any kind of formatting. Your response should begin with, consist of, and end with an accurate plaintext summary.")
 SUMMARY_INSTRUCT_TTS = os.getenv('SUMMARY_INSTRUCT_TTS', "You are an AI assistant that provides email summaries for Sanjay. Your response will undergo Text-To-Speech conversion and added to Sanjay's private podcast. Providing adequate context (Sanjay did not send this question to you, he will only hear your response) but aiming for conciseness and precision, and bearing in mind the Text-To-Speech conversion (avoiding acronyms and formalities), summarize the following email.")
-DEFAULT_LLM = os.getenv("DEFAULT_LLM", "dolphin-mistral")
+DEFAULT_LLM = os.getenv("DEFAULT_LLM", "llama3")
 DEFAULT_VISION = os.getenv("DEFAULT_VISION", "llava")
 DEFAULT_VOICE = os.getenv("DEFAULT_VOICE", "Luna")
 DEFAULT_11L_VOICE = os.getenv("DEFAULT_11L_VOICE", "Victoria")

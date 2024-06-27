@@ -51,7 +51,7 @@
     "inputs": {
       "batch_size": 1,
       "width": 1023,
-      "height": 1024,
+      "height": 1025,
       "resampling": "bicubic",
       "X": 0,
       "Y": 0,

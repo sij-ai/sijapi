@@ -42,7 +42,7 @@ if MS365_TOGGLE is True:
 
     @calendar.get("/o365/oauth_redirect")
     async def oauth_redirect(code: str = None, error: str = None):
-        L.INFO(f"Received request to /o365/oauth_redirect")
+        L.DEBUG(f"Received request to /o365/oauth_redirect")
         if error:
             L.ERR(f"OAuth2 Error: {error}")
             raise HTTPException(
@@ -75,7 +75,7 @@ if MS365_TOGGLE is True:
 
     @calendar.get("/o365/me")
     async def read_items():
-        L.INFO(f"Received request to /o365/me")
+        L.DEBUG(f"Received request to /o365/me")
         token = await load_token()
         if not token:
             raise HTTPException(
@@ -204,7 +204,7 @@ def get_calendar_ids() -> Dict[str, str]:
     calendar_identifiers = {
         calendar.title() : calendar.calendarIdentifier() for calendar in all_calendars
     }
-    L.INFO(f"{calendar_identifiers}")
+    L.DEBUG(f"{calendar_identifiers}")
     return calendar_identifiers
 
 # Helper to convert datetime to NSDate
