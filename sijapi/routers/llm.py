@@ -94,6 +94,32 @@ async def query_ollama(usr: str, sys: str = LLM_SYS_MSG, model: str = DEFAULT_LL
     else:
         L.DEBUG("No choices found in response")
         return None
+    
+async def query_ollama_multishot(
+    message_list: List[str],
+    sys: str = LLM_SYS_MSG,
+    model: str = DEFAULT_LLM,
+    max_tokens: int = 200
+):
+    if len(message_list) % 2 == 0:
+        raise ValueError("message_list must contain an odd number of strings")
+
+    messages = [{"role": "system", "content": sys}]
+    
+    for i in range(0, len(message_list), 2):
+        messages.append({"role": "user", "content": message_list[i]})
+        if i + 1 < len(message_list):
+            messages.append({"role": "assistant", "content": message_list[i+1]})
+
+    LLM = Ollama()
+    response = await LLM.chat(model=model, messages=messages, options={"num_predict": max_tokens})
+    L.DEBUG(response)
+
+    if "message" in response and "content" in response["message"]:
+        return response["message"]["content"]
+    else:
+        L.DEBUG("No content found in response")
+        return None
 
 def is_vision_request(content):
     return False

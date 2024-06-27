@@ -172,7 +172,7 @@ async def localize_datetime(dt, fetch_loc: bool = False):
 
 
 
-def find_override_locations(lat: float, lon: float) -> Optional[str]:
+async def find_override_locations(lat: float, lon: float) -> Optional[str]:
     # Load the JSON file
     with open(NAMED_LOCATIONS, 'r') as file:
         locations = yaml.safe_load(file)
@@ -510,21 +510,21 @@ async def get_last_location() -> Optional[Location]:
     query_datetime = datetime.now(TZ)
     L.DEBUG(f"Query_datetime: {query_datetime}")
 
-    location = await fetch_last_location_before(query_datetime)
+    this_location = await fetch_last_location_before(query_datetime)
 
-    if location:
-        L.DEBUG(f"location: {location}")
-        return location
+    if this_location:
+        L.DEBUG(f"location: {this_location}")
+        return this_location
     
     return None
 
 @locate.get("/locate", response_model=Location)
 async def get_last_location_endpoint() -> JSONResponse:
-    location = await get_last_location()
+    this_location = await get_last_location()
 
-    if location:
-        location_dict = location.model_dump()
-        location_dict["datetime"] = location.datetime.isoformat()
+    if this_location:
+        location_dict = this_location.model_dump()
+        location_dict["datetime"] = this_location.datetime.isoformat()
         return JSONResponse(content=location_dict)
     else:
         raise HTTPException(status_code=404, detail="No location found before the specified datetime")

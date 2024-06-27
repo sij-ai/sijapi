@@ -33,7 +33,7 @@ from sijapi import (
     MAC_UN, MAC_PW, MAC_ID, TS_TAILNET, DATA_DIR, SD_IMAGE_DIR, PUBLIC_KEY, OBSIDIAN_VAULT_DIR
 )
 from sijapi.utilities import bool_convert, sanitize_filename, assemble_journal_path
-from sijapi.routers.locate import localize_datetime
+from sijapi.routers import note, locate
 
 
 serve = APIRouter(tags=["public"])
@@ -67,9 +67,9 @@ def is_valid_date(date_str: str) -> bool:
         return False
 
 @serve.get("/notes/{file_path:path}")
-async def get_file(file_path: str):
+async def get_file_endpoint(file_path: str):
     try:
-        date_time = await localize_datetime(file_path);
+        date_time = await locate.localize_datetime(file_path);
         absolute_path, local_path = assemble_journal_path(date_time, no_timestamp = True)
     except ValueError as e:
         L.DEBUG(f"Unable to parse {file_path} as a date, now trying to use it as a local path")

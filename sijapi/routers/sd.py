@@ -59,17 +59,18 @@ async def sd_endpoint(request: Request):
 @sd.get("/v1/images/generations")
 async def sd_endpoint(
     request: Request,
-    prompt: str = Query(..., description="The prompt for image generation")
+    prompt: str = Query(..., description="The prompt for image generation"),
+    earlyout: str = Query("output", description="specify web for a redirect, or json for a json with the local path")
 ):
+    image_path = await workflow(prompt=prompt, scene="wallpaper", earlyout=earlyout)
+    web_path = get_web_path(image_path)
 
-    earlyout = "web"
-    image_path = await workflow(prompt=prompt, scene="wallpaper", earlyout="web")
     if earlyout == "web":
-        return RedirectResponse(url=image_path, status_code=303)
+        return RedirectResponse(url=web_path, status_code=303)
     else:
         return JSONResponse({"image_url": image_path})
 
-async def workflow(prompt: str, scene: str = None, size: str = None, style: str = "photorealistic", earlyout: str = "local", destination_path: str = None, downscale_to_fit: bool = False):
+async def workflow(prompt: str, scene: str = None, size: str = None, style: str = "photorealistic", earlyout: str = None, destination_path: str = None, downscale_to_fit: bool = False):
     scene_data = get_scene(scene)
     if not scene_data:
         scene_data = get_matching_scene(prompt)
@@ -105,14 +106,15 @@ async def workflow(prompt: str, scene: str = None, size: str = None, style: str 
     max_size = max(width, height) if downscale_to_fit else None
     destination_path = Path(destination_path).with_suffix(".jpg") if destination_path else SD_IMAGE_DIR / f"{prompt_id}.jpg"
 
-    if not earlyout:
-        await generate_and_save_image(prompt_id, saved_file_key, max_size, destination_path)
+    if earlyout:
+        asyncio.create_task(generate_and_save_image(prompt_id, saved_file_key, max_size, destination_path))
+        L.DEBUG(f"Returning {destination_path}")
+        return destination_path
     
     else:
-        asyncio.create_task(generate_and_save_image(prompt_id, saved_file_key, max_size, destination_path))
-
-    await asyncio.sleep(0.5)
-    return get_web_path(destination_path) if earlyout == "web" else destination_path
+        await generate_and_save_image(prompt_id, saved_file_key, max_size, destination_path)
+        L.DEBUG(f"Returning {destination_path}")
+        return destination_path
 
 
 async def generate_and_save_image(prompt_id, saved_file_key, max_size, destination_path):
