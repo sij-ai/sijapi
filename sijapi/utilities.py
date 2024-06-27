@@ -25,7 +25,7 @@ import asyncpg
 from sshtunnel import SSHTunnelForwarder
 from fastapi import Depends, HTTPException, Request, UploadFile
 from fastapi.security.api_key import APIKeyHeader
-from sijapi import L, GLOBAL_API_KEY, YEAR_FMT, MONTH_FMT, DAY_FMT, DAY_SHORT_FMT, OBSIDIAN_VAULT_DIR, ALLOWED_FILENAME_CHARS, MAX_FILENAME_LENGTH
+from sijapi import L, GLOBAL_API_KEY, YEAR_FMT, MONTH_FMT, DAY_FMT, DAY_SHORT_FMT, OBSIDIAN_VAULT_DIR, ALLOWED_FILENAME_CHARS, MAX_PATH_LENGTH, ARCHIVE_DIR
 
 api_key_header = APIKeyHeader(name="Authorization")
 
@@ -36,6 +36,35 @@ def validate_api_key(request: Request, api_key: str = Depends(api_key_header)):
             api_key = api_key.lower().split("bearer ")[-1]
         if api_key != GLOBAL_API_KEY and api_key_query != GLOBAL_API_KEY:
             raise HTTPException(status_code=401, detail="Invalid or missing API key")
+
+
+def assemble_archive_path(filename: str, extension: str = ".md", date_time: datetime = datetime.now(), subdir: str = None) -> Tuple[Path, Path]:
+    year = date_time.strftime(YEAR_FMT)
+    month = date_time.strftime(MONTH_FMT)
+    day = date_time.strftime(DAY_FMT)
+    day_short = date_time.strftime(DAY_SHORT_FMT)
+    timestamp = date_time.strftime("%H%M%S")
+    
+    # Ensure the extension is preserved
+    base_name, ext = os.path.splitext(filename)
+    extension = ext if ext else extension
+    
+    # Initial sanitization
+    sanitized_base = sanitize_filename(base_name, '')
+    filename = f"{day_short} {timestamp} {sanitized_base}{extension}"
+    
+    relative_path = Path(year) / month / day / filename
+    absolute_path = ARCHIVE_DIR / relative_path
+    
+    # Ensure the total path length doesn't exceed MAX_PATH_LENGTH
+    while len(str(absolute_path)) > MAX_PATH_LENGTH:
+        # Truncate the sanitized_base, not the full filename
+        sanitized_base = sanitized_base[:-1]
+        filename = f"{day_short} {timestamp} {sanitized_base}{extension}"
+        relative_path = Path(year) / month / day / filename
+        absolute_path = ARCHIVE_DIR / relative_path
+    
+    return absolute_path, relative_path
 
 
 def assemble_journal_path(date_time: datetime, subdir: str = None, filename: str = None, extension: str = None, no_timestamp: bool = False) -> Tuple[Path, Path]:
@@ -51,32 +80,22 @@ def assemble_journal_path(date_time: datetime, subdir: str = None, filename: str
     timestamp = date_time.strftime("%H%M%S")
 
     relative_path = Path("journal") / year / month / day
-
     if not subdir and not filename and not extension:
-        # standard daily note handler, where only the date_time was specified:
         relative_path = relative_path / f"{day}.md"
 
     else:
-        
         if subdir:
-            # datestamped subdirectory handler
             relative_path = relative_path / f"{day_short} {subdir}"
 
         if filename:
-            filename = sanitize_filename(filename)
-            filename = f"{day_short} {filename}" if no_timestamp else f"{day_short} {timestamp} {filename}"
-
             if extension:
                 extension = extension if extension.startswith(".") else f".{extension}"
-                filename = f"{filename}{extension}" if not filename.endswith(extension) else filename
-
             else:
-                if has_valid_extension(filename, [".md", ".m4a", ".wav", ".aiff", ".flac", ".mp3", ".mp4", ".pdf", ".js", ".json", ".yaml", ".py"]):
-                    L.DEBUG(f"Provided filename has a valid extension, so we use that.")
-                else:
-                    filename = f"{filename}.md"
-                    L.DEBUG(f"We are forcing the file to be a .md")
-  
+                extension = validate_extension(filename, [".md", ".m4a", ".wav", ".aiff", ".flac", ".mp3", ".mp4", ".pdf", ".js", ".json", ".yaml", ".py"]) or ".md"
+               
+            filename = sanitize_filename(filename)
+            filename = f"{day_short} {filename}" if no_timestamp else f"{day_short} {timestamp} {filename}"
+            filename = f"{filename}{extension}" if not filename.endswith(extension) else filename
             relative_path = relative_path / filename
         
         else:
@@ -84,20 +103,16 @@ def assemble_journal_path(date_time: datetime, subdir: str = None, filename: str
             return None, None
     
     absolute_path = OBSIDIAN_VAULT_DIR / relative_path 
-
     os.makedirs(absolute_path.parent, exist_ok=True)
- 
     return absolute_path, relative_path
 
 
-def has_valid_extension(filename, valid_extensions=None):
+def validate_extension(filename, valid_extensions=None):
     if valid_extensions is None:
-        # Check if there's any extension
-        return bool(os.path.splitext(filename)[1])
+        return os.path.splitext(filename)
     else:
-        # Check if the extension is in the list of valid extensions
-        return os.path.splitext(filename)[1].lower() in valid_extensions
-    
+        extension = os.path.splitext(filename)[-1].lower()
+        return extension if extension in valid_extensions else None
 
 def prefix_lines(text: str, prefix: str = '> ') -> str:
     lines = text.split('\n')
@@ -138,7 +153,7 @@ def get_extension(file):
 
 
 
-def sanitize_filename(text, max_length=MAX_FILENAME_LENGTH):
+def sanitize_filename(text, extension: str = None, max_length: int = MAX_PATH_LENGTH):
     """Sanitize a string to be used as a safe filename while protecting the file extension."""
     L.DEBUG(f"Filename before sanitization: {text}")
 
@@ -149,7 +164,7 @@ def sanitize_filename(text, max_length=MAX_FILENAME_LENGTH):
 
     max_base_length = max_length - len(extension)
     if len(base_name) > max_base_length:
-        base_name = base_name[:max_base_length].rstrip()
+        base_name = base_name[:max_base_length - 5].rstrip()
     final_filename = base_name + extension
 
     L.DEBUG(f"Filename after sanitization: {final_filename}")

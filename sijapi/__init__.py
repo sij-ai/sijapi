@@ -72,7 +72,7 @@ DynamicTZ = TimezoneTracker(DB)
 
 ### Obsidian & notes
 ALLOWED_FILENAME_CHARS = r'[^\w \.-]'
-MAX_FILENAME_LENGTH = 255
+MAX_PATH_LENGTH = 254
 OBSIDIAN_VAULT_DIR = Path(os.getenv("OBSIDIAN_BASE_DIR") or HOME_DIR / "Nextcloud" / "notes")
 OBSIDIAN_JOURNAL_DIR = OBSIDIAN_VAULT_DIR / "journal"
 OBSIDIAN_RESOURCES_DIR = "obsidian/resources"
@@ -80,6 +80,8 @@ OBSIDIAN_BANNER_DIR = f"{OBSIDIAN_RESOURCES_DIR}/banners"
 os.makedirs(Path(OBSIDIAN_VAULT_DIR) / OBSIDIAN_BANNER_DIR, exist_ok=True)
 OBSIDIAN_BANNER_SCENE = os.getenv("OBSIDIAN_BANNER_SCENE", "wallpaper")
 OBSIDIAN_CHROMADB_COLLECTION = os.getenv("OBSIDIAN_CHROMADB_COLLECTION", "obsidian")
+ARCHIVE_DIR = Path(os.getenv("ARCHIVE_DIR", OBSIDIAN_VAULT_DIR / "archive"))
+os.makedirs(ARCHIVE_DIR, exist_ok=True)
 DOC_DIR = DATA_DIR / "docs"
 os.makedirs(DOC_DIR, exist_ok=True)
 
