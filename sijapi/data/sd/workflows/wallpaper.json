@@ -51,23 +51,23 @@
     "inputs": {
       "batch_size": 1,
       "width": 1023,
-      "height": 1025,
+      "height": 1024,
       "resampling": "bicubic",
       "X": 0,
       "Y": 0,
       "Z": 0,
       "evolution": 0.1,
       "frame": 1,
-      "scale": 13.1,
+      "scale": 6.66,
       "octaves": 8,
-      "persistence": 6.2,
-      "lacunarity": 5.38,
-      "exponent": 4.5600000000000005,
-      "brightness": -0.16,
-      "contrast": -0.13,
+      "persistence": 3,
+      "lacunarity": 6.66,
+      "exponent": 1,
+      "brightness": 0,
+      "contrast": 0,
       "clamp_min": 0,
       "clamp_max": 1,
-      "seed": 474669046020372,
+      "seed": 300432080108380,
       "device": "cpu",
       "optional_vae": [
         "4",
@@ -81,10 +81,10 @@
   },
   "13": {
     "inputs": {
-      "seed": 484066073734968,
-      "steps": 8,
+      "seed": 1125631171146107,
+      "steps": 10,
       "cfg": 1.8,
-      "sampler_name": "dpmpp_2m_sde",
+      "sampler_name": "dpmpp_2s_ancestral",
       "scheduler": "karras",
       "start_at_step": 0,
       "end_at_step": 10000,
@@ -197,57 +197,6 @@
       "title": "CLIP Text Encode (Prompt)"
     }
   },
-  "22": {
-    "inputs": {
-      "upscale_by": 2,
-      "seed": 589846903558615,
-      "steps": 20,
-      "cfg": 1.6,
-      "sampler_name": "heun",
-      "scheduler": "sgm_uniform",
-      "denoise": 0.21,
-      "mode_type": "Linear",
-      "tile_width": 512,
-      "tile_height": 512,
-      "mask_blur": 8,
-      "tile_padding": 32,
-      "seam_fix_mode": "Band Pass",
-      "seam_fix_denoise": 1,
-      "seam_fix_width": 64,
-      "seam_fix_mask_blur": 8,
-      "seam_fix_padding": 16,
-      "force_uniform_tiles": true,
-      "tiled_decode": true,
-      "image": [
-        "38",
-        0
-      ],
-      "model": [
-        "4",
-        0
-      ],
-      "positive": [
-        "6",
-        0
-      ],
-      "negative": [
-        "23",
-        0
-      ],
-      "vae": [
-        "4",
-        2
-      ],
-      "upscale_model": [
-        "24",
-        0
-      ]
-    },
-    "class_type": "UltimateSDUpscale",
-    "_meta": {
-      "title": "Ultimate SD Upscale"
-    }
-  },
   "23": {
     "inputs": {
       "conditioning": [
@@ -276,7 +225,7 @@
         0
       ],
       "image": [
-        "22",
+        "39",
         0
       ]
     },
@@ -313,21 +262,6 @@
       "title": "ImageBlur"
     }
   },
-  "36": {
-    "inputs": {
-      "mode": "bicubic",
-      "factor": 1.25,
-      "align": "true",
-      "samples": [
-        "13",
-        0
-      ]
-    },
-    "class_type": "Latent Upscale by Factor (WAS)",
-    "_meta": {
-      "title": "Latent Upscale by Factor (WAS)"
-    }
-  },
   "38": {
     "inputs": {
       "samples": [
@@ -342,6 +276,66 @@
     "class_type": "VAEDecode",
     "_meta": {
       "title": "VAE Decode"
+    }
+  },
+  "39": {
+    "inputs": {
+      "upscale_by": 2,
+      "seed": 687912408861107,
+      "steps": 20,
+      "cfg": 1.9000000000000001,
+      "sampler_name": "heun",
+      "scheduler": "sgm_uniform",
+      "denoise": 0.2,
+      "mode_type": "Linear",
+      "tile_width": 512,
+      "tile_height": 512,
+      "mask_blur": 8,
+      "tile_padding": 32,
+      "seam_fix_mode": "Band Pass",
+      "seam_fix_denoise": 1,
+      "seam_fix_width": 64,
+      "seam_fix_mask_blur": 8,
+      "seam_fix_padding": 16,
+      "force_uniform_tiles": true,
+      "tiled_decode": true,
+      "image": [
+        "38",
+        0
+      ],
+      "model": [
+        "4",
+        0
+      ],
+      "positive": [
+        "6",
+        0
+      ],
+      "negative": [
+        "23",
+        0
+      ],
+      "vae": [
+        "4",
+        2
+      ],
+      "upscale_model": [
+        "40",
+        0
+      ]
+    },
+    "class_type": "UltimateSDUpscale",
+    "_meta": {
+      "title": "Ultimate SD Upscale"
+    }
+  },
+  "40": {
+    "inputs": {
+      "model_name": "RealESRGAN_x2.pth"
+    },
+    "class_type": "UpscaleModelLoader",
+    "_meta": {
+      "title": "Load Upscale Model"
     }
   }
 }

@@ -7,15 +7,19 @@ from io import BytesIO
 from pydantic import BaseModel
 import os, re
 import uuid
+import aiohttp
 import traceback
 import requests
 import mimetypes
 import shutil
+from bs4 import BeautifulSoup
+from markdownify import markdownify as md
 from typing import Optional, Union, Dict, List, Tuple
 from urllib.parse import urlparse
 from urllib3.util.retry import Retry
 from newspaper import Article
 import trafilatura
+from readability import Document
 from requests.adapters import HTTPAdapter
 import re
 import os
@@ -23,10 +27,10 @@ from datetime import timedelta, datetime, time as dt_time, date as dt_date
 from fastapi import HTTPException, status
 from pathlib import Path
 from fastapi import APIRouter, Query, HTTPException
-from sijapi import L, OBSIDIAN_VAULT_DIR, OBSIDIAN_RESOURCES_DIR, BASE_URL, OBSIDIAN_BANNER_SCENE, DEFAULT_11L_VOICE, DEFAULT_VOICE, TZ
+from sijapi import L, OBSIDIAN_VAULT_DIR, OBSIDIAN_RESOURCES_DIR, ARCHIVE_DIR, BASE_URL, OBSIDIAN_BANNER_SCENE, DEFAULT_11L_VOICE, DEFAULT_VOICE, TZ
 from sijapi.routers import tts, llm, time, sd, locate, weather, asr, calendar
 from sijapi.routers.locate import Location
-from sijapi.utilities import assemble_journal_path, convert_to_12_hour_format, sanitize_filename, convert_degrees_to_cardinal, HOURLY_COLUMNS_MAPPING
+from sijapi.utilities import assemble_journal_path, assemble_archive_path, convert_to_12_hour_format, sanitize_filename, convert_degrees_to_cardinal, HOURLY_COLUMNS_MAPPING
 
 
 note = APIRouter()
@@ -440,9 +444,9 @@ async def parse_article(url: str, source: Optional[str] = None):
     L.INFO(f"Parsed {np3k.title}")
     
 
-    title = np3k.title or traf.title
+    title = (np3k.title or traf.title) or url
     authors = np3k.authors or traf.author
-    authors = authors if isinstance(authors, List) else [authors]
+    authors = (authors if isinstance(authors, List) else [authors])
     date = np3k.publish_date or traf.date
     try:
         date = await locate.localize_datetime(date)
@@ -455,7 +459,7 @@ async def parse_article(url: str, source: Optional[str] = None):
     domain = traf.sitename or urlparse(url).netloc.replace('www.', '').title()
     tags = np3k.meta_keywords or traf.categories or traf.tags
     tags = tags if isinstance(tags, List) else [tags]
-
+    
     return {
         'title': title.replace("  ", " "),
         'authors': authors,
@@ -469,6 +473,33 @@ async def parse_article(url: str, source: Optional[str] = None):
     }
 
 
+async def html_to_markdown(url: str = None, source: str = None) -> Optional[str]:
+    if source:
+        html_content = source
+    elif url:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as response:
+                html_content = await response.text()
+    else:
+        L.ERR(f"Unable to convert nothing to markdown.")
+        return None
+
+    # Use readability to extract the main content
+    doc = Document(html_content)
+    cleaned_html = doc.summary()
+
+    # Parse the cleaned HTML with BeautifulSoup for any additional processing
+    soup = BeautifulSoup(cleaned_html, 'html.parser')
+
+    # Remove any remaining unwanted elements
+    for element in soup(['script', 'style']):
+        element.decompose()
+
+    # Convert to markdown
+    markdown_content = md(str(soup), heading_style="ATX")
+
+    return markdown_content
+
 
 async def process_archive(
     background_tasks: BackgroundTasks,
@@ -476,59 +507,32 @@ async def process_archive(
     title: Optional[str] = None,
     encoding: str = 'utf-8',
     source: Optional[str] = None,
-):
-
+) -> Path:
     timestamp = datetime.now().strftime('%b %d, %Y at %H:%M')
-
-    parsed_content = await parse_article(url, source)
-    if parsed_content is None:
-        return {"error": "Failed to retrieve content"}
-    content = parsed_content["content"]
-
-    readable_title = sanitize_filename(title if title else parsed_content.get("title", "Untitled"))
-    if not readable_title:
-        readable_title = timestamp
-
-    markdown_path = OBSIDIAN_VAULT_DIR / "archive"
-
+    readable_title = title if title else f"{url} - {timestamp}"
+    
+    content = await html_to_markdown(url, source)
+    if content is None:
+        raise HTTPException(status_code=400, detail="Failed to convert content to markdown")
+    
+    markdown_path, relative_path = assemble_archive_path(readable_title, ".md")
+    
+    markdown_content = f"---\n"
+    markdown_content += f"title: {readable_title}\n"
+    markdown_content += f"added: {timestamp}\n"
+    markdown_content += f"---\n\n"
+    markdown_content += f"# {readable_title}\n\n"
+    markdown_content += content
+    
     try:
-        frontmatter = f"""---
-title: {readable_title}
-author: {parsed_content.get('author', 'Unknown')}
-published: {parsed_content.get('date_published', 'Unknown')}
-added: {timestamp}
-excerpt: {parsed_content.get('excerpt', '')}
----
-"""
-        body = f"# {readable_title}\n\n"
-
-        try:
-            authors = parsed_content.get('author', '')
-            authors_in_brackets = [f"[[{author.strip()}]]" for author in authors.split(",")]
-            authors_string = ", ".join(authors_in_brackets)
-
-            body += f"by {authors_string} in [{parsed_content.get('domain', urlparse(url).netloc.replace('www.', ''))}]({parsed_content.get('url', url)}).\n\n"
-            body += content
-            markdown_content = frontmatter + body
-        except Exception as e:
-            L.ERR(f"Failed to combine elements of article markdown.")
-
-        try:
-            with open(markdown_path, 'w', encoding=encoding) as md_file:
-                md_file.write(markdown_content)
-
-            L.INFO(f"Successfully saved to {markdown_path}")
-            add_to_daily_note
-            return markdown_path
-        
-        except Exception as e:
-            L.ERR(f"Failed to write markdown file")
-            raise HTTPException(status_code=500, detail=str(e))
-        
+        markdown_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(markdown_path, 'w', encoding=encoding) as md_file:
+            md_file.write(markdown_content)
+        L.INFO(f"Successfully saved to {markdown_path}")
+        return markdown_path
     except Exception as e:
-        L.ERR(f"Failed to clip {url}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
+        L.ERR(f"Failed to write markdown file: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to write markdown file: {str(e)}")
 
 def download_file(url, folder):
     os.makedirs(folder, exist_ok=True)
@@ -567,7 +571,6 @@ def copy_file(local_path, folder):
     destination_path = os.path.join(folder, filename)
     shutil.copy(local_path, destination_path)
     return filename
-
 
 
 async def save_file(file: UploadFile, folder: Path) -> Path:
