@@ -12,6 +12,7 @@ import traceback
 import requests
 import mimetypes
 import shutil
+from zoneinfo import ZoneInfo
 from bs4 import BeautifulSoup
 from markdownify import markdownify as md
 from typing import Optional, Union, Dict, List, Tuple
@@ -24,16 +25,19 @@ from requests.adapters import HTTPAdapter
 import re
 import os
 from datetime import timedelta, datetime, time as dt_time, date as dt_date
+from dateutil.parser import parse as dateutil_parse
 from fastapi import HTTPException, status
 from pathlib import Path
 from fastapi import APIRouter, Query, HTTPException
-from sijapi import L, OBSIDIAN_VAULT_DIR, OBSIDIAN_RESOURCES_DIR, ARCHIVE_DIR, BASE_URL, OBSIDIAN_BANNER_SCENE, DEFAULT_11L_VOICE, DEFAULT_VOICE, TZ
+from sijapi import L, OBSIDIAN_VAULT_DIR, OBSIDIAN_RESOURCES_DIR, ARCHIVE_DIR, BASE_URL, OBSIDIAN_BANNER_SCENE, DEFAULT_11L_VOICE, DEFAULT_VOICE, TZ, DynamicTZ
 from sijapi.routers import tts, llm, time, sd, locate, weather, asr, calendar
 from sijapi.routers.locate import Location
 from sijapi.utilities import assemble_journal_path, assemble_archive_path, convert_to_12_hour_format, sanitize_filename, convert_degrees_to_cardinal, HOURLY_COLUMNS_MAPPING
 
 
 note = APIRouter()
+
+
 
 
 @note.get("/note/bulk/{dt_start}/{dt_end}")
@@ -51,7 +55,36 @@ async def build_daily_note_range_endpoint(dt_start: str, dt_end: str):
     
     return {"urls": results}
 
-async def build_daily_note(date_time: datetime):
+
+
+@note.post("/note/create")
+async def build_daily_note_endpoint(
+    date_str: Optional[str] = Form(datetime.now().strftime("%Y-%m-%d")),
+    location: Optional[str] = Form(None)
+):
+    lat, lon = None, None
+    try:
+        if not date_str:
+            date_str = datetime.now().strftime("%Y-%m-%d")
+        if location:
+            lat, lon = map(float, location.split(','))
+            tz = ZoneInfo(DynamicTZ.find(lat, lon))
+            date_time = dateutil_parse(date_str).replace(tzinfo=tz)
+        else:
+            raise ValueError("Location is not provided or invalid.")
+    except (ValueError, AttributeError, TypeError) as e:
+        L.WARN(f"Falling back to localized datetime due to error: {e}")
+        try:
+            date_time = locate.localize_datetime(date_str)
+            places = await locate.fetch_locations(date_time)
+            lat, lon = places[0].latitude, places[0].longitude
+        except Exception as e:
+            return JSONResponse(content={"error": str(e)}, status_code=400)
+
+    path = await build_daily_note(date_time, lat, lon)
+    return JSONResponse(content={"path": path}, status_code=200)
+
+async def build_daily_note(date_time: datetime, lat: float = None, lon: float = None):
     '''
 Obsidian helper. Takes a datetime and creates a new daily note. Note: it uses the sijapi configuration file to place the daily note and does NOT presently interface with Obsidian's daily note or periodic notes extensions. It is your responsibility to ensure they match.
     '''
@@ -62,8 +95,11 @@ Obsidian helper. Takes a datetime and creates a new daily note. Note: it uses th
     day_after = (date_time + timedelta(days=1)).strftime("%Y-%m-%d %A")  # 2024-05-28 Tuesday formatting
     header = f"# [[{day_before}|← ]] {formatted_day} [[{day_after}| →]]\n\n"
     
-    places = await locate.fetch_locations(date_time)
-    location = await locate.reverse_geocode(places[0].latitude, places[0].longitude)
+    if not lat or not lon:
+        places = await locate.fetch_locations(date_time)
+        lat, lon = places[0].latitude, places[0].longitude
+
+    location = await locate.reverse_geocode(lat, lon)
     
     timeslips = await build_daily_timeslips(date_time)
 
@@ -185,30 +221,35 @@ async def process_for_daily_note(file: Optional[UploadFile] = File(None), text: 
         L.DEBUG("File received...")
         file_content = await file.read()
         audio_io = BytesIO(file_content)
-        file_type, _ = mimetypes.guess_type(file.filename) 
+        
+        # Improve error handling for file type guessing
+        guessed_type = mimetypes.guess_type(file.filename)
+        file_type = guessed_type[0] if guessed_type[0] else "application/octet-stream"
+        
         L.DEBUG(f"Processing as {file_type}...")
-        subdir = file_type.title() or "Documents"
+        
+        # Extract the main type (e.g., 'audio', 'image', 'video')
+        main_type = file_type.split('/')[0]
+        subdir = main_type.title() if main_type else "Documents"
+        
         absolute_path, relative_path = assemble_journal_path(now, subdir=subdir, filename=file.filename)
         L.DEBUG(f"Destination path: {absolute_path}")
-
+        
         with open(absolute_path, 'wb') as f:
             f.write(file_content)
-            L.DEBUG(f"Processing {f.name}...")
-
-        if 'audio' in file_type:
+        L.DEBUG(f"Processing {f.name}...")
+        
+        if main_type == 'audio':
             transcription = await asr.transcribe_audio(file_path=absolute_path, params=asr.TranscribeParams(model="small-en", language="en", threads=6))
             file_entry = f"![[{relative_path}]]"
-
-        elif 'image' in file_type:
+        elif main_type == 'image':
             file_entry = f"![[{relative_path}]]"
-        
         else:
             file_entry = f"[Source]({relative_path})"
     
     text_entry = text if text else ""
-    L.DEBUG(f"transcription: {transcription}\nfile_entry: {file_entry}\ntext_entry: {text_entry}")
-    return await add_to_daily_note(transcription, file_entry, text_entry, now)
-
+    L.DEBUG(f"transcription: {transcription_entry}\nfile_entry: {file_entry}\ntext_entry: {text_entry}")
+    return await add_to_daily_note(transcription_entry, file_entry, text_entry, now)
 
 async def add_to_daily_note(transcription: str = None, file_link: str = None, additional_text: str = None, date_time: datetime = None):
     date_time = date_time or datetime.now()
@@ -772,15 +813,19 @@ async def post_update_daily_weather_and_calendar_and_timeslips(date: str) -> Pla
     await build_daily_timeslips(date_time)
     return f"[Refresh]({BASE_URL}/update/note/{date_time.strftime('%Y-%m-%d')}"
 
-async def update_dn_weather(date_time: datetime):
+async def update_dn_weather(date_time: datetime, lat: float = None, lon: float = None):
     try:
-        L.DEBUG(f"Updating weather for {date_time}")
+        if lat and lon:
+            place = locate.reverse_geocode(lat, lon)
 
-        places = await locate.fetch_locations(date_time)
-        place = places[0]
-        lat = place.latitude
-        lon = place.longitude
+        else:
+            L.DEBUG(f"Updating weather for {date_time}")
 
+            places = await locate.fetch_locations(date_time)
+            place = places[0]
+            lat = place.latitude
+            lon = place.longitude
+        
         city = await locate.find_override_locations(lat, lon)
         if city:
             L.INFO(f"Using override location: {city}")
@@ -833,7 +878,7 @@ async def update_dn_weather(date_time: datetime):
                         wind_str += f", gusts to {DailyWeather.get('windgust')}mph"
 
                     uvindex = DailyWeather.get('uvindex', 0)
-                    uvwarn = f" - :LiRadiation: Caution! UVI today is {uvindex}! :LiRadiation:\n" if uvindex > 8 else ""
+                    uvwarn = f" - :LiRadiation: Caution! UVI today is {uvindex}! :LiRadiation:\n" if (uvindex and uvindex > 8) else ""
 
                     sunrise = DailyWeather.get('sunrise')
                     sunset = DailyWeather.get('sunset')
