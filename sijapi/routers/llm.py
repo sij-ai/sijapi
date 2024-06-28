@@ -35,6 +35,7 @@ llm = APIRouter()
 # Initialize chromadb client
 client = chromadb.Client()
 OBSIDIAN_CHROMADB_COLLECTION = client.create_collection("obsidian")
+VISION_MODELS = ["llava-phi3", "moondream", "llava", "llava-llama3", "llava:34b", "llava:13b-v1.5-q8_0"]
 
 # Function to read all markdown files in the folder
 def read_markdown_files(folder: Path):
@@ -79,6 +80,14 @@ async def generate_response(prompt: str):
     )
     return {"response": output['response']}
 
+@llm.post("/llm/query")
+async def llm_query_endpoint(
+    message: str = Form(...),
+    file: Optional(UploadFile) = Form(...)
+):
+    return None
+
+
 
 async def query_ollama(usr: str, sys: str = LLM_SYS_MSG, model: str = DEFAULT_LLM, max_tokens: int = 200):
     messages = [{"role": "system", "content": sys},
@@ -121,8 +130,6 @@ async def query_ollama_multishot(
         L.DEBUG("No content found in response")
         return None
 
-def is_vision_request(content):
-    return False
 
 @llm.post("/v1/chat/completions")
 async def chat_completions(request: Request):
