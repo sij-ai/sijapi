@@ -136,7 +136,7 @@ async def hook_changedetection(webhook_data: dict):
 
 
 @serve.post("/cl/search")
-async def hook_cl_search(request: Request, background_tasks: BackgroundTasks):
+async def hook_cl_search(request: Request, bg_tasks: BackgroundTasks):
     client_ip = request.client.host
     L.DEBUG(f"Received request from IP: {client_ip}")
     data = await request.json()
@@ -150,7 +150,7 @@ async def hook_cl_search(request: Request, background_tasks: BackgroundTasks):
         json.dump(payload, file, indent=2)
 
     for result in results:
-        background_tasks.add_task(cl_search_process_result, result)
+        bg_tasks.add_task(cl_search_process_result, result)
     return JSONResponse(content={"message": "Received"}, status_code=status.HTTP_200_OK)
 
 @serve.post("/cl/docket")
@@ -283,7 +283,7 @@ def shellfish_run_widget_command(args: List[str]):
 
 
 ### COURTLISTENER FUNCTIONS ###
-async def cl_docket(data, client_ip, background_tasks: BackgroundTasks):
+async def cl_docket(data, client_ip, bg_tasks: BackgroundTasks):
     payload = data['payload']
     results = data['payload']['results']
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -292,7 +292,7 @@ async def cl_docket(data, client_ip, background_tasks: BackgroundTasks):
         json.dump(payload, file, indent=2)
 
     for result in results:
-        background_tasks.add_task(cl_docket_process, result)
+        bg_tasks.add_task(cl_docket_process, result)
     return JSONResponse(content={"message": "Received"}, status_code=status.HTTP_200_OK)
 
 async def cl_docket_process(result):

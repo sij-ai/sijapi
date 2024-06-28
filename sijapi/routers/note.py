@@ -133,7 +133,7 @@ async def build_daily_timeslips(date):
 ### CLIPPER ###
 @note.post("/clip")
 async def clip_post(
-    background_tasks: BackgroundTasks,
+    bg_tasks: BackgroundTasks,
     file: UploadFile = None,
     url: Optional[str] = Form(None),
     source: Optional[str] = Form(None),
@@ -142,65 +142,64 @@ async def clip_post(
     voice: str = Form(DEFAULT_VOICE),
     encoding: str = Form('utf-8')
 ):
-    markdown_filename = await process_article(background_tasks, url, title, encoding, source, tts, voice)
+    markdown_filename = await process_article(bg_tasks, url, title, encoding, source, tts, voice)
     return {"message": "Clip saved successfully", "markdown_filename": markdown_filename}
 
 @note.post("/archive")
 async def archive_post(
-    background_tasks: BackgroundTasks,
+    bg_tasks: BackgroundTasks,
     file: UploadFile = None,
     url: Optional[str] = Form(None),
     source: Optional[str] = Form(None),
     title: Optional[str] = Form(None),
     encoding: str = Form('utf-8')
 ):
-    markdown_filename = await process_archive(background_tasks, url, title, encoding, source)
+    markdown_filename = await process_archive(bg_tasks, url, title, encoding, source)
     return {"message": "Clip saved successfully", "markdown_filename": markdown_filename}
 
 @note.get("/clip")
 async def clip_get(
-    background_tasks: BackgroundTasks,
+    bg_tasks: BackgroundTasks,
     url: str,
     title: Optional[str] = Query(None),
     encoding: str = Query('utf-8'),
     tts: str = Query('summary'),
     voice: str = Query(DEFAULT_VOICE)
 ):
-    markdown_filename = await process_article(background_tasks, url, title, encoding, tts=tts, voice=voice)
+    markdown_filename = await process_article(bg_tasks, url, title, encoding, tts=tts, voice=voice)
     return {"message": "Clip saved successfully", "markdown_filename": markdown_filename}
 
 @note.post("/note/add")
-async def note_add_endpoint(file: Optional[UploadFile] = File(None), text: Optional[str] = Form(None), source: Optional[str] = Form(None)):
+async def note_add_endpoint(file: Optional[UploadFile] = File(None), text: Optional[str] = Form(None), source: Optional[str] = Form(None), bg_tasks: BackgroundTasks = None):
+    L.DEBUG(f"Received request on /note/add...")
     if not file and not text:
+        L.WARN(f"... without any file or text!")
         raise HTTPException(status_code=400, detail="Either text or a file must be provided")
     else:
-        result = await process_for_daily_note(file, text, source)
+        result = await process_for_daily_note(file, text, source, bg_tasks)
         L.INFO(f"Result on /note/add: {result}")
         return JSONResponse(result, status_code=204)
 
-async def process_for_daily_note(file: Optional[UploadFile] = File(None), text: Optional[str] = None, source: Optional[str] = None):
+async def process_for_daily_note(file: Optional[UploadFile] = File(None), text: Optional[str] = None, source: Optional[str] = None, bg_tasks: BackgroundTasks = None):
     now = datetime.now()
-
     transcription_entry = ""
     file_entry = ""
     if file:
+        L.DEBUG("File received...")
         file_content = await file.read()
         audio_io = BytesIO(file_content)
         file_type, _ = mimetypes.guess_type(file.filename) 
-
-        if 'audio' in file_type:
-            subdir = "Audio"
-        elif 'image' in file_type:
-            subdir = "Images"
-        else:
-            subdir = "Documents"
-
+        L.DEBUG(f"Processing as {file_type}...")
+        subdir = file_type.title() or "Documents"
         absolute_path, relative_path = assemble_journal_path(now, subdir=subdir, filename=file.filename)
+        L.DEBUG(f"Destination path: {absolute_path}")
+
         with open(absolute_path, 'wb') as f:
             f.write(file_content)
+            L.DEBUG(f"Processing {f.name}...")
 
         if 'audio' in file_type:
-            transcription = await asr.transcribe_audio(file_path=absolute_path, params=asr.TranscribeParams(model="small-en", language="en", threads=6))
+            transcription = await asr.transcribe_audio(file_path=absolute_path, params=asr.TranscribeParams(model="small-en", language="en", threads=6), bg_tasks=bg_tasks)
             file_entry = f"![[{relative_path}]]"
 
         elif 'image' in file_type:
@@ -209,7 +208,6 @@ async def process_for_daily_note(file: Optional[UploadFile] = File(None), text: 
         else:
             file_entry = f"[Source]({relative_path})"
     
-
     text_entry = text if text else ""
     L.DEBUG(f"transcription: {transcription}\nfile_entry: {file_entry}\ntext_entry: {text_entry}")
     return await add_to_daily_note(transcription, file_entry, text_entry, now)
@@ -262,7 +260,7 @@ async def handle_text(title:str, summary:str, extracted_text:str, date_time: dat
 
 
 async def process_document(
-    background_tasks: BackgroundTasks,
+    bg_tasks: BackgroundTasks,
     document: File,
     title: Optional[str] = None,
     tts_mode: str = "summary",
@@ -301,7 +299,7 @@ added: {timestamp}
                 datetime_str = datetime.now().strftime("%Y%m%d%H%M%S")
                 audio_filename = f"{datetime_str} {readable_title}"
                 audio_path = await tts.generate_speech(
-                    background_tasks=background_tasks,
+                    bg_tasks=bg_tasks,
                     text=tts_text,
                     voice=voice,
                     model="eleven_turbo_v2",
@@ -336,7 +334,7 @@ added: {timestamp}
 
 
 async def process_article(
-    background_tasks: BackgroundTasks,
+    bg_tasks: BackgroundTasks,
     url: str,
     title: Optional[str] = None,
     encoding: str = 'utf-8',
@@ -397,7 +395,7 @@ tags:
             datetime_str = datetime.now().strftime("%Y%m%d%H%M%S")
             audio_filename = f"{datetime_str} {readable_title}"
             try:
-                audio_path = await tts.generate_speech(background_tasks=background_tasks, text=tts_text, voice=voice, model="eleven_turbo_v2", podcast=True, title=audio_filename,
+                audio_path = await tts.generate_speech(bg_tasks=bg_tasks, text=tts_text, voice=voice, model="eleven_turbo_v2", podcast=True, title=audio_filename,
                 output_dir=Path(OBSIDIAN_VAULT_DIR) / OBSIDIAN_RESOURCES_DIR)
                 audio_ext = Path(audio_path).suffix
                 obsidian_link = f"![[{OBSIDIAN_RESOURCES_DIR}/{audio_filename}{audio_ext}]]"
@@ -502,7 +500,7 @@ async def html_to_markdown(url: str = None, source: str = None) -> Optional[str]
 
 
 async def process_archive(
-    background_tasks: BackgroundTasks,
+    bg_tasks: BackgroundTasks,
     url: str,
     title: Optional[str] = None,
     encoding: str = 'utf-8',

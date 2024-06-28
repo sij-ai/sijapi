@@ -41,7 +41,7 @@ transcription_results = {}
 @asr.post("/transcribe")
 @asr.post("/v1/audio/transcription")
 async def transcribe_endpoint(
-    background_tasks: BackgroundTasks,
+    bg_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     params: str = Form(...)
 ):
@@ -58,7 +58,7 @@ async def transcribe_endpoint(
         temp_file.write(await file.read())
         temp_file_path = temp_file.name
     
-    transcription_job = await transcribe_audio(file_path=temp_file_path, params=parameters, background_tasks=background_tasks)
+    transcription_job = await transcribe_audio(file_path=temp_file_path, params=parameters, bg_tasks=bg_tasks)
     job_id = transcription_job["job_id"]
 
     # Poll for completion
@@ -80,12 +80,13 @@ async def transcribe_endpoint(
     # If we've reached this point, the transcription has taken too long
     return JSONResponse(content={"status": "timeout", "message": "Transcription is taking longer than expected. Please check back later."}, status_code=202)
 
-async def transcribe_audio(file_path, params: TranscribeParams, background_tasks: BackgroundTasks):
+async def transcribe_audio(file_path, params: TranscribeParams, bg_tasks: BackgroundTasks):
+    L.DEBUG(f"Transcribing audio file from {file_path}...")
     file_path = await convert_to_wav(file_path)
-    model = params.model if params.model in WHISPER_CPP_MODELS else 'small' 
+    model = params.model if params.model in WHISPER_CPP_MODELS else 'small'
     model_path = WHISPER_CPP_DIR / 'models' / f'ggml-{model}.bin'
     command = [str(WHISPER_CPP_DIR / 'build' / 'bin' / 'main')]
-    command.extend(['-m', str(model_path)]) 
+    command.extend(['-m', str(model_path)])
     command.extend(['-t', str(max(1, min(params.threads or MAX_CPU_CORES, MAX_CPU_CORES)))])
     command.extend(['-np'])  # Always enable no-prints
 
@@ -117,7 +118,6 @@ async def transcribe_audio(file_path, params: TranscribeParams, background_tasks
         command.extend(['--dtw', params.dtw])
 
     command.extend(['-f', file_path])
-  
     L.DEBUG(f"Command: {command}")
 
     # Create a unique ID for this transcription job
@@ -127,9 +127,21 @@ async def transcribe_audio(file_path, params: TranscribeParams, background_tasks
     transcription_results[job_id] = {"status": "processing", "result": None}
 
     # Run the transcription in a background task
-    background_tasks.add_task(process_transcription, command, file_path, job_id)
+    bg_tasks.add_task(process_transcription, command, file_path, job_id)
 
-    return {"job_id": job_id}
+    max_wait_time = 300  # 5 minutes
+    poll_interval = 1  # 1 second
+    start_time = asyncio.get_event_loop().time()
+
+    while asyncio.get_event_loop().time() - start_time < max_wait_time:
+        job_status = transcription_results.get(job_id, {})
+        if job_status["status"] == "completed":
+            return job_status["result"]
+        elif job_status["status"] == "failed":
+            raise Exception(f"Transcription failed: {job_status.get('error', 'Unknown error')}")
+        await asyncio.sleep(poll_interval)
+
+    raise TimeoutError("Transcription timed out")
 
 async def process_transcription(command, file_path, job_id):
     try:

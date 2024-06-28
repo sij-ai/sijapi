@@ -522,7 +522,7 @@ async def summarize_post(file: Optional[UploadFile] = File(None), text: Optional
     return summarized_text
 
 @llm.post("/speaksummary")
-async def summarize_tts_endpoint(background_tasks: BackgroundTasks, instruction: str = Form(SUMMARY_INSTRUCT), file: Optional[UploadFile] = File(None), text: Optional[str] = Form(None), voice: Optional[str] = Form(DEFAULT_VOICE), speed: Optional[float] = Form(1.2), podcast: Union[bool, str] = Form(False)):
+async def summarize_tts_endpoint(bg_tasks: BackgroundTasks, instruction: str = Form(SUMMARY_INSTRUCT), file: Optional[UploadFile] = File(None), text: Optional[str] = Form(None), voice: Optional[str] = Form(DEFAULT_VOICE), speed: Optional[float] = Form(1.2), podcast: Union[bool, str] = Form(False)):
     
     podcast = str_to_bool(str(podcast))  # Proper boolean conversion
     text_content = text if text else extract_text(file)
@@ -546,8 +546,8 @@ async def summarize_tts(
     timestamp = dt_datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"{timestamp}{filename}.wav" 
     
-    background_tasks = BackgroundTasks()
-    final_output_path = await generate_speech(background_tasks, summarized_text, voice, "xtts", speed=speed, podcast=podcast, title=filename)
+    bg_tasks = BackgroundTasks()
+    final_output_path = await generate_speech(bg_tasks, summarized_text, voice, "xtts", speed=speed, podcast=podcast, title=filename)
     L.DEBUG(f"summary_tts completed with final_output_path: {final_output_path}")
     return final_output_path
     
@@ -578,7 +578,7 @@ def calculate_max_tokens(text: str) -> int:
     return min(tokens_count // 4, SUMMARY_CHUNK_SIZE)
 
 
-async def extract_text(file: Union[UploadFile, bytes, bytearray, str, Path], background_tasks: BackgroundTasks = None) -> str:
+async def extract_text(file: Union[UploadFile, bytes, bytearray, str, Path], bg_tasks: BackgroundTasks = None) -> str:
     if isinstance(file, UploadFile):
         file_extension = get_extension(file)
         temp_file_path = tempfile.mktemp(suffix=file_extension)
@@ -614,8 +614,8 @@ async def extract_text(file: Union[UploadFile, bytes, bytearray, str, Path], bac
     elif file_ext == '.docx':
         text_content = await extract_text_from_docx(file_path)
 
-    if background_tasks and 'temp_file_path' in locals():
-        background_tasks.add_task(os.remove, temp_file_path)
+    if bg_tasks and 'temp_file_path' in locals():
+        bg_tasks.add_task(os.remove, temp_file_path)
     elif 'temp_file_path' in locals():
         os.remove(temp_file_path)
 

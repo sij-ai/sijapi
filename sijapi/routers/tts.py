@@ -87,7 +87,7 @@ def select_voice(voice_name: str) -> str:
 @tts.post("/v1/audio/speech")
 async def generate_speech_endpoint(
     request: Request,
-    background_tasks: BackgroundTasks,
+    bg_tasks: BackgroundTasks,
     model: str = Form("eleven_turbo_v2"),
     text: Optional[str] = Form(None),
     file: Optional[UploadFile] = File(None),
@@ -110,7 +110,7 @@ async def generate_speech_endpoint(
             else:
                 return await stream_tts(text_content, speed, voice, voice_file)
         else:
-            return await generate_speech(background_tasks, text_content, voice, voice_file, model, speed, podcast)
+            return await generate_speech(bg_tasks, text_content, voice, voice_file, model, speed, podcast)
     except Exception as e:
         L.ERR(f"Error in TTS: {str(e)}")
         L.ERR(traceback.format_exc())
@@ -118,7 +118,7 @@ async def generate_speech_endpoint(
 
 
 async def generate_speech(
-    background_tasks: BackgroundTasks,
+    bg_tasks: BackgroundTasks,
     text: str,
     voice: str = None,
     voice_file: UploadFile = None,
@@ -142,8 +142,8 @@ async def generate_speech(
         
         elif model == "xtts":
             L.INFO(f"Using XTTS2")
-            final_output_dir = await local_tts(text, speed, voice, voice_file, podcast, background_tasks, title, output_dir)
-            background_tasks.add_task(os.remove, str(final_output_dir))
+            final_output_dir = await local_tts(text, speed, voice, voice_file, podcast, bg_tasks, title, output_dir)
+            bg_tasks.add_task(os.remove, str(final_output_dir))
             return str(final_output_dir)
         else:
             raise HTTPException(status_code=400, detail="Invalid model specified")
@@ -282,7 +282,7 @@ async def local_tts(
     voice: str,
     voice_file = None,
     podcast: bool = False,
-    background_tasks: BackgroundTasks = None,
+    bg_tasks: BackgroundTasks = None,
     title: str = None,
     output_path: Optional[Path] = None
 ) -> str:
