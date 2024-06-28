@@ -14,6 +14,7 @@ import asyncio
 import pytz
 import aiohttp
 import folium
+from zoneinfo import ZoneInfo
 import time as timer
 from dateutil.parser import parse as dateutil_parse
 from concurrent.futures import ThreadPoolExecutor
@@ -158,38 +159,35 @@ async def geocode(zip_code: Optional[str] = None, latitude: Optional[float] = No
 
 
 
+
 async def localize_datetime(dt: Union[str, datetime], fetch_loc: bool = False) -> datetime:
-    """
-    Localize a datetime object or string to the appropriate timezone.
-
-    Args:
-    dt (Union[str, datetime]): The datetime to localize.
-    fetch_loc (bool): Whether to fetch the current location for timezone.
-
-    Returns:
-    datetime: A timezone-aware datetime object.
-
-    Raises:
-    ValueError: If the input cannot be parsed as a datetime.
-    """
     try:
         # Convert string to datetime if necessary
         if isinstance(dt, str):
             dt = dateutil_parse(dt)
             L.DEBUG(f"Converted string '{dt}' to datetime object.")
-
+        
         if not isinstance(dt, datetime):
             raise ValueError("Input must be a string or datetime object.")
-
-        # Fetch timezone
+        
+        # Fetch timezone string
         if fetch_loc:
             loc = await get_last_location()
-            tz = await DynamicTZ.get_current(loc)
-            L.DEBUG(f"Fetched current timezone: {tz}")
+            tz_str = DynamicTZ.find(loc[0], loc[1])  # Assuming loc is (lat, lon)
         else:
-            tz = await DynamicTZ.get_last()
-            L.DEBUG(f"Using last known timezone: {tz}")
-
+            tz_str = DynamicTZ.last_timezone
+        
+        L.DEBUG(f"Retrieved timezone string: {tz_str}")
+        
+        # Convert timezone string to ZoneInfo object
+        try:
+            tz = ZoneInfo(tz_str)
+        except Exception as e:
+            L.WARN(f"Invalid timezone string '{tz_str}'. Falling back to UTC. Error: {e}")
+            tz = ZoneInfo('UTC')
+        
+        L.DEBUG(f"Using timezone: {tz}")
+        
         # Localize datetime
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=tz)
@@ -197,16 +195,14 @@ async def localize_datetime(dt: Union[str, datetime], fetch_loc: bool = False) -
         elif dt.tzinfo != tz:
             dt = dt.astimezone(tz)
             L.DEBUG(f"Converted datetime from {dt.tzinfo} to {tz}")
-
+        
         return dt
-
     except ValueError as e:
         L.ERR(f"Error parsing datetime: {e}")
         raise
     except Exception as e:
         L.ERR(f"Unexpected error in localize_datetime: {e}")
         raise ValueError(f"Failed to localize datetime: {e}")
-
 
 
 async def find_override_locations(lat: float, lon: float) -> Optional[str]:
