@@ -134,7 +134,6 @@ async def build_daily_timeslips(date):
 @note.post("/clip")
 async def clip_post(
     bg_tasks: BackgroundTasks,
-    file: UploadFile = None,
     url: Optional[str] = Form(None),
     source: Optional[str] = Form(None),
     title: Optional[str] = Form(None),
@@ -147,14 +146,12 @@ async def clip_post(
 
 @note.post("/archive")
 async def archive_post(
-    bg_tasks: BackgroundTasks,
-    file: UploadFile = None,
     url: Optional[str] = Form(None),
     source: Optional[str] = Form(None),
     title: Optional[str] = Form(None),
     encoding: str = Form('utf-8')
 ):
-    markdown_filename = await process_archive(bg_tasks, url, title, encoding, source)
+    markdown_filename = await process_archive(url, title, encoding, source)
     return {"message": "Clip saved successfully", "markdown_filename": markdown_filename}
 
 @note.get("/clip")
@@ -199,7 +196,7 @@ async def process_for_daily_note(file: Optional[UploadFile] = File(None), text: 
             L.DEBUG(f"Processing {f.name}...")
 
         if 'audio' in file_type:
-            transcription = await asr.transcribe_audio(file_path=absolute_path, params=asr.TranscribeParams(model="small-en", language="en", threads=6), bg_tasks=bg_tasks)
+            transcription = await asr.transcribe_audio(file_path=absolute_path, params=asr.TranscribeParams(model="small-en", language="en", threads=6))
             file_entry = f"![[{relative_path}]]"
 
         elif 'image' in file_type:
@@ -500,7 +497,6 @@ async def html_to_markdown(url: str = None, source: str = None) -> Optional[str]
 
 
 async def process_archive(
-    bg_tasks: BackgroundTasks,
     url: str,
     title: Optional[str] = None,
     encoding: str = 'utf-8',
