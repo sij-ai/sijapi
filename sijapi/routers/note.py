@@ -32,12 +32,43 @@ from pathlib import Path
 from fastapi import APIRouter, Query, HTTPException
 from sijapi import L, OBSIDIAN_VAULT_DIR, OBSIDIAN_RESOURCES_DIR, ARCHIVE_DIR, BASE_URL, OBSIDIAN_BANNER_SCENE, DEFAULT_11L_VOICE, DEFAULT_VOICE, GEO
 from sijapi.routers import cal, loc, tts, llm, time, sd, weather, asr
-from sijapi.utilities import assemble_journal_path, assemble_archive_path, convert_to_12_hour_format, sanitize_filename, convert_degrees_to_cardinal, HOURLY_COLUMNS_MAPPING
+from sijapi.utilities import assemble_journal_path, assemble_archive_path, convert_to_12_hour_format, sanitize_filename, convert_degrees_to_cardinal, check_file_name, HOURLY_COLUMNS_MAPPING
 from sijapi.classes import Location
 
 note = APIRouter()
 
+def list_and_correct_impermissible_files(root_dir, rename: bool = False):
+    """List and correct all files with impermissible names."""
+    impermissible_files = []
+    for dirpath, _, filenames in os.walk(root_dir):
+        for filename in filenames:
+            if check_file_name(filename):
+                file_path = Path(dirpath) / filename
+                impermissible_files.append(file_path)
+                L.DEBUG(f"Impermissible file found: {file_path}")
+                
+                # Sanitize the file name
+                new_filename = sanitize_filename(filename)
+                new_file_path = Path(dirpath) / new_filename
+                
+                # Ensure the new file name does not already exist
+                if new_file_path.exists():
+                    counter = 1
+                    base_name, ext = os.path.splitext(new_filename)
+                    while new_file_path.exists():
+                        new_filename = f"{base_name}_{counter}{ext}"
+                        new_file_path = Path(dirpath) / new_filename
+                        counter += 1
+                
+                # Rename the file
+                if rename:
+                    os.rename(file_path, new_file_path)
+                    L.DEBUG(f"Renamed: {file_path} -> {new_file_path}")
+    
+    return impermissible_files
 
+journal = OBSIDIAN_VAULT_DIR / "journal"
+list_and_correct_impermissible_files(journal, rename=True)
 
 ### Daily Note Builder ###
 

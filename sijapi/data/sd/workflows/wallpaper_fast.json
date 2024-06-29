@@ -10,7 +10,7 @@
   },
   "6": {
     "inputs": {
-      "text": "API_PPrompt",
+      "text": "API_PrePrompt",
       "clip": [
         "4",
         1
@@ -23,7 +23,7 @@
   },
   "7": {
     "inputs": {
-      "text": "API_NPrompt",
+      "text": "API_NegativePrompt",
       "clip": [
         "4",
         1
@@ -202,7 +202,7 @@
   },
   "21": {
     "inputs": {
-      "text": "API_SPrompt",
+      "text": "API_StylePrompt",
       "clip": [
         "4",
         1

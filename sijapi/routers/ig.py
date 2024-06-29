@@ -483,15 +483,15 @@ def update_prompt(workflow: dict, post: dict, positive: str, found_key=[None], p
                     for index, item in enumerate(value):
                         update_prompt(item, post, positive, found_key, current_path + [str(index)])
 
-                if value == "API_PPrompt":
+                if value == "API_PrePrompt":
                     workflow[key] = post.get(value, "") + positive
-                    L.DEBUG(f"Updated API_PPrompt to: {workflow[key]}")
-                elif value == "API_SPrompt":
+                    L.DEBUG(f"Updated API_PrePrompt to: {workflow[key]}")
+                elif value == "API_StylePrompt":
                     workflow[key] = post.get(value, "")
-                    L.DEBUG(f"Updated API_SPrompt to: {workflow[key]}")
-                elif value == "API_NPrompt":
+                    L.DEBUG(f"Updated API_StylePrompt to: {workflow[key]}")
+                elif value == "API_NegativePrompt":
                     workflow[key] = post.get(value, "")  
-                    L.DEBUG(f"Updated API_NPrompt to: {workflow[key]}")
+                    L.DEBUG(f"Updated API_NegativePrompt to: {workflow[key]}")
                 elif key == "seed" or key == "noise_seed":
                     workflow[key] = random.randint(1000000000000, 9999999999999)
                     L.DEBUG(f"Updated seed to: {workflow[key]}")
@@ -507,7 +507,7 @@ def update_prompt(workflow: dict, post: dict, positive: str, found_key=[None], p
 
     return found_key[0]
 
-def update_prompt_custom(workflow: dict, API_PPrompt: str, API_SPrompt: str, API_NPrompt: str, found_key=[None], path=None):
+def update_prompt_custom(workflow: dict, API_PrePrompt: str, API_StylePrompt: str, API_NegativePrompt: str, found_key=[None], path=None):
     if path is None:
         path = [] 
 
@@ -519,21 +519,21 @@ def update_prompt_custom(workflow: dict, API_PPrompt: str, API_SPrompt: str, API
                 if isinstance(value, dict):
                     if value.get('class_type') == 'SaveImage' and value.get('inputs', {}).get('filename_prefix') == 'API_':
                         found_key[0] = key
-                    update_prompt(value, API_PPrompt, API_SPrompt, API_NPrompt, found_key, current_path)
+                    update_prompt(value, API_PrePrompt, API_StylePrompt, API_NegativePrompt, found_key, current_path)
                 elif isinstance(value, list):
                     # Recursive call with updated path for each item in a list
                     for index, item in enumerate(value):
-                        update_prompt(item, API_PPrompt, API_SPrompt, API_NPrompt, found_key, current_path + [str(index)])
+                        update_prompt(item, API_PrePrompt, API_StylePrompt, API_NegativePrompt, found_key, current_path + [str(index)])
 
-                if value == "API_PPrompt":
-                    workflow[key] = API_PPrompt
-                    L.DEBUG(f"Updated API_PPrompt to: {workflow[key]}")
-                elif value == "API_SPrompt":
-                    workflow[key] = API_SPrompt
-                    L.DEBUG(f"Updated API_SPrompt to: {workflow[key]}")
-                elif value == "API_NPrompt":
-                    workflow[key] = API_NPrompt
-                    L.DEBUG(f"Updated API_NPrompt to: {workflow[key]}")
+                if value == "API_PrePrompt":
+                    workflow[key] = API_PrePrompt
+                    L.DEBUG(f"Updated API_PrePrompt to: {workflow[key]}")
+                elif value == "API_StylePrompt":
+                    workflow[key] = API_StylePrompt
+                    L.DEBUG(f"Updated API_StylePrompt to: {workflow[key]}")
+                elif value == "API_NegativePrompt":
+                    workflow[key] = API_NegativePrompt
+                    L.DEBUG(f"Updated API_NegativePrompt to: {workflow[key]}")
                 elif key == "seed" or key == "noise_seed":
                     workflow[key] = random.randint(1000000000000, 9999999999999)
                     L.DEBUG(f"Updated seed to: {workflow[key]}")
@@ -682,9 +682,9 @@ def handle_custom_image(custom_post: str):
     else:
         workflow_name = args.workflow if args.workflow else "selfie"
         post = {
-            "API_PPrompt": "",
-            "API_SPrompt": "; (((masterpiece))); (beautiful lighting:1), subdued, fine detail, extremely sharp, 8k, insane detail, dynamic lighting, cinematic, best quality, ultra detailed.",
-            "API_NPrompt": "canvas frame, 3d, ((bad art)), illustrated, deformed, blurry, duplicate, bad art, bad anatomy, worst quality, low quality, watermark, FastNegativeV2, (easynegative:0.5), epiCNegative, easynegative, verybadimagenegative_v1.3",
+            "API_PrePrompt": "",
+            "API_StylePrompt": "; (((masterpiece))); (beautiful lighting:1), subdued, fine detail, extremely sharp, 8k, insane detail, dynamic lighting, cinematic, best quality, ultra detailed.",
+            "API_NegativePrompt": "canvas frame, 3d, ((bad art)), illustrated, deformed, blurry, duplicate, bad art, bad anatomy, worst quality, low quality, watermark, FastNegativeV2, (easynegative:0.5), epiCNegative, easynegative, verybadimagenegative_v1.3",
             "Vision_Prompt": "Write an upbeat Instagram description with emojis to accompany this selfie!",
             "frequency": 2,
             "ghost_tags": [

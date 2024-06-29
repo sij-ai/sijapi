@@ -1,0 +1,31 @@
+BIND: 0.0.0.0 
+PORT: 4444
+URL: https://api.yourdomain.com
+PUBLIC: 
+  - /id
+  - /ip
+  - /health
+  - /img/
+  - /cl/dockets
+  - /cl/search
+  - /cd/alert
+TRUSTED_SUBNETS:
+  - 127.0.0.1/32 # don't change this
+  - 192.168.50.0/24 # optionally set to your local subnet, or omit
+  - 100.11.11.0/24 # optionally set to your tailscale subnet, or omit
+MODULES:
+  asr: on
+  calendar: on
+  email: on
+  health: on
+  hooks: on
+  llm: on
+  locate: on
+  note: on
+  sd: on
+  serve: on
+  time: on
+  tts: on
+  weather: on
+TZ: 'America/Los_Angeles' # this is just for the initial config, and is dynamically updated based on location
+KEYS: ['{{ SECRET.GLOBAL_API_KEYS }}'] # sourced from .env

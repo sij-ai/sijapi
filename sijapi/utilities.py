@@ -6,6 +6,7 @@ import io
 from io import BytesIO
 import base64
 import math
+import paramiko
 from dateutil import parser
 from pathlib import Path
 import filetype
@@ -21,7 +22,6 @@ import pandas as pd
 from scipy.spatial import cKDTree
 from dateutil.parser import parse as dateutil_parse
 from docx import Document
-import asyncpg
 from sshtunnel import SSHTunnelForwarder
 from fastapi import Depends, HTTPException, Request, UploadFile
 from fastapi.security.api_key import APIKeyHeader
@@ -190,37 +190,6 @@ def check_file_name(file_name, max_length=255):
         needs_sanitization = True
 
     return needs_sanitization
-
-
-def list_and_correct_impermissible_files(root_dir, rename: bool = False):
-    """List and correct all files with impermissible names."""
-    impermissible_files = []
-    for dirpath, _, filenames in os.walk(root_dir):
-        for filename in filenames:
-            if check_file_name(filename):
-                file_path = Path(dirpath) / filename
-                impermissible_files.append(file_path)
-                L.DEBUG(f"Impermissible file found: {file_path}")
-                
-                # Sanitize the file name
-                new_filename = sanitize_filename(filename)
-                new_file_path = Path(dirpath) / new_filename
-                
-                # Ensure the new file name does not already exist
-                if new_file_path.exists():
-                    counter = 1
-                    base_name, ext = os.path.splitext(new_filename)
-                    while new_file_path.exists():
-                        new_filename = f"{base_name}_{counter}{ext}"
-                        new_file_path = Path(dirpath) / new_filename
-                        counter += 1
-                
-                # Rename the file
-                if rename:
-                    os.rename(file_path, new_file_path)
-                    L.DEBUG(f"Renamed: {file_path} -> {new_file_path}")
-    
-    return impermissible_files
 
 
 def bool_convert(value: str = Form(None)):
@@ -473,3 +442,16 @@ def load_geonames_data(path: str):
     
     return data
 
+async def run_ssh_command(server, command):
+    try:
+        ssh = paramiko.SSHClient()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        ssh.connect(server.ssh.host, username=server.ssh.user, password=server.ssh.password)
+        stdin, stdout, stderr = ssh.exec_command(command)
+        output = stdout.read().decode()
+        error = stderr.read().decode()
+        ssh.close()
+        return output, error
+    except Exception as e:
+        L.ERR(f"SSH command failed for server {server.id}: {str(e)}")
+        raise

@@ -90,9 +90,9 @@ async def workflow(prompt: str, scene: str = None, size: str = None, style: str 
     workflow_data = json.loads(workflow_path.read_text())
 
     post = {
-        "API_PPrompt": scene_data['API_PPrompt'] + image_concept + ', '.join(f"; (({trigger}))" for trigger in scene_data['triggers']),
-        "API_SPrompt": scene_data['API_SPrompt'],
-        "API_NPrompt": scene_data['API_NPrompt'],
+        "API_PrePrompt": scene_data['API_PrePrompt'] + image_concept + ', '.join(f"; (({trigger}))" for trigger in scene_data['triggers']),
+        "API_StylePrompt": scene_data['API_StylePrompt'],
+        "API_NegativePrompt": scene_data['API_NegativePrompt'],
         "width": width,
         "height": height
     }
@@ -406,7 +406,7 @@ async def load_workflow(workflow_path: str, workflow:str):
 
 async def update_prompt_and_get_key(workflow: dict, post: dict, positive: str):
     '''
-Recurses through the workflow searching for and substituting the dynamic values for API_PPrompt, API_SPrompt, API_NPrompt, width, height, and seed (random integer).
+Recurses through the workflow searching for and substituting the dynamic values for API_PrePrompt, API_StylePrompt, API_NegativePrompt, width, height, and seed (random integer).
 Even more important, it finds and returns the key to the filepath where the file is saved, which we need to decipher status when generation is complete.
     '''
     found_key = [None]
@@ -427,9 +427,9 @@ Even more important, it finds and returns the key to the filepath where the file
                     for index, item in enumerate(value):
                         update_recursive(item, current_path + [str(index)])
                 
-                if value == "API_PPrompt":
+                if value == "API_PrePrompt":
                     workflow[key] = post.get(value, "") + positive
-                elif value in ["API_SPrompt", "API_NPrompt"]:
+                elif value in ["API_StylePrompt", "API_NegativePrompt"]:
                     workflow[key] = post.get(value, "")
                 elif key in ["seed", "noise_seed"]:
                     workflow[key] = random.randint(1000000000000, 9999999999999)

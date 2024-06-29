@@ -118,7 +118,7 @@
   },
   "17": {
     "inputs": {
-      "text": "API_PPrompt"
+      "text": "API_PrePrompt"
     },
     "class_type": "JWStringMultiline",
     "_meta": {
@@ -127,7 +127,7 @@
   },
   "18": {
     "inputs": {
-      "text": "API_NPrompt"
+      "text": "API_NegativePrompt"
     },
     "class_type": "JWStringMultiline",
     "_meta": {
@@ -444,7 +444,7 @@
   },
   "96": {
     "inputs": {
-      "text": "API_SPrompt"
+      "text": "API_StylePrompt"
     },
     "class_type": "JWStringMultiline",
     "_meta": {

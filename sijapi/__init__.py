@@ -9,27 +9,22 @@ from dateutil import tz
 from pathlib import Path
 from pydantic import BaseModel
 from typing import List, Optional
-import traceback
-import logging
 from .logs import Logger
-from .classes import AutoResponder, IMAPConfig, SMTPConfig, EmailAccount, EmailContact, IncomingEmail, Database, Geocoder
-
-# from sijapi.config.config import load_config
-# cfg = load_config()
+from .classes import AutoResponder, IMAPConfig, SMTPConfig, EmailAccount, EmailContact, IncomingEmail, Database, Geocoder, APIConfig, Configuration
 
 ### Initial initialization
 BASE_DIR = Path(__file__).resolve().parent
 CONFIG_DIR = BASE_DIR / "config"
 ENV_PATH = CONFIG_DIR / ".env"
 LOGS_DIR = BASE_DIR / "logs"
-
-# Create logger instance
 L = Logger("Central", LOGS_DIR)
-
 os.makedirs(LOGS_DIR, exist_ok=True)
 load_dotenv(ENV_PATH)
 
 ### API essentials
+API_CONFIG_PATH = CONFIG_DIR / "api.yaml"
+SECRETS_CONFIG_PATH = CONFIG_DIR / "secrets.yaml"
+API = APIConfig.load_from_yaml(API_CONFIG_PATH, SECRETS_CONFIG_PATH)
 DB = Database.from_env()
 ROUTERS = os.getenv('ROUTERS', '').split(',')
 PUBLIC_SERVICES = os.getenv('PUBLIC_SERVICES', '').split(',')
