@@ -273,7 +273,10 @@ async def generate_map(start_date: datetime, end_date: datetime):
     return html_content
 
 async def post_location(location: Location):
-    L.DEBUG(f"post_location called with {location.datetime}")
+    if not location.datetime:
+        L.DEBUG(f"location appears to be missing datetime: {location}")
+    else:
+        L.DEBUG(f"post_location called with {location.datetime}")
 
     async with DB.get_connection() as conn:
         try:
@@ -343,35 +346,41 @@ async def post_locate_endpoint(locations: Union[Location, List[Location]]):
         locations = [locations]
 
     # Prepare locations
-    for location in locations:
-        if not location.datetime:
-            tz = GEO.tz_current(location.latitude, location.longitude)
-            location.datetime = datetime.now(tz).isoformat()
+    for lcn in locations:
+        if not lcn.datetime:
+            tz = await GEO.tz_at(lcn.latitude, lcn.longitude)
+            lcn.datetime = datetime.now(ZoneInfo(tz)).isoformat()
         
-        if not location.context:
-            location.context = {
-                "action": "manual",
-                "device_type": "Pythonista",
+        if not lcn.context:
+            lcn.context = {
+                "action": "missing",
+                "device_type": "API",
                 "device_model": "Unknown",
                 "device_name": "Unknown",
                 "device_os": "Unknown"
             }
-        L.DEBUG(f"Location received for processing: {location}")
+        L.DEBUG(f"Location received for processing: {lcn}")
 
     geocoded_locations = await GEO.code(locations)
 
     responses = []
-    for location in geocoded_locations:
-        L.DEBUG(f"Final location submitted to database: {location}")
-        
-        location_entry = await post_location(location)
+    if isinstance(geocoded_locations, List):
+        for location in geocoded_locations:
+            L.DEBUG(f"Final location to be submitted to database: {location}")
+            location_entry = await post_location(location)
+            if location_entry:
+                responses.append({"location_data": location_entry})
+            else:
+                L.WARN(f"Posting location to database appears to have failed.")
+    else:
+        L.DEBUG(f"Final location to be submitted to database: {geocoded_locations}")
+        location_entry = await post_location(geocoded_locations)
         if location_entry:
             responses.append({"location_data": location_entry})
         else:
             L.WARN(f"Posting location to database appears to have failed.")
 
     return {"message": "Locations and weather updated", "results": responses}
-
 
 
 @loc.get("/locate", response_model=Location)

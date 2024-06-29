@@ -9,6 +9,7 @@ from typing import List, Dict, Any, Union, Optional
 from pydantic import BaseModel, root_validator, ValidationError
 import aiofiles
 import os 
+import re
 import glob
 import chromadb
 from openai import OpenAI
@@ -26,7 +27,7 @@ import html2text
 import markdown
 from sijapi import L, LLM_SYS_MSG, DEFAULT_LLM, DEFAULT_VISION, REQUESTS_DIR, OBSIDIAN_CHROMADB_COLLECTION, OBSIDIAN_VAULT_DIR, DOC_DIR, OPENAI_API_KEY, DEFAULT_VOICE, SUMMARY_INSTRUCT, SUMMARY_CHUNK_SIZE, SUMMARY_TPW, SUMMARY_CHUNK_OVERLAP, SUMMARY_LENGTH_RATIO, SUMMARY_TOKEN_LIMIT, SUMMARY_MIN_LENGTH, SUMMARY_MODEL
 from sijapi.utilities import convert_to_unix_time, sanitize_filename, ocr_pdf, clean_text, should_use_ocr, extract_text_from_pdf, extract_text_from_docx, read_text_file, str_to_bool, get_extension
-from sijapi.routers.tts import generate_speech
+from sijapi.routers import tts
 from sijapi.routers.asr import transcribe_audio
 
 
@@ -520,17 +521,56 @@ async def summarize_post(file: Optional[UploadFile] = File(None), text: Optional
     summarized_text = await summarize_text(text_content, instruction)
     return summarized_text
 
+
 @llm.post("/speaksummary")
-async def summarize_tts_endpoint(bg_tasks: BackgroundTasks, instruction: str = Form(SUMMARY_INSTRUCT), file: Optional[UploadFile] = File(None), text: Optional[str] = Form(None), voice: Optional[str] = Form(DEFAULT_VOICE), speed: Optional[float] = Form(1.2), podcast: Union[bool, str] = Form(False)):
-    
-    podcast = str_to_bool(str(podcast))  # Proper boolean conversion
-    text_content = text if text else extract_text(file)
-    final_output_path = await summarize_tts(text_content, instruction, voice, speed, podcast)
-    return FileResponse(path=final_output_path, filename=os.path.basename(final_output_path), media_type='audio/wav')
-    
+async def summarize_tts_endpoint(
+    bg_tasks: BackgroundTasks,
+    instruction: str = Form(SUMMARY_INSTRUCT),
+    file: Optional[UploadFile] = File(None),
+    text: Optional[str] = Form(None),
+    voice: Optional[str] = Form(DEFAULT_VOICE),
+    speed: Optional[float] = Form(1.2),
+    podcast: Union[bool, str] = Form(False)
+):
+    try:
+        podcast = str_to_bool(str(podcast))
+
+        if text:
+            text_content = text
+        elif file:
+            # Handle the UploadFile here
+            content = await file.read()
+            file_extension = os.path.splitext(file.filename)[1]
+            temp_file_path = tempfile.mktemp(suffix=file_extension)
+            with open(temp_file_path, 'wb') as temp_file:
+                temp_file.write(content)
+            bg_tasks.add_task(os.remove, temp_file_path)
+            
+            # Now pass the file path to extract_text
+            text_content = await extract_text(temp_file_path)
+        else:
+            raise ValueError("Either text or file must be provided")
+
+        final_output_path = await summarize_tts(text_content, instruction, voice, speed, podcast)
+        
+        return FileResponse(
+            path=final_output_path,
+            filename=os.path.basename(final_output_path),
+            media_type='audio/wav',
+            background=bg_tasks
+        )
+
+    except Exception as e:
+        L.ERR(f"Error in summarize_tts_endpoint: {str(e)}")
+        return JSONResponse(
+            status_code=400,
+            content={"error": str(e)}
+        )
+
+
 
 async def summarize_tts(
-    text: str,
+    text: str, 
     instruction: str = SUMMARY_INSTRUCT,
     voice: Optional[str] = DEFAULT_VOICE,
     speed: float = 1.1,
@@ -539,14 +579,15 @@ async def summarize_tts(
 ):
     LLM = LLM if LLM else Ollama()
     summarized_text = await summarize_text(text, instruction, LLM=LLM)
-    filename = await summarize_text(summarized_text, "Provide a title for this summary no longer than 4 words")
+    filename = await summarize_text(summarized_text, "Provide a title for this summary no longer than 4 words", length_override=10)
     filename = sanitize_filename(filename)
     filename = ' '.join(filename.split()[:5])
     timestamp = dt_datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"{timestamp}{filename}.wav" 
     
     bg_tasks = BackgroundTasks()
-    final_output_path = await generate_speech(bg_tasks, summarized_text, voice, "xtts", speed=speed, podcast=podcast, title=filename)
+    model = await tts.get_model(voice)
+    final_output_path = await tts.generate_speech(bg_tasks, summarized_text, voice, model=model, speed=speed, podcast=podcast, title=filename)
     L.DEBUG(f"summary_tts completed with final_output_path: {final_output_path}")
     return final_output_path
     
@@ -557,18 +598,36 @@ async def get_title(text: str, LLM: Ollama() = None):
     title = sanitize_filename(title)
     return title
 
+
+
 def split_text_into_chunks(text: str) -> List[str]:
-    """
-    Splits the given text into manageable chunks based on predefined size and overlap.
-    """
+    sentences = re.split(r'(?<=[.!?])\s+', text)
     words = text.split()
-    adjusted_chunk_size = max(1, int(SUMMARY_CHUNK_SIZE / SUMMARY_TPW))  # Ensure at least 1
-    adjusted_overlap = max(0, int(SUMMARY_CHUNK_OVERLAP / SUMMARY_TPW))  # Ensure non-negative
+    total_words = len(words)
+    L.DEBUG(f"Total words: {total_words}. SUMMARY_CHUNK_SIZE: {SUMMARY_CHUNK_SIZE}. SUMMARY_TPW: {SUMMARY_TPW}.")
+    
+    max_words_per_chunk = int(SUMMARY_CHUNK_SIZE / SUMMARY_TPW)
+    L.DEBUG(f"Maximum words per chunk: {max_words_per_chunk}")
+
     chunks = []
-    for i in range(0, len(words), adjusted_chunk_size - adjusted_overlap):
-        L.DEBUG(f"We are on iteration # {i} if split_text_into_chunks.")
-        chunk = ' '.join(words[i:i + adjusted_chunk_size])
-        chunks.append(chunk)
+    current_chunk = []
+    current_word_count = 0
+
+    for sentence in sentences:
+        sentence_words = sentence.split()
+        if current_word_count + len(sentence_words) <= max_words_per_chunk:
+            current_chunk.append(sentence)
+            current_word_count += len(sentence_words)
+        else:
+            if current_chunk:
+                chunks.append(' '.join(current_chunk))
+            current_chunk = [sentence]
+            current_word_count = len(sentence_words)
+
+    if current_chunk:
+        chunks.append(' '.join(current_chunk))
+
+    L.DEBUG(f"Split text into {len(chunks)} chunks.")
     return chunks
 
 
@@ -577,92 +636,114 @@ def calculate_max_tokens(text: str) -> int:
     return min(tokens_count // 4, SUMMARY_CHUNK_SIZE)
 
 
+
+
 async def extract_text(file: Union[UploadFile, bytes, bytearray, str, Path], bg_tasks: BackgroundTasks = None) -> str:
-    if isinstance(file, UploadFile):
-        file_extension = get_extension(file)
-        temp_file_path = tempfile.mktemp(suffix=file_extension)
-        with open(temp_file_path, 'wb') as buffer:
-            shutil.copyfileobj(file.file, buffer)
-        file_path = temp_file_path
-    elif isinstance(file, (bytes, bytearray)):
-        temp_file_path = tempfile.mktemp()
-        with open(temp_file_path, 'wb') as buffer:
-            buffer.write(file)
-        file_path = temp_file_path
-    elif isinstance(file, (str, Path)):
-        file_path = str(file)
-    else:
-        raise ValueError("Unsupported file type")
+    L.INFO(f"Attempting to extract text from file: {file}")
 
-    _, file_ext = os.path.splitext(file_path)
-    file_ext = file_ext.lower()
-    text_content = ""
+    try:
+        if isinstance(file, UploadFile):
+            L.INFO("File is an UploadFile object")
+            file_extension = os.path.splitext(file.filename)[1]
+            temp_file_path = tempfile.mktemp(suffix=file_extension)
+            with open(temp_file_path, 'wb') as buffer:
+                content = await file.read()
+                buffer.write(content)
+            file_path = temp_file_path
+        elif isinstance(file, (bytes, bytearray)):
+            temp_file_path = tempfile.mktemp()
+            with open(temp_file_path, 'wb') as buffer:
+                buffer.write(file)
+            file_path = temp_file_path
+        elif isinstance(file, (str, Path)):
+            file_path = str(file)
+        else:
+            raise ValueError(f"Unsupported file type: {type(file)}")
 
-    if file_ext == '.pdf':
-        text_content = await extract_text_from_pdf(file_path)
-    elif file_ext in ['.wav', '.m4a', '.m4v', '.mp3', '.mp4']:
-        text_content = await transcribe_audio(file_path=file_path)
-    elif file_ext == '.md':
-        text_content = await read_text_file(file_path)
-        text_content = markdown.markdown(text_content)
-    elif file_ext == '.html':
-        text_content = await read_text_file(file_path)
-        text_content = html2text.html2text(text_content)
-    elif file_ext in ['.txt', '.csv', '.json']:
-        text_content = await read_text_file(file_path)
-    elif file_ext == '.docx':
-        text_content = await extract_text_from_docx(file_path)
+        _, file_ext = os.path.splitext(file_path)
+        file_ext = file_ext.lower()
+        L.INFO(f"File extension: {file_ext}")
 
-    if bg_tasks and 'temp_file_path' in locals():
-        bg_tasks.add_task(os.remove, temp_file_path)
-    elif 'temp_file_path' in locals():
-        os.remove(temp_file_path)
+        if file_ext == '.pdf':
+            text_content = await extract_text_from_pdf(file_path)
+        elif file_ext in ['.wav', '.m4a', '.m4v', '.mp3', '.mp4']:
+            text_content = await transcribe_audio(file_path=file_path)
+        elif file_ext == '.md':
+            text_content = await read_text_file(file_path)
+            text_content = markdown.markdown(text_content)
+        elif file_ext == '.html':
+            text_content = await read_text_file(file_path)
+            text_content = html2text.html2text(text_content)
+        elif file_ext in ['.txt', '.csv', '.json']:
+            text_content = await read_text_file(file_path)
+        elif file_ext == '.docx':
+            text_content = await extract_text_from_docx(file_path)
+        else:
+            raise ValueError(f"Unsupported file extension: {file_ext}")
 
-    return text_content
+        if bg_tasks and 'temp_file_path' in locals():
+            bg_tasks.add_task(os.remove, temp_file_path)
+        elif 'temp_file_path' in locals():
+            os.remove(temp_file_path)
+
+        return text_content
+
+    except Exception as e:
+        L.ERR(f"Error extracting text: {str(e)}")
+        raise ValueError(f"Error extracting text: {str(e)}")
+
 
 async def summarize_text(text: str, instruction: str = SUMMARY_INSTRUCT, length_override: int = None, length_quotient: float = SUMMARY_LENGTH_RATIO, LLM: Ollama = None):
-    """
-    Process the given text: split into chunks, summarize each chunk, and
-    potentially summarize the concatenated summary for long texts.
-    """
     LLM = LLM if LLM else Ollama()
 
     chunked_text = split_text_into_chunks(text)
-    total_parts = max(1, len(chunked_text))  # Ensure at least 1
+    total_parts = len(chunked_text)
+    L.DEBUG(f"Total parts: {total_parts}. Length of chunked text: {len(chunked_text)}")
 
-    total_words_count = len(text.split())
-    total_tokens_count = max(1, int(total_words_count * SUMMARY_TPW))  # Ensure at least 1
+    total_words_count = sum(len(chunk.split()) for chunk in chunked_text)
+    L.DEBUG(f"Total words count: {total_words_count}")
+    total_tokens_count = max(1, int(total_words_count * SUMMARY_TPW))
+    L.DEBUG(f"Total tokens count: {total_tokens_count}")
+
     total_summary_length = length_override if length_override else total_tokens_count // length_quotient
+    L.DEBUG(f"Total summary length: {total_summary_length}")
     corrected_total_summary_length = min(total_summary_length, SUMMARY_TOKEN_LIMIT)
-    individual_summary_length = max(1, corrected_total_summary_length // total_parts)  # Ensure at least 1
+    L.DEBUG(f"Corrected total summary length: {corrected_total_summary_length}")
 
-    L.DEBUG(f"Text split into {total_parts} chunks.")
     summaries = await asyncio.gather(*[
-        process_chunk(instruction, chunk, i+1, total_parts, individual_summary_length, LLM) for i, chunk in enumerate(chunked_text)
+        process_chunk(instruction, chunk, i+1, total_parts, LLM=LLM)
+        for i, chunk in enumerate(chunked_text)
     ])
-    
-    concatenated_summary = ' '.join(summaries)
-    
+
     if total_parts > 1:
-        concatenated_summary = await process_chunk(instruction, concatenated_summary, 1, 1)
-    
-    return concatenated_summary
+        summaries = [f"\n\n\nPART {i+1} of {total_parts}:\n\n{summary}" for i, summary in enumerate(summaries)]
 
-async def process_chunk(instruction: str, text: str, part: int, total_parts: int, max_tokens: Optional[int] = None, LLM: Ollama = None) -> str:
-    """
-    Process a portion of text using the ollama library asynchronously.
-    """
+    concatenated_summary = ' '.join(summaries)
+    L.DEBUG(f"Concatenated summary: {concatenated_summary}")
+    L.DEBUG(f"Concatenated summary length: {len(concatenated_summary.split())}")
 
+    if total_parts > 1:
+        L.DEBUG(f"Processing the concatenated_summary to smooth the edges...")
+        concatenated_instruct = f"The following text consists of the concatenated {total_parts} summaries of {total_parts} parts of a single document that had to be split for processing. Reword it for clarity and flow as a single cohesive summary, understanding that it all relates to a single document, but that document likely consists of multiple parts potentially from multiple authors. Do not shorten it and do not omit content, simply smooth out the edges between the parts."
+        final_summary = await process_chunk(concatenated_instruct, concatenated_summary, 1, 1, length_ratio=1, LLM=LLM)
+        L.DEBUG(f"Final summary length: {len(final_summary.split())}")
+        return final_summary
+    else:
+        return concatenated_summary
+
+
+async def process_chunk(instruction: str, text: str, part: int, total_parts: int, length_ratio: float = None, LLM: Ollama = None) -> str:
+    # L.DEBUG(f"Processing chunk: {text}")
     LLM = LLM if LLM else Ollama()
 
-    words_count = max(1, len(text.split()))  # Ensure at least 1
-    tokens_count = max(1, int(words_count * SUMMARY_TPW))  # Ensure at least 1
-    fraction_tokens = max(1, tokens_count // SUMMARY_LENGTH_RATIO)  # Ensure at least 1
-    if max_tokens is None:
-        max_tokens = min(fraction_tokens, SUMMARY_CHUNK_SIZE // max(1, total_parts))  # Ensure at least 1
-        max_tokens = max(max_tokens, SUMMARY_MIN_LENGTH)  # Ensure a minimum token count to avoid tiny processing chunks
+    words_count = len(text.split())
+    tokens_count = max(1, int(words_count * SUMMARY_TPW))
+
+    summary_length_ratio = length_ratio if length_ratio else SUMMARY_LENGTH_RATIO
+    max_tokens = min(tokens_count // summary_length_ratio, SUMMARY_CHUNK_SIZE)
+    max_tokens = max(max_tokens, SUMMARY_MIN_LENGTH)
     
-    L.DEBUG(f"Summarizing part {part} of {total_parts}: Max_tokens: {max_tokens}")
+    L.DEBUG(f"Processing part {part} of {total_parts}: Words: {words_count}, Estimated tokens: {tokens_count}, Max output tokens: {max_tokens}")
     
     if part and total_parts > 1:
         prompt = f"{instruction}. Part {part} of {total_parts}:\n{text}"
@@ -674,12 +755,12 @@ async def process_chunk(instruction: str, text: str, part: int, total_parts: int
         model=SUMMARY_MODEL, 
         prompt=prompt,
         stream=False,
-        options={'num_predict': max_tokens, 'temperature': 0.6}
+        options={'num_predict': max_tokens, 'temperature': 0.5}
     )
     
     text_response = response['response']
     L.DEBUG(f"Completed LLM.generate for part {part} of {total_parts}")
-    
+    L.DEBUG(f"Result: {text_response}")
     return text_response
 
 async def title_and_summary(extracted_text: str):

@@ -135,7 +135,7 @@ Obsidian helper. Takes a datetime and creates a new daily note. Note: it uses th
         places = await loc.fetch_locations(date_time)
         lat, lon = places[0].latitude, places[0].longitude
 
-    location = await GEO.code(lat, lon)
+    location = await GEO.code((lat, lon))
     
     timeslips = await build_daily_timeslips(date_time)
 
@@ -189,7 +189,7 @@ created: "{dt_datetime.now().strftime("%Y-%m-%d %H:%M:%S")}"
     return absolute_path
     
 
-### Daily Note Component Builders ###
+
 
 async def build_daily_timeslips(date):
     '''
@@ -325,7 +325,7 @@ async def generate_banner(dt, location: Location = None, forecast: str = None, m
             display_name += f"{location.country} " if location.country else ""
 
         if display_name == "Location: ":
-            geocoded_location = await GEO.code(lat, lon)
+            geocoded_location = await GEO.code((lat, lon))
             if geocoded_location.display_name or geocoded_location.city or geocoded_location.country:
                 return await generate_banner(dt, geocoded_location, forecast, mood, other_context)
             else:
@@ -405,7 +405,7 @@ async def update_dn_weather(date_time: dt_datetime, lat: float = None, lon: floa
     L.WARN(f"Using {date_time.strftime('%Y-%m-%d %H:%M:%S')} as our datetime in update_dn_weather.")
     try:
         if lat and lon:
-            place = GEO.code(lat, lon)
+            place = GEO.code((lat, lon))
 
         else:
             L.DEBUG(f"Updating weather for {date_time}")
@@ -425,7 +425,7 @@ async def update_dn_weather(date_time: dt_datetime, lat: float = None, lon: floa
                 L.INFO(f"City in data: {city}")
 
             else:
-                location = await GEO.code(lat, lon)
+                location = await GEO.code((lat, lon))
                 L.DEBUG(f"location: {location}")
                 city = location.name
                 city = city if city else location.city
