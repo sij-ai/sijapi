@@ -178,7 +178,6 @@ async def notify_local(message: str):
     await asyncio.to_thread(os.system, f'osascript -e \'display notification "{message}" with title "Notification Title"\'')
 
 
-# Asynchronous remote notification using paramiko SSH
 async def notify_remote(host: str, message: str, username: str = None, password: str = None, key_filename: str = None):
     ssh = paramiko.SSHClient()
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -192,7 +191,6 @@ async def notify_remote(host: str, message: str, username: str = None, password:
     await asyncio.to_thread(ssh.connect, **connect_kwargs)
     await asyncio.to_thread(ssh.exec_command, f'osascript -e \'display notification "{message}" with title "Notification Title"\'')
     ssh.close()
-
 
 
 async def notify_shellfish(alert: str):

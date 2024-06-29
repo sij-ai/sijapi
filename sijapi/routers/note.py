@@ -279,7 +279,7 @@ async def generate_banner(dt, location: Location = None, forecast: str = None, m
     display_name = "Location: "
     if location:
         lat, lon = location.latitude, location.longitude
-        override_location = await loc.find_override_locations(lat, lon)
+        override_location = GEO.find_override_location(lat, lon)
         display_name += f"{override_location}, " if override_location else ""
         if location.display_name:
             display_name += f"{location.display_name}"
@@ -383,7 +383,8 @@ async def update_dn_weather(date_time: dt_datetime, lat: float = None, lon: floa
             lat = place.latitude
             lon = place.longitude
         
-        city = await loc.find_override_locations(lat, lon)
+        L.DEBUG(f"lat: {lat}, lon: {lon}, place: {place}")
+        city = GEO.find_override_location(lat, lon)
         if city:
             L.INFO(f"Using override location: {city}")
 
@@ -393,11 +394,11 @@ async def update_dn_weather(date_time: dt_datetime, lat: float = None, lon: floa
                 L.INFO(f"City in data: {city}")
 
             else:
-                loc = await GEO.code(lat, lon)
-                L.DEBUG(f"loc: {loc}")
-                city = loc.name
-                city = city if city else loc.city
-                city = city if city else loc.house_number + ' ' + loc.road
+                location = await GEO.code(lat, lon)
+                L.DEBUG(f"location: {location}")
+                city = location.name
+                city = city if city else location.city
+                city = city if city else location.house_number + ' ' + location.road
                 
                 L.DEBUG(f"City geocoded: {city}")
 

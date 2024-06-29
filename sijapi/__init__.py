@@ -94,13 +94,22 @@ DAY_SHORT_FMT = os.getenv("DAY_SHORT_FMT")
 ### Large language model
 LLM_URL = os.getenv("LLM_URL", "http://localhost:11434")
 LLM_SYS_MSG = os.getenv("SYSTEM_MSG", "You are a helpful AI assistant.")
-SUMMARY_INSTRUCT = os.getenv('SUMMARY_INSTRUCT', "You are an AI assistant that provides accurate summaries of text -- nothing more and nothing less. You must not include ANY extraneous text other than the sumary. Do not include comments apart from the summary, do not preface the summary, and do not provide any form of postscript. Do not add paragraph breaks. Do not add any kind of formatting. Your response should begin with, consist of, and end with an accurate plaintext summary.")
-SUMMARY_INSTRUCT_TTS = os.getenv('SUMMARY_INSTRUCT_TTS', "You are an AI assistant that provides email summaries for Sanjay. Your response will undergo Text-To-Speech conversion and added to Sanjay's private podcast. Providing adequate context (Sanjay did not send this question to you, he will only hear your response) but aiming for conciseness and precision, and bearing in mind the Text-To-Speech conversion (avoiding acronyms and formalities), summarize the following email.")
 DEFAULT_LLM = os.getenv("DEFAULT_LLM", "llama3")
 DEFAULT_VISION = os.getenv("DEFAULT_VISION", "llava")
 DEFAULT_VOICE = os.getenv("DEFAULT_VOICE", "Luna")
 DEFAULT_11L_VOICE = os.getenv("DEFAULT_11L_VOICE", "Victoria")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+### Summarization
+SUMMARY_CHUNK_SIZE = int(os.getenv("SUMMARY_CHUNK_SIZE", 4000))  # measured in tokens
+SUMMARY_CHUNK_OVERLAP = int(os.getenv("SUMMARY_CHUNK_OVERLAP", 100))  # measured in tokens
+SUMMARY_TPW = float(os.getenv("SUMMARY_TPW", 1.3))  # measured in tokens
+SUMMARY_LENGTH_RATIO = int(os.getenv("SUMMARY_LENGTH_RATIO", 4))  # measured as original to length ratio
+SUMMARY_MIN_LENGTH = int(os.getenv("SUMMARY_MIN_LENGTH", 150))  # measured in tokens
+SUMMARY_MODEL = os.getenv("SUMMARY_MODEL", "dolphin-llama3:8b-256k")
+SUMMARY_TOKEN_LIMIT = int(os.getenv("SUMMARY_TOKEN_LIMIT", 4096))
+SUMMARY_INSTRUCT = os.getenv('SUMMARY_INSTRUCT', "You are an AI assistant that provides accurate summaries of text -- nothing more and nothing less. You must not include ANY extraneous text other than the sumary. Do not include comments apart from the summary, do not preface the summary, and do not provide any form of postscript. Do not add paragraph breaks. Do not add any kind of formatting. Your response should begin with, consist of, and end with an accurate plaintext summary.")
+SUMMARY_INSTRUCT_TTS = os.getenv('SUMMARY_INSTRUCT_TTS', "You are an AI assistant that provides email summaries for Sanjay. Your response will undergo Text-To-Speech conversion and added to Sanjay's private podcast. Providing adequate context (Sanjay did not send this question to you, he will only hear your response) but aiming for conciseness and precision, and bearing in mind the Text-To-Speech conversion (avoiding acronyms and formalities), summarize the following email.")
+
 
 ### Stable diffusion
 SD_IMAGE_DIR = DATA_DIR / "sd" / "images"
@@ -113,15 +122,7 @@ COMFYUI_OUTPUT_DIR = COMFYUI_DIR / 'output'
 COMFYUI_LAUNCH_CMD = os.getenv('COMFYUI_LAUNCH_CMD', 'mamba activate comfyui && python main.py')
 SD_CONFIG_PATH = CONFIG_DIR / 'sd.yaml'
 
-### Summarization
-SUMMARY_CHUNK_SIZE = int(os.getenv("SUMMARY_CHUNK_SIZE", 4000))  # measured in tokens
-SUMMARY_CHUNK_OVERLAP = int(os.getenv("SUMMARY_CHUNK_OVERLAP", 100))  # measured in tokens
-SUMMARY_TPW = float(os.getenv("SUMMARY_TPW", 1.3))  # measured in tokens
-SUMMARY_LENGTH_RATIO = int(os.getenv("SUMMARY_LENGTH_RATIO", 4))  # measured as original to length ratio
-SUMMARY_MIN_LENGTH = int(os.getenv("SUMMARY_MIN_LENGTH", 150))  # measured in tokens
-SUMMARY_INSTRUCT = os.getenv("SUMMARY_INSTRUCT", "Summarize the provided text. Respond with the summary and nothing else. Do not otherwise acknowledge the request. Just provide the requested summary.")
-SUMMARY_MODEL = os.getenv("SUMMARY_MODEL", "llama3")
-SUMMARY_TOKEN_LIMIT = int(os.getenv("SUMMARY_TOKEN_LIMIT", 4096))
+
 
 ### ASR
 ASR_DIR = DATA_DIR / "asr"

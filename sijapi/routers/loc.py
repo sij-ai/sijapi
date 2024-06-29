@@ -1,5 +1,5 @@
 '''
-Uses Postgres/PostGIS for for location tracking (data obtained via the companion mobile Pythonista scripts), and for geocoding purposes.
+Uses Postgres/PostGIS for location tracking (data obtained via the companion mobile Pythonista scripts), and for geocoding purposes.
 '''
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -64,13 +64,13 @@ async def dt(
         
         # If no timezone provided, only fill in missing timezone info
         elif date_time.tzinfo is None:
-            tz_str = await get_timezone_without_timezone(date_time)
-            try:
-                tz = ZoneInfo(tz_str)
-            except Exception as e:
-                L.WARN(f"Invalid timezone string '{tz_str}' from Geocoder. Falling back to UTC. Error: {e}")
-                tz = ZoneInfo('UTC')
-            
+            #tz_str = await get_ti`mezone_without_timezone(date_time)
+            #try:
+            #    tz = ZoneInfo(tz_str)
+            #except Exception as e:
+            #    L.WARN(f"Invalid timezone string '{tz_str}' from Geocoder. Falling back to UTC. Error: {e}")
+            #    tz = ZoneInfo('UTC')
+            tz = ZoneInfo('UTC') # force use of UTC when we can't find real timezone
             date_time = date_time.replace(tzinfo=tz)
             L.DEBUG(f"Filled in missing timezone info: {tz}")
                     
