@@ -15,13 +15,16 @@ TRUSTED_SUBNETS:
   - 100.11.11.0/24 # optionally set to your tailscale subnet, or omit
 MODULES:
   asr: on
-  calendar: on
+  cal: on
+  cf: off
+  dist: off
   email: on
   health: on
-  hooks: on
+  ig: off
   llm: on
-  locate: on
+  loc: on
   note: on
+  rag: off
   sd: on
   serve: on
   time: on

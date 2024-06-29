@@ -1,14 +1,14 @@
 '''
 Health check module. /health returns `'status': 'ok'`, /id returns TS_ID, /routers responds with a list of the active routers, /ip responds with the device's local IP, /ts_ip responds with its tailnet IP, and /wan_ip responds with WAN IP.
 Depends on:
-  TS_ID, ROUTERS, LOGGER, SUBNET_BROADCAST
+  TS_ID, LOGGER, SUBNET_BROADCAST
 '''
 import os
 import httpx
 import socket
 from fastapi import APIRouter
 from tailscale import Tailscale
-from sijapi import L, TS_ID, ROUTERS, SUBNET_BROADCAST
+from sijapi import L, API, TS_ID, SUBNET_BROADCAST
 
 health = APIRouter(tags=["public", "trusted", "private"])
 
@@ -22,8 +22,8 @@ def get_health() -> str:
 
 @health.get("/routers")
 def get_routers() -> str:
-    listrouters = ", ".join(ROUTERS)
-    return listrouters
+    active_modules = [module for module, is_active in API.MODULES.__dict__.items() if is_active]
+    return active_modules
 
 @health.get("/ip")
 def get_local_ip():

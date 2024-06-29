@@ -2,7 +2,7 @@
 Image generation module using StableDiffusion and similar models by way of ComfyUI.
 DEPENDS ON:
   LLM module
-  COMFYUI_URL, COMFYUI_DIR, COMFYUI_OUTPUT_DIR, HOST_PORT, TS_SUBNET, TS_ADDRESS, DATA_DIR, SD_CONFIG_DIR, SD_IMAGE_DIR, SD_WORKFLOWS_DIR, LOCAL_HOSTS, BASE_URL, PHOTOPRISM_USER*, PHOTOPRISM_URL*, PHOTOPRISM_PASS*
+  COMFYUI_URL, COMFYUI_DIR, COMFYUI_OUTPUT_DIR, TS_SUBNET, TS_ADDRESS, DATA_DIR, SD_CONFIG_DIR, SD_IMAGE_DIR, SD_WORKFLOWS_DIR, LOCAL_HOSTS, API.URL, PHOTOPRISM_USER*, PHOTOPRISM_URL*, PHOTOPRISM_PASS*
 *unimplemented.
 '''
 
@@ -30,7 +30,7 @@ import shutil
 # from photoprism.Photo import Photo
 # from webdav3.client import Client
 from sijapi.routers.llm import query_ollama
-from sijapi import L, COMFYUI_URL, COMFYUI_LAUNCH_CMD, COMFYUI_DIR, COMFYUI_OUTPUT_DIR, HOST_PORT, TS_SUBNET, SD_CONFIG_PATH, SD_IMAGE_DIR, SD_WORKFLOWS_DIR, LOCAL_HOSTS, BASE_URL
+from sijapi import API, L, COMFYUI_URL, COMFYUI_OUTPUT_DIR, SD_CONFIG_PATH, SD_IMAGE_DIR, SD_WORKFLOWS_DIR
 
 sd = APIRouter()
 
@@ -133,7 +133,7 @@ async def generate_and_save_image(prompt_id, saved_file_key, max_size, destinati
     
 def get_web_path(file_path: Path) -> str:
     uri = file_path.relative_to(SD_IMAGE_DIR)
-    web_path = f"{BASE_URL}/img/{uri}"
+    web_path = f"{API.URL}/img/{uri}"
     return web_path
 
 

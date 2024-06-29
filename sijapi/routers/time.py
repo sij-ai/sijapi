@@ -25,7 +25,7 @@ from typing import Optional, List, Dict, Union, Tuple
 from collections import defaultdict
 from dotenv import load_dotenv
 from traceback import format_exc
-from sijapi import L, HOME_DIR, TIMING_API_KEY, TIMING_API_URL
+from sijapi import L, TIMING_API_KEY, TIMING_API_URL
 from sijapi.routers import loc
 
 ### INITIALIZATIONS ###
