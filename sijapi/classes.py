@@ -3,6 +3,8 @@ from typing import List, Optional, Any, Tuple, Dict, Union, Tuple
 from datetime import datetime, timedelta, timezone
 import asyncio
 import json
+import os
+import re
 import yaml
 import math
 from timezonefinder import TimezoneFinder
@@ -15,6 +17,160 @@ from concurrent.futures import ThreadPoolExecutor
 import reverse_geocoder as rg
 from timezonefinder import TimezoneFinder
 from srtm import get_data
+from pathlib import Path
+import yaml
+from typing import Union, List, TypeVar, Type
+from pydantic import BaseModel, create_model
+
+from pydantic import BaseModel, Field
+from typing import List, Dict
+import yaml
+from pathlib import Path
+import os
+from dotenv import load_dotenv
+
+T = TypeVar('T', bound='Configuration')
+
+class ModulesConfig(BaseModel):
+    asr: bool = Field(alias="asr")
+    calendar: bool = Field(alias="calendar")
+    email: bool = Field(alias="email")
+    health: bool = Field(alias="health")
+    hooks: bool = Field(alias="hooks")
+    llm: bool = Field(alias="llm")
+    locate: bool = Field(alias="locate")
+    note: bool = Field(alias="note")
+    sd: bool = Field(alias="sd")
+    serve: bool = Field(alias="serve")
+    time: bool = Field(alias="time")
+    tts: bool = Field(alias="tts")
+    weather: bool = Field(alias="weather")
+
+
+class APIConfig(BaseModel):
+    BIND: str
+    PORT: int
+    URL: str
+    PUBLIC: List[str]
+    TRUSTED_SUBNETS: List[str]
+    MODULES: ModulesConfig
+    BaseTZ: Optional[str] = 'UTC'
+    KEYS: List[str]
+
+    @classmethod
+    def load_from_yaml(cls, config_path: Path, secrets_path: Path):
+        # Load main configuration
+        with open(config_path, 'r') as file:
+            config_data = yaml.safe_load(file)
+        
+        print(f"Loaded main config: {config_data}")  # Debug print
+        
+        # Load secrets
+        try:
+            with open(secrets_path, 'r') as file:
+                secrets_data = yaml.safe_load(file)
+            print(f"Loaded secrets: {secrets_data}")  # Debug print
+        except FileNotFoundError:
+            print(f"Secrets file not found: {secrets_path}")
+            secrets_data = {}
+        except yaml.YAMLError as e:
+            print(f"Error parsing secrets YAML: {e}")
+            secrets_data = {}
+        
+        # Handle KEYS placeholder
+        if isinstance(config_data.get('KEYS'), list) and len(config_data['KEYS']) == 1:
+            placeholder = config_data['KEYS'][0]
+            if placeholder.startswith('{{') and placeholder.endswith('}}'):
+                key = placeholder[2:-2].strip()  # Remove {{ }} and whitespace
+                parts = key.split('.')
+                if len(parts) == 2 and parts[0] == 'SECRET':
+                    secret_key = parts[1]
+                    if secret_key in secrets_data:
+                        config_data['KEYS'] = secrets_data[secret_key]
+                        print(f"Replaced KEYS with secret: {config_data['KEYS']}")  # Debug print
+                    else:
+                        print(f"Secret key '{secret_key}' not found in secrets file")
+                else:
+                    print(f"Invalid secret placeholder format: {placeholder}")
+        
+        # Convert 'on'/'off' to boolean for MODULES if they are strings
+        for key, value in config_data['MODULES'].items():
+            if isinstance(value, str):
+                config_data['MODULES'][key] = value.lower() == 'on'
+            elif isinstance(value, bool):
+                config_data['MODULES'][key] = value
+            else:
+                raise ValueError(f"Invalid value for module {key}: {value}. Must be 'on', 'off', True, or False.")
+        
+        return cls(**config_data)
+
+class Configuration(BaseModel):
+    @classmethod
+    def load_config(cls: Type[T], yaml_path: Union[str, Path]) -> Union[T, List[T]]:
+        yaml_path = Path(yaml_path)
+        with yaml_path.open('r') as file:
+            config_data = yaml.safe_load(file)
+        
+        # Load environment variables
+        load_dotenv()
+        
+        # Resolve placeholders
+        config_data = cls.resolve_placeholders(config_data)
+        
+        if isinstance(config_data, list):
+            return [cls.create_dynamic_model(**cfg) for cfg in config_data]
+        elif isinstance(config_data, dict):
+            return cls.create_dynamic_model(**config_data)
+        else:
+            raise ValueError(f"Unsupported YAML structure in {yaml_path}")
+
+    @classmethod
+    def resolve_placeholders(cls, data):
+        if isinstance(data, dict):
+            return {k: cls.resolve_placeholders(v) for k, v in data.items()}
+        elif isinstance(data, list):
+            return [cls.resolve_placeholders(v) for v in data]
+        elif isinstance(data, str):
+            return cls.resolve_string_placeholders(data)
+        else:
+            return data
+
+    @classmethod
+    def resolve_string_placeholders(cls, value):
+        pattern = r'\{\{\s*([^}]+)\s*\}\}'
+        matches = re.findall(pattern, value)
+        
+        for match in matches:
+            parts = match.split('.')
+            if len(parts) == 2:
+                category, key = parts
+                if category == 'DIR':
+                    replacement = str(Path(os.getenv(key, '')))
+                elif category == 'SECRET':
+                    replacement = os.getenv(key, '')
+                else:
+                    replacement = os.getenv(match, '')
+                
+                value = value.replace('{{' + match + '}}', replacement)
+        
+        return value
+
+    @classmethod
+    def create_dynamic_model(cls, **data):
+        for key, value in data.items():
+            if isinstance(value, dict):
+                data[key] = cls.create_dynamic_model(**value)
+        
+        DynamicModel = create_model(
+            f'Dynamic{cls.__name__}',
+            __base__=cls,
+            **{k: (type(v), v) for k, v in data.items()}
+        )
+        return DynamicModel(**data)
+
+    class Config:
+        extra = "allow"
+        arbitrary_types_allowed = True
 
 class Location(BaseModel):
     latitude: float

@@ -18,9 +18,8 @@ from dotenv import load_dotenv
 from pathlib import Path
 from datetime import datetime
 import argparse
-from . import L, LOGS_DIR, OBSIDIAN_VAULT_DIR
+from . import L, API, OBSIDIAN_VAULT_DIR
 from .logs import Logger
-from .utilities import list_and_correct_impermissible_files
 
 parser = argparse.ArgumentParser(description='Personal API.')
 parser.add_argument('--debug', action='store_true', help='Set log level to L.INFO')
@@ -106,6 +105,7 @@ async def handle_exception_middleware(request: Request, call_next):
 
 
 
+
 def load_router(router_name):
     router_file = ROUTER_DIR / f'{router_name}.py'
     L.DEBUG(f"Attempting to load {router_name.capitalize()}...")
@@ -127,15 +127,15 @@ def main(argv):
     else:
         L.CRIT(f"sijapi launched")
         L.CRIT(f"{args._get_args}")
-        for router_name in ROUTERS:
-            load_router(router_name)
-
-    journal = OBSIDIAN_VAULT_DIR / "journal"
-    list_and_correct_impermissible_files(journal, rename=True)
+        for module_name in API.MODULES.__fields__:
+            if getattr(API.MODULES, module_name):
+                load_router(module_name)
+    
     config = Config()
     config.keep_alive_timeout = 1200 
-    config.bind = [HOST]
+    config.bind = [API.BIND]
     asyncio.run(serve(api, config))
+
 
 if __name__ == "__main__":
     main(sys.argv[1:])
