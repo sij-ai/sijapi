@@ -11,6 +11,7 @@ from pathlib import Path
 from shutil import move
 import tempfile
 import re
+import traceback
 from smtplib import SMTP_SSL, SMTP
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -42,17 +43,84 @@ def get_imap_connection(account: EmailAccount):
         ssl=account.imap.encryption == 'SSL',
         starttls=account.imap.encryption == 'STARTTLS')
 
-def get_smtp_connection(autoresponder: AutoResponder):
-    context = ssl._create_unverified_context()
+
+
+def get_smtp_connection(autoresponder):
+    # Create an SSL context that doesn't verify certificates
+    context = ssl.create_default_context()
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
     
     if autoresponder.smtp.encryption == 'SSL':
-        return SMTP_SSL(autoresponder.smtp.host, autoresponder.smtp.port, context=context)
+        try:
+            L.DEBUG(f"Attempting SSL connection to {autoresponder.smtp.host}:{autoresponder.smtp.port}")
+            return SMTP_SSL(autoresponder.smtp.host, autoresponder.smtp.port, context=context)
+        except ssl.SSLError as e:
+            L.ERR(f"SSL connection failed: {str(e)}")
+            # If SSL fails, try TLS
+            try:
+                L.DEBUG(f"Attempting STARTTLS connection to {autoresponder.smtp.host}:{autoresponder.smtp.port}")
+                smtp = SMTP(autoresponder.smtp.host, autoresponder.smtp.port)
+                smtp.starttls(context=context)
+                return smtp
+            except Exception as e:
+                L.ERR(f"STARTTLS connection failed: {str(e)}")
+                raise
     elif autoresponder.smtp.encryption == 'STARTTLS':
-        smtp = SMTP(autoresponder.smtp.host, autoresponder.smtp.port)
-        smtp.starttls(context=context)
-        return smtp
+        try:
+            L.DEBUG(f"Attempting STARTTLS connection to {autoresponder.smtp.host}:{autoresponder.smtp.port}")
+            smtp = SMTP(autoresponder.smtp.host, autoresponder.smtp.port)
+            smtp.starttls(context=context)
+            return smtp
+        except Exception as e:
+            L.ERR(f"STARTTLS connection failed: {str(e)}")
+            raise
     else:
-        return SMTP(autoresponder.smtp.host, autoresponder.smtp.port)
+        try:
+            L.DEBUG(f"Attempting unencrypted connection to {autoresponder.smtp.host}:{autoresponder.smtp.port}")
+            return SMTP(autoresponder.smtp.host, autoresponder.smtp.port)
+        except Exception as e:
+            L.ERR(f"Unencrypted connection failed: {str(e)}")
+            raise
+
+
+async def send_response(to_email: str, subject: str, body: str, profile: AutoResponder, image_attachment: Path = None) -> bool:
+    server = None
+    try:
+        message = MIMEMultipart()
+        message['From'] = profile.smtp.username
+        message['To'] = to_email
+        message['Subject'] = subject
+        message.attach(MIMEText(body, 'plain'))
+
+        if image_attachment and os.path.exists(image_attachment):
+            with open(image_attachment, 'rb') as img_file:
+                img = MIMEImage(img_file.read(), name=os.path.basename(image_attachment))
+                message.attach(img)
+
+        L.DEBUG(f"Sending auto-response to {to_email} concerning {subject} from account {profile.name}...")
+
+        server = get_smtp_connection(profile)
+        L.DEBUG(f"SMTP connection established: {type(server)}")
+        server.login(profile.smtp.username, profile.smtp.password)
+        server.send_message(message)
+
+        L.INFO(f"Auto-response sent to {to_email} concerning {subject} from account {profile.name}!")
+        return True
+
+    
+    except Exception as e:
+        L.ERR(f"Error in preparing/sending auto-response from account {profile.name}: {str(e)}")
+        L.ERR(f"SMTP details - Host: {profile.smtp.host}, Port: {profile.smtp.port}, Encryption: {profile.smtp.encryption}")
+        L.ERR(traceback.format_exc())
+        return False
+
+    finally:
+        if server:
+            try:
+                server.quit()
+            except Exception as e:
+                L.ERR(f"Error closing SMTP connection: {str(e)}")
 
 
 def clean_email_content(html_content):
@@ -233,8 +301,9 @@ async def autorespond_single_email(message, uid_str: str, account: EmailAccount,
         response_body = await generate_response(this_email, profile, account)
         if response_body:
             subject = f"Re: {this_email.subject}"
+            # add back scene=profile.image_scene,  to workflow call
             jpg_path = await sd.workflow(profile.image_prompt, earlyout=False, downscale_to_fit=True) if profile.image_prompt else None
-            success = await send_response(this_email.sender, subject, response_body, profile, account, jpg_path)
+            success = await send_response(this_email.sender, subject, response_body, profile, jpg_path)
             if success:
                 L.WARN(f"Auto-responded to email: {this_email.subject}")
                 await save_processed_uid(log_file, account.name, uid_str)
@@ -273,31 +342,7 @@ Respond on behalf of {account.fullname}, who is unable to respond personally bec
         L.ERR(f"Error generating auto-response: {str(e)}")
         return None
 
-async def send_response(to_email: str, subject: str, body: str, profile: AutoResponder, image_attachment: Path = None) -> bool:
-    try:
-        message = MIMEMultipart()
-        message['From'] = profile.smtp.username
-        message['To'] = to_email
-        message['Subject'] = subject
-        message.attach(MIMEText(body, 'plain'))
 
-        if image_attachment and os.path.exists(image_attachment):
-            with open(image_attachment, 'rb') as img_file:
-                img = MIMEImage(img_file.read(), name=os.path.basename(image_attachment))
-                message.attach(img)
-
-        L.DEBUG(f"Sending auto-response to {to_email} concerning {subject} from account {profile.name}...")
-
-        with get_smtp_connection(profile) as server:
-            server.login(profile.smtp.username, profile.smtp.password)
-            server.send_message(message)
-
-        L.INFO(f"Auto-response sent to {to_email} concerning {subject} from account {profile.name}!")
-        return True
-
-    except Exception as e:
-        L.ERR(f"Error in preparing/sending auto-response from account {profile.name}: {e}")
-        return False
 
 async def create_incoming_email(message) -> IncomingEmail:
     recipients = [EmailContact(email=recipient['email'], name=recipient.get('name', '')) for recipient in message.sent_to]

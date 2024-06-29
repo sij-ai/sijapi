@@ -48,7 +48,6 @@ class Location(BaseModel):
         }
 
 
-
 class Geocoder:
     def __init__(self, named_locs: Union[str, Path] = None, cache_file: Union[str, Path] = 'timezone_cache.json'):
         self.tf = TimezoneFinder()
@@ -119,10 +118,12 @@ class Geocoder:
         else:
             raise ValueError(f"Unsupported unit: {unit}")
 
+
     async def timezone(self, lat: float, lon: float):
         loop = asyncio.get_running_loop()
-        timezone = await loop.run_in_executor(self.executor, self.tf.timezone_at, lat, lon)
+        timezone = await loop.run_in_executor(self.executor, lambda: self.tf.timezone_at(lat=lat, lng=lon))
         return timezone if timezone else 'Unknown'
+
 
     async def lookup(self, lat: float, lon: float):
         city, state, country = (await self.location(lat, lon))[0]['name'], (await self.location(lat, lon))[0]['admin1'], (await self.location(lat, lon))[0]['cc']
@@ -357,6 +358,7 @@ class AutoResponder(BaseModel):
     whitelist: List[str]
     blacklist: List[str]
     image_prompt: Optional[str] = None
+    image_scene:  Optional[str] = None
     smtp: SMTPConfig
     
 class EmailAccount(BaseModel):
