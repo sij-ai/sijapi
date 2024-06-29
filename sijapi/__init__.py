@@ -115,8 +115,6 @@ COMFYUI_OUTPUT_DIR = COMFYUI_DIR / 'output'
 COMFYUI_LAUNCH_CMD = os.getenv('COMFYUI_LAUNCH_CMD', 'mamba activate comfyui && python main.py')
 SD_CONFIG_PATH = CONFIG_DIR / 'sd.yaml'
 
-
-
 ### ASR
 ASR_DIR = DATA_DIR / "asr"
 os.makedirs(ASR_DIR, exist_ok=True)

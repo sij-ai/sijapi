@@ -373,7 +373,6 @@ async def process_all_accounts():
     autoresponding_tasks = [asyncio.create_task(process_account_autoresponding(account)) for account in email_accounts]
     await asyncio.gather(*summarization_tasks, *autoresponding_tasks)
 
-
 @email.on_event("startup")
 async def startup_event():
     await asyncio.sleep(5)
