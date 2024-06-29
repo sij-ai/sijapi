@@ -18,20 +18,21 @@ from markdownify import markdownify as md
 from typing import Optional, Union, Dict, List, Tuple
 from urllib.parse import urlparse
 from urllib3.util.retry import Retry
+import newspaper
 from newspaper import Article
 import trafilatura
 from readability import Document
 from requests.adapters import HTTPAdapter
 import re
 import os
-from datetime import timedelta, datetime, time as dt_time, date as dt_date
+from datetime import timedelta, datetime as dt_datetime, time as dt_time, date as dt_date
 from dateutil.parser import parse as dateutil_parse
 from fastapi import HTTPException, status
 from pathlib import Path
 from fastapi import APIRouter, Query, HTTPException
-from sijapi import L, OBSIDIAN_VAULT_DIR, OBSIDIAN_RESOURCES_DIR, ARCHIVE_DIR, BASE_URL, OBSIDIAN_BANNER_SCENE, DEFAULT_11L_VOICE, DEFAULT_VOICE, TZ, DynamicTZ
-from sijapi.routers import tts, llm, time, sd, locate, weather, asr, calendar
-from sijapi.routers.locate import Location
+from sijapi import L, OBSIDIAN_VAULT_DIR, OBSIDIAN_RESOURCES_DIR, ARCHIVE_DIR, BASE_URL, OBSIDIAN_BANNER_SCENE, DEFAULT_11L_VOICE, DEFAULT_VOICE, TZ, DynamicTZ, GEO
+from sijapi.routers import cal, loc, tts, llm, time, sd, weather, asr
+from sijapi.routers.loc import Location
 from sijapi.utilities import assemble_journal_path, assemble_archive_path, convert_to_12_hour_format, sanitize_filename, convert_degrees_to_cardinal, HOURLY_COLUMNS_MAPPING
 
 
@@ -39,16 +40,17 @@ note = APIRouter()
 
 
 
+### Daily Note Builder ###
 
 @note.get("/note/bulk/{dt_start}/{dt_end}")
 async def build_daily_note_range_endpoint(dt_start: str, dt_end: str):
-    start_date = datetime.strptime(dt_start, "%Y-%m-%d")
-    end_date = datetime.strptime(dt_end, "%Y-%m-%d")
+    start_date = dt_datetime.strptime(dt_start, "%Y-%m-%d")
+    end_date = dt_datetime.strptime(dt_end, "%Y-%m-%d")
     
     results = []
     current_date = start_date
     while current_date <= end_date:
-        formatted_date = await locate.localize_datetime(current_date)
+        formatted_date = await loc.dt(current_date)
         result = await build_daily_note(formatted_date)
         results.append(result)
         current_date += timedelta(days=1)
@@ -59,13 +61,13 @@ async def build_daily_note_range_endpoint(dt_start: str, dt_end: str):
 
 @note.post("/note/create")
 async def build_daily_note_endpoint(
-    date_str: Optional[str] = Form(datetime.now().strftime("%Y-%m-%d")),
+    date_str: Optional[str] = Form(dt_datetime.now().strftime("%Y-%m-%d")),
     location: Optional[str] = Form(None)
 ):
     lat, lon = None, None
     try:
         if not date_str:
-            date_str = datetime.now().strftime("%Y-%m-%d")
+            date_str = dt_datetime.now().strftime("%Y-%m-%d")
         if location:
             lat, lon = map(float, location.split(','))
             tz = ZoneInfo(DynamicTZ.find(lat, lon))
@@ -75,31 +77,35 @@ async def build_daily_note_endpoint(
     except (ValueError, AttributeError, TypeError) as e:
         L.WARN(f"Falling back to localized datetime due to error: {e}")
         try:
-            date_time = locate.localize_datetime(date_str)
-            places = await locate.fetch_locations(date_time)
+            date_time = loc.dt(date_str)
+            places = await loc.fetch_locations(date_time)
             lat, lon = places[0].latitude, places[0].longitude
         except Exception as e:
             return JSONResponse(content={"error": str(e)}, status_code=400)
 
     path = await build_daily_note(date_time, lat, lon)
-    return JSONResponse(content={"path": path}, status_code=200)
 
-async def build_daily_note(date_time: datetime, lat: float = None, lon: float = None):
+    path_str = str(path)  # Convert PosixPath to string
+    
+    return JSONResponse(content={"path": path_str}, status_code=200)
+
+
+async def build_daily_note(date_time: dt_datetime, lat: float = None, lon: float = None):
     '''
 Obsidian helper. Takes a datetime and creates a new daily note. Note: it uses the sijapi configuration file to place the daily note and does NOT presently interface with Obsidian's daily note or periodic notes extensions. It is your responsibility to ensure they match.
     '''
     absolute_path, _ = assemble_journal_path(date_time)
-
+    L.WARN(f"Using {date_time.strftime('%Y-%m-%d %H:%M:%S')} as our datetime in build_daily_note.")
     formatted_day = date_time.strftime("%A %B %d, %Y")  # Monday May 27, 2024 formatting
     day_before = (date_time - timedelta(days=1)).strftime("%Y-%m-%d %A")  # 2024-05-26 Sunday formatting
     day_after = (date_time + timedelta(days=1)).strftime("%Y-%m-%d %A")  # 2024-05-28 Tuesday formatting
     header = f"# [[{day_before}|← ]] {formatted_day} [[{day_after}| →]]\n\n"
     
     if not lat or not lon:
-        places = await locate.fetch_locations(date_time)
+        places = await loc.fetch_locations(date_time)
         lat, lon = places[0].latitude, places[0].longitude
 
-    location = await locate.reverse_geocode(lat, lon)
+    location = await GEO.code(lat, lon)
     
     timeslips = await build_daily_timeslips(date_time)
 
@@ -126,7 +132,7 @@ date: "{fm_day}"
 banner: "![[{banner_path}]]"
 tags:
  - daily-note
-created: "{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}"
+created: "{dt_datetime.now().strftime("%Y-%m-%d %H:%M:%S")}"
 ---
     
 {header}
@@ -153,6 +159,8 @@ created: "{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}"
     return absolute_path
     
 
+### Daily Note Component Builders ###
+
 async def build_daily_timeslips(date):
     '''
 
@@ -166,469 +174,13 @@ async def build_daily_timeslips(date):
     return f"![[{relative_path}]]"
 
 
-### CLIPPER ###
-@note.post("/clip")
-async def clip_post(
-    bg_tasks: BackgroundTasks,
-    url: Optional[str] = Form(None),
-    source: Optional[str] = Form(None),
-    title: Optional[str] = Form(None),
-    tts: str = Form('summary'),
-    voice: str = Form(DEFAULT_VOICE),
-    encoding: str = Form('utf-8')
-):
-    markdown_filename = await process_article(bg_tasks, url, title, encoding, source, tts, voice)
-    return {"message": "Clip saved successfully", "markdown_filename": markdown_filename}
-
-@note.post("/archive")
-async def archive_post(
-    url: Optional[str] = Form(None),
-    source: Optional[str] = Form(None),
-    title: Optional[str] = Form(None),
-    encoding: str = Form('utf-8')
-):
-    markdown_filename = await process_archive(url, title, encoding, source)
-    return {"message": "Clip saved successfully", "markdown_filename": markdown_filename}
-
-@note.get("/clip")
-async def clip_get(
-    bg_tasks: BackgroundTasks,
-    url: str,
-    title: Optional[str] = Query(None),
-    encoding: str = Query('utf-8'),
-    tts: str = Query('summary'),
-    voice: str = Query(DEFAULT_VOICE)
-):
-    markdown_filename = await process_article(bg_tasks, url, title, encoding, tts=tts, voice=voice)
-    return {"message": "Clip saved successfully", "markdown_filename": markdown_filename}
-
-@note.post("/note/add")
-async def note_add_endpoint(file: Optional[UploadFile] = File(None), text: Optional[str] = Form(None), source: Optional[str] = Form(None), bg_tasks: BackgroundTasks = None):
-    L.DEBUG(f"Received request on /note/add...")
-    if not file and not text:
-        L.WARN(f"... without any file or text!")
-        raise HTTPException(status_code=400, detail="Either text or a file must be provided")
-    else:
-        result = await process_for_daily_note(file, text, source, bg_tasks)
-        L.INFO(f"Result on /note/add: {result}")
-        return JSONResponse(result, status_code=204)
-
-async def process_for_daily_note(file: Optional[UploadFile] = File(None), text: Optional[str] = None, source: Optional[str] = None, bg_tasks: BackgroundTasks = None):
-    now = datetime.now()
-    transcription_entry = ""
-    file_entry = ""
-    if file:
-        L.DEBUG("File received...")
-        file_content = await file.read()
-        audio_io = BytesIO(file_content)
-        
-        # Improve error handling for file type guessing
-        guessed_type = mimetypes.guess_type(file.filename)
-        file_type = guessed_type[0] if guessed_type[0] else "application/octet-stream"
-        
-        L.DEBUG(f"Processing as {file_type}...")
-        
-        # Extract the main type (e.g., 'audio', 'image', 'video')
-        main_type = file_type.split('/')[0]
-        subdir = main_type.title() if main_type else "Documents"
-        
-        absolute_path, relative_path = assemble_journal_path(now, subdir=subdir, filename=file.filename)
-        L.DEBUG(f"Destination path: {absolute_path}")
-        
-        with open(absolute_path, 'wb') as f:
-            f.write(file_content)
-        L.DEBUG(f"Processing {f.name}...")
-        
-        if main_type == 'audio':
-            transcription = await asr.transcribe_audio(file_path=absolute_path, params=asr.TranscribeParams(model="small-en", language="en", threads=6))
-            file_entry = f"![[{relative_path}]]"
-        elif main_type == 'image':
-            file_entry = f"![[{relative_path}]]"
-        else:
-            file_entry = f"[Source]({relative_path})"
-    
-    text_entry = text if text else ""
-    L.DEBUG(f"transcription: {transcription_entry}\nfile_entry: {file_entry}\ntext_entry: {text_entry}")
-    return await add_to_daily_note(transcription_entry, file_entry, text_entry, now)
-
-async def add_to_daily_note(transcription: str = None, file_link: str = None, additional_text: str = None, date_time: datetime = None):
-    date_time = date_time or datetime.now()
-    note_path, _ = assemble_journal_path(date_time, filename='Notes', extension=".md", no_timestamp = True)
-    time_str = date_time.strftime("%H:%M")
-    
-    entry_lines = []
-    if additional_text and additional_text.strip():
-        entry_lines.append(f"\t* {additional_text.strip()}") 
-    if transcription and transcription.strip():
-        entry_lines.append(f"\t* {transcription.strip()}") 
-    if file_link and file_link.strip():
-        entry_lines.append(f"\t\t {file_link.strip()}")
-
-    entry = f"\n* **{time_str}**\n" + "\n".join(entry_lines)
-
-    # Write the entry to the end of the file
-    if note_path.exists():
-        with open(note_path, 'a', encoding='utf-8') as note_file:
-            note_file.write(entry)
-    else: 
-        date_str = date_time.strftime("%Y-%m-%d")
-        frontmatter = f"""---
-date: {date_str}
-tags:
- - notes
----
-
-"""
-        content = frontmatter + entry
-        # If the file doesn't exist, create it and start with "Notes"
-        with open(note_path, 'w', encoding='utf-8') as note_file:
-            note_file.write(content)
-
-    return entry
-
-async def handle_text(title:str, summary:str, extracted_text:str, date_time: datetime = None):
-    date_time = date_time if date_time else datetime.now()
-    absolute_path, relative_path = assemble_journal_path(date_time, filename=title, extension=".md", no_timestamp = True)
-    with open(absolute_path, "w") as file:
-        file.write(f"# {title}\n\n## Summary\n{summary}\n\n## Transcript\n{extracted_text}")
-        
-    # add_to_daily_note(f"**Uploaded [[{title}]]**: *{summary}*", absolute_path)
-
-    return True
-
-
-async def process_document(
-    bg_tasks: BackgroundTasks,
-    document: File,
-    title: Optional[str] = None,
-    tts_mode: str = "summary",
-    voice: str = DEFAULT_VOICE
-):
-    timestamp = datetime.now().strftime('%b %d, %Y at %H:%M')
-
-    # Save the document to OBSIDIAN_RESOURCES_DIR
-    document_content = await document.read()
-    file_path = Path(OBSIDIAN_VAULT_DIR) / OBSIDIAN_RESOURCES_DIR / document.filename
-    with open(file_path, 'wb') as f:
-        f.write(document_content)
-
-    parsed_content = await llm.extract_text(file_path)  # Ensure extract_text is awaited
-
-    llm_title, summary = await llm.title_and_summary(parsed_content)
-    try:
-        readable_title = sanitize_filename(title if title else document.filename)
-
-        if tts_mode == "full" or tts_mode == "content" or tts_mode == "body":
-            tts_text = parsed_content
-        elif tts_mode == "summary" or tts_mode == "excerpt":
-            tts_text = summary
-        else:
-            tts_text = None
-
-        frontmatter = f"""---
-title: {readable_title}
-added: {timestamp}
----
-"""
-        body = f"# {readable_title}\n\n"
-
-        if tts_text:
-            try:
-                datetime_str = datetime.now().strftime("%Y%m%d%H%M%S")
-                audio_filename = f"{datetime_str} {readable_title}"
-                audio_path = await tts.generate_speech(
-                    bg_tasks=bg_tasks,
-                    text=tts_text,
-                    voice=voice,
-                    model="eleven_turbo_v2",
-                    podcast=True,
-                    title=audio_filename,
-                    output_dir=Path(OBSIDIAN_VAULT_DIR) / OBSIDIAN_RESOURCES_DIR
-                )
-                audio_ext = Path(audio_path).suffix
-                obsidian_link = f"![[{OBSIDIAN_RESOURCES_DIR}/{audio_filename}{audio_ext}]]"
-                body += f"{obsidian_link}\n\n"
-            except Exception as e:
-                L.ERR(f"Failed in the TTS portion of clipping: {e}")
-
-        body += f"> [!summary]+\n"
-        body += f"> {summary}\n\n"
-        body += parsed_content
-        markdown_content = frontmatter + body
-
-        markdown_filename = f"{readable_title}.md"
-        encoding = 'utf-8'
-
-        with open(markdown_filename, 'w', encoding=encoding) as md_file:
-            md_file.write(markdown_content)
-
-        L.INFO(f"Successfully saved to {markdown_filename}")
-
-        return markdown_filename
-
-    except Exception as e:
-        L.ERR(f"Failed to clip: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-async def process_article(
-    bg_tasks: BackgroundTasks,
-    url: str,
-    title: Optional[str] = None,
-    encoding: str = 'utf-8',
-    source: Optional[str] = None,
-    tts_mode: str = "summary", 
-    voice: str = DEFAULT_11L_VOICE
-):
-
-    timestamp = datetime.now().strftime('%b %d, %Y at %H:%M')
-
-    parsed_content = await parse_article(url, source)
-    if parsed_content is None:
-        return {"error": "Failed to retrieve content"}
-
-    readable_title = sanitize_filename(title or parsed_content.get("title") or timestamp)
-    markdown_filename, relative_path = assemble_journal_path(datetime.now(), subdir="Articles", filename=readable_title, extension=".md")
-
-    try:
-        summary = await llm.summarize_text(parsed_content["content"], "Summarize the provided text. Respond with the summary and nothing else. Do not otherwise acknowledge the request. Just provide the requested summary.")
-        summary = summary.replace('\n', ' ')  # Remove line breaks
-
-        if tts_mode == "full" or tts_mode == "content":
-            tts_text = parsed_content["content"]
-        elif tts_mode == "summary" or tts_mode == "excerpt":
-            tts_text = summary
-        else:
-            tts_text = None
-
-        banner_markdown = ''
-        try:
-            banner_url = parsed_content.get('image', '')
-            if banner_url != '':
-                banner_image = download_file(banner_url, Path(OBSIDIAN_VAULT_DIR / OBSIDIAN_RESOURCES_DIR))
-                if banner_image:
-                    banner_markdown = f"![[{OBSIDIAN_RESOURCES_DIR}/{banner_image}]]"
-                
-        except Exception as e:
-            L.ERR(f"No image found in article")
-
-        authors = ', '.join('[[{}]]'.format(author) for author in parsed_content.get('authors', ['Unknown']))
-
-        frontmatter = f"""---
-title: {readable_title}
-authors: {', '.join('[[{}]]'.format(author) for author in parsed_content.get('authors', ['Unknown']))}
-published: {parsed_content.get('date_published', 'Unknown')}
-added: {timestamp}
-excerpt: {parsed_content.get('excerpt', '')}
-banner: "{banner_markdown}"
-tags:
-
-"""
-        frontmatter += '\n'.join(f" - {tag}" for tag in parsed_content.get('tags', []))
-        frontmatter += '\n---\n'
-
-        body = f"# {readable_title}\n\n"
-
-        if tts_text:
-            datetime_str = datetime.now().strftime("%Y%m%d%H%M%S")
-            audio_filename = f"{datetime_str} {readable_title}"
-            try:
-                audio_path = await tts.generate_speech(bg_tasks=bg_tasks, text=tts_text, voice=voice, model="eleven_turbo_v2", podcast=True, title=audio_filename,
-                output_dir=Path(OBSIDIAN_VAULT_DIR) / OBSIDIAN_RESOURCES_DIR)
-                audio_ext = Path(audio_path).suffix
-                obsidian_link = f"![[{OBSIDIAN_RESOURCES_DIR}/{audio_filename}{audio_ext}]]"
-                body += f"{obsidian_link}\n\n"
-            except Exception as e:
-                L.ERR(f"Failed to generate TTS for np3k. {e}")
-
-        try:
-            body += f"by {authors} in [{parsed_content.get('domain', urlparse(url).netloc.replace('www.', ''))}]({url}).\n\n"
-            body += f"> [!summary]+\n"
-            body += f"> {summary}\n\n"
-            body += parsed_content["content"]
-            markdown_content = frontmatter + body
-
-        except Exception as e:
-            L.ERR(f"Failed to combine elements of article markdown.")
-
-        try:
-            with open(markdown_filename, 'w', encoding=encoding) as md_file:
-                md_file.write(markdown_content)
-
-            L.INFO(f"Successfully saved to {markdown_filename}")
-            add_to_daily_note
-            return markdown_filename
-        
-        except Exception as e:
-            L.ERR(f"Failed to write markdown file")
-            raise HTTPException(status_code=500, detail=str(e))
-        
-    except Exception as e:
-        L.ERR(f"Failed to clip {url}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-async def parse_article(url: str, source: Optional[str] = None):
-    source = source if source else trafilatura.fetch_url(url)
-    traf = trafilatura.extract_metadata(filecontent=source, default_url=url)
-
-    # Pass the HTML content to newspaper3k:
-    np3k = Article(url)
-    np3k.set_html(source)
-    np3k.parse()
-
-    L.INFO(f"Parsed {np3k.title}")
-    
-
-    title = (np3k.title or traf.title) or url
-    authors = np3k.authors or traf.author
-    authors = (authors if isinstance(authors, List) else [authors])
-    date = np3k.publish_date or traf.date
-    try:
-        date = await locate.localize_datetime(date)
-    except:
-        L.DEBUG(f"Failed to localize {date}")
-        date = await locate.localize_datetime(datetime.now())
-    excerpt = np3k.meta_description or traf.description
-    content = trafilatura.extract(source, output_format="markdown", include_comments=False) or np3k.text
-    image = np3k.top_image or traf.image
-    domain = traf.sitename or urlparse(url).netloc.replace('www.', '').title()
-    tags = np3k.meta_keywords or traf.categories or traf.tags
-    tags = tags if isinstance(tags, List) else [tags]
-    
-    return {
-        'title': title.replace("  ", " "),
-        'authors': authors,
-        'date': date.strftime("%b %d, %Y at %H:%M"),
-        'excerpt': excerpt,
-        'content': content,
-        'image': image,
-        'url': url,
-        'domain': domain,
-        'tags': np3k.meta_keywords
-    }
-
-
-async def html_to_markdown(url: str = None, source: str = None) -> Optional[str]:
-    if source:
-        html_content = source
-    elif url:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url) as response:
-                html_content = await response.text()
-    else:
-        L.ERR(f"Unable to convert nothing to markdown.")
-        return None
-
-    # Use readability to extract the main content
-    doc = Document(html_content)
-    cleaned_html = doc.summary()
-
-    # Parse the cleaned HTML with BeautifulSoup for any additional processing
-    soup = BeautifulSoup(cleaned_html, 'html.parser')
-
-    # Remove any remaining unwanted elements
-    for element in soup(['script', 'style']):
-        element.decompose()
-
-    # Convert to markdown
-    markdown_content = md(str(soup), heading_style="ATX")
-
-    return markdown_content
-
-
-async def process_archive(
-    url: str,
-    title: Optional[str] = None,
-    encoding: str = 'utf-8',
-    source: Optional[str] = None,
-) -> Path:
-    timestamp = datetime.now().strftime('%b %d, %Y at %H:%M')
-    readable_title = title if title else f"{url} - {timestamp}"
-    
-    content = await html_to_markdown(url, source)
-    if content is None:
-        raise HTTPException(status_code=400, detail="Failed to convert content to markdown")
-    
-    markdown_path, relative_path = assemble_archive_path(readable_title, ".md")
-    
-    markdown_content = f"---\n"
-    markdown_content += f"title: {readable_title}\n"
-    markdown_content += f"added: {timestamp}\n"
-    markdown_content += f"url: {url}"
-    markdown_content += f"date: {datetime.now().strftime('%Y-%m-%d')}"
-    markdown_content += f"---\n\n"
-    markdown_content += f"# {readable_title}\n\n"
-    markdown_content += f"Clipped from [{url}]({url}) on {timestamp}"
-    markdown_content += content
-    
-    try:
-        markdown_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(markdown_path, 'w', encoding=encoding) as md_file:
-            md_file.write(markdown_content)
-        L.DEBUG(f"Successfully saved to {markdown_path}")
-        return markdown_path
-    except Exception as e:
-        L.WARN(f"Failed to write markdown file: {str(e)}")
-        return None
-
-def download_file(url, folder):
-    os.makedirs(folder, exist_ok=True)
-    filename = str(uuid.uuid4()) + os.path.splitext(urlparse(url).path)[-1]
-    filepath = os.path.join(folder, filename)
-    
-    session = requests.Session()
-    retries = Retry(total=5, backoff_factor=1, status_forcelist=[502, 503, 504])
-    session.mount('http://', HTTPAdapter(max_retries=retries))
-    session.mount('https://', HTTPAdapter(max_retries=retries))
-
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'
-    }
-
-    try:
-        response = session.get(url, headers=headers, timeout=10)
-        if response.status_code == 200:
-            if 'image' in response.headers.get('Content-Type', ''):
-                with open(filepath, 'wb') as f:
-                    f.write(response.content)
-            else:
-                L.ERR(f"Failed to download image: {url}, invalid content type: {response.headers.get('Content-Type')}")
-                return None
-        else:
-            L.ERR(f"Failed to download image: {url}, status code: {response.status_code}")
-            return None
-    except Exception as e:
-        L.ERR(f"Failed to download image: {url}, error: {str(e)}")
-        return None
-    return filename
-
-def copy_file(local_path, folder):
-    os.makedirs(folder, exist_ok=True)
-    filename = os.path.basename(local_path)
-    destination_path = os.path.join(folder, filename)
-    shutil.copy(local_path, destination_path)
-    return filename
-
-
-async def save_file(file: UploadFile, folder: Path) -> Path:
-    file_path = folder / f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{file.filename}"
-    with open(file_path, 'wb') as f:
-        shutil.copyfileobj(file.file, f)
-    return file_path
-
-
-
-    
-### FRONTMATTER, BANNER
-
 @note.put("/note/update_frontmatter")
 async def update_frontmatter_endpoint(date: str, key: str, value: str):
-    date_time = datetime.strptime(date, "%Y-%m-%d")
+    date_time = dt_datetime.strptime(date, "%Y-%m-%d")
     result = await update_frontmatter(date_time, key, value)
     return result
     
-async def update_frontmatter(date_time: datetime, key: str, value: str):
+async def update_frontmatter(date_time: dt_datetime, key: str, value: str):
     # Parse the date and format paths
     file_path, relative_path = assemble_journal_path(date_time)
 
@@ -682,14 +234,18 @@ async def banner_endpoint(dt: str, location: str = None, mood: str = None, other
         Endpoint (POST) that generates a new banner image for the Obsidian daily note for a specified date, taking into account optional additional information, then updates the frontmatter if necessary.
     '''
     L.DEBUG(f"banner_endpoint requested with date: {dt} ({type(dt)})")
-    date_time = await locate.localize_datetime(dt)
+    date_time = await loc.dt(dt)
     L.DEBUG(f"date_time after localization: {date_time} ({type(date_time)})")
     jpg_path = await generate_banner(date_time, location, mood=mood, other_context=other_context)
     return jpg_path
 
 
-async def get_note(date_time: datetime):
-    date_time = await locate.localize_datetime(date_time);
+
+
+
+
+async def get_note(date_time: dt_datetime):
+    date_time = await loc.dt(date_time);
     absolute_path, local_path = assemble_journal_path(date_time, filename = "Notes", extension = ".md", no_timestamp = True)
 
     if absolute_path.is_file():
@@ -697,7 +253,7 @@ async def get_note(date_time: datetime):
             content = file.read()
         return content if content else None
 
-async def sentiment_analysis(date_time: datetime):
+async def sentiment_analysis(date_time: dt_datetime):
     most_recent_note = await get_note(date_time)
     most_recent_note = most_recent_note or await get_note(date_time - timedelta(days=1))
     if most_recent_note:
@@ -711,20 +267,20 @@ async def sentiment_analysis(date_time: datetime):
 
 async def generate_banner(dt, location: Location = None, forecast: str = None, mood: str = None, other_context: str = None):
     # L.DEBUG(f"Location: {location}, forecast: {forecast}, mood: {mood}, other_context: {other_context}")
-    date_time = await locate.localize_datetime(dt)
+    date_time = await loc.dt(dt)
     L.DEBUG(f"generate_banner called with date_time: {date_time}")
     destination_path, local_path = assemble_journal_path(date_time, filename="Banner", extension=".jpg", no_timestamp = True)
     L.DEBUG(f"destination path generated: {destination_path}")
     
     if not location:
-        locations = await locate.fetch_locations(date_time)
+        locations = await loc.fetch_locations(date_time)
         if locations:
             location = locations[0]
     
     display_name = "Location: "
     if location:
         lat, lon = location.latitude, location.longitude
-        override_location = await locate.find_override_locations(lat, lon)
+        override_location = await loc.find_override_locations(lat, lon)
         display_name += f"{override_location}, " if override_location else ""
         if location.display_name:
             display_name += f"{location.display_name}"
@@ -739,7 +295,7 @@ async def generate_banner(dt, location: Location = None, forecast: str = None, m
             display_name += f"{location.country} " if location.country else ""
 
         if display_name == "Location: ":
-            geocoded_location = await locate.reverse_geocode(lat, lon)
+            geocoded_location = await GEO.code(lat, lon)
             if geocoded_location.display_name or geocoded_location.city or geocoded_location.country:
                 return await generate_banner(dt, geocoded_location, forecast, mood, other_context)
             else:
@@ -757,7 +313,7 @@ async def generate_banner(dt, location: Location = None, forecast: str = None, m
     elif sentiment and not mood: mood = f"Mood: {sentiment}"
     else: mood = ""
 
-    events = await calendar.get_events(date_time, date_time)
+    events = await cal.get_events(date_time, date_time)
     formatted_events = []
     for event in events:
         event_str = event.get('name')
@@ -792,7 +348,8 @@ async def note_weather_get(
 ):
 
     try:
-        date_time = datetime.now() if date == "0" else await locate.localize_datetime(date)
+        date_time = dt_datetime.now() if date == "0" else await loc.dt(date)
+        L.WARN(f"Using {date_time.strftime('%Y-%m-%d %H:%M:%S')} as our dt_datetime in note_weather_get.")
         L.DEBUG(f"date: {date} .. date_time: {date_time}")
         content = await update_dn_weather(date_time) #, lat, lon)
         return JSONResponse(content={"forecast": content}, status_code=200)
@@ -807,26 +364,27 @@ async def note_weather_get(
 
 @note.post("/update/note/{date}")
 async def post_update_daily_weather_and_calendar_and_timeslips(date: str) -> PlainTextResponse:
-    date_time = await locate.localize_datetime(date)
+    date_time = await loc.dt(date)
+    L.WARN(f"Using {date_time.strftime('%Y-%m-%d %H:%M:%S')} as our dt_datetime in post_update_daily_weather_and_calendar_and_timeslips.")
     await update_dn_weather(date_time)
     await update_daily_note_events(date_time)
     await build_daily_timeslips(date_time)
     return f"[Refresh]({BASE_URL}/update/note/{date_time.strftime('%Y-%m-%d')}"
 
-async def update_dn_weather(date_time: datetime, lat: float = None, lon: float = None):
+async def update_dn_weather(date_time: dt_datetime, lat: float = None, lon: float = None):
+    L.WARN(f"Using {date_time.strftime('%Y-%m-%d %H:%M:%S')} as our datetime in update_dn_weather.")
     try:
         if lat and lon:
-            place = locate.reverse_geocode(lat, lon)
+            place = GEO.code(lat, lon)
 
         else:
             L.DEBUG(f"Updating weather for {date_time}")
-
-            places = await locate.fetch_locations(date_time)
+            places = await loc.fetch_locations(date_time)
             place = places[0]
             lat = place.latitude
             lon = place.longitude
         
-        city = await locate.find_override_locations(lat, lon)
+        city = await loc.find_override_locations(lat, lon)
         if city:
             L.INFO(f"Using override location: {city}")
 
@@ -836,7 +394,7 @@ async def update_dn_weather(date_time: datetime, lat: float = None, lon: float =
                 L.INFO(f"City in data: {city}")
 
             else:
-                loc = await locate.reverse_geocode(lat, lon)
+                loc = await GEO.code(lat, lon)
                 L.DEBUG(f"loc: {loc}")
                 city = loc.name
                 city = city if city else loc.city
@@ -849,7 +407,7 @@ async def update_dn_weather(date_time: datetime, lat: float = None, lon: float =
         L.DEBUG(f"Journal path: absolute_path={absolute_path}, relative_path={relative_path}")
 
         try:
-            L.DEBUG(f"passing date_time {date_time}, {lat}/{lon} into fetch_and_store")
+            L.DEBUG(f"passing date_time {date_time.strftime('%Y-%m-%d %H:%M:%S')}, {lat}/{lon} into fetch_and_store")
             day = await weather.get_weather(date_time, lat, lon)
             L.DEBUG(f"day information obtained from get_weather: {day}")
             if day:
@@ -887,13 +445,13 @@ async def update_dn_weather(date_time: datetime, lat: float = None, lon: float =
                     
 
                     date_str = date_time.strftime("%Y-%m-%d")
-                    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    now = dt_datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
                     detailed_forecast = (
                         f"---\n"
                         f"date: {date_str}\n"
-                        f"latitude: {lat}"
-                        f"longitude: {lon}"
+                        f"latitude: {lat}\n"
+                        f"longitude: {lon}\n"
                         f"tags:\n"
                         f" - weather\n"
                         f"updated: {now}\n"
@@ -951,7 +509,6 @@ async def update_dn_weather(date_time: datetime, lat: float = None, lon: float =
             L.ERR(traceback.format_exc())
             raise HTTPException(status_code=999, detail=f"Error: {e}")
 
-
     except ValueError as ve:
         L.ERR(f"Value error in update_dn_weather: {str(ve)}")
         L.ERR(traceback.format_exc())
@@ -970,7 +527,6 @@ def format_hourly_time(hour):
         L.ERR(f"Error in format_hourly_time: {str(e)}")
         L.ERR(traceback.format_exc())
         return ""
-
     
 def format_hourly_icon(hour, sunrise, sunset):
     try:
@@ -1121,10 +677,6 @@ def get_weather_emoji(weather_condition):
         return "⛅"
     else:
         return "🌡️"  # Default emoji for unclassified weather
-    
-
-### CALENDAR ###
-
 
 async def format_events_as_markdown(event_data: Dict[str, Union[str, List[Dict[str, str]]]]) -> str:
     def remove_characters(s: str) -> str:
@@ -1134,10 +686,10 @@ async def format_events_as_markdown(event_data: Dict[str, Union[str, List[Dict[s
         return s
     
     date_str = event_data["date"]
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    now = dt_datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     events_markdown = []
 
-    event_data["events"] = sorted(event_data["events"], key=lambda event: (not event['all_day'], datetime.strptime(event['start'], "%H:%M")), reverse=False)
+    event_data["events"] = sorted(event_data["events"], key=lambda event: (not event['all_day'], dt_datetime.strptime(event['start'], "%H:%M")), reverse=False)
 
     total_events = len(event_data["events"])
     event_markdown = f"```ad-events"
@@ -1156,7 +708,7 @@ async def format_events_as_markdown(event_data: Dict[str, Union[str, List[Dict[s
             event_name = event['name'][:80]
             markdown_name = f"[{event_name}]({url})"
 
-            if (event['all_day']) or (event['start'] == event['end'] == "00:00") or (datetime.combine(dt_date.min, datetime.strptime(event['end'], "%H:%M").time()) - datetime.combine(dt_date.min, datetime.strptime(event['start'], "%H:%M").time()) >= timedelta(hours=23, minutes=59)):
+            if (event['all_day']) or (event['start'] == event['end'] == "00:00") or (dt_datetime.combine(dt_date.min, dt_datetime.strptime(event['end'], "%H:%M").time()) - dt_datetime.combine(dt_date.min, dt_datetime.strptime(event['start'], "%H:%M").time()) >= timedelta(hours=23, minutes=59)):
                 event_markdown += f"\n - [ ] **{markdown_name}** (All day)"
 
             else:
@@ -1215,14 +767,14 @@ async def format_events_as_markdown(event_data: Dict[str, Union[str, List[Dict[s
 @note.get("/note/events", response_class=PlainTextResponse)
 async def note_events_endpoint(date: str = Query(None)):
         
-    date_time = await locate.localize_datetime(date) if date else datetime.now(TZ)
+    date_time = await loc.dt(date) if date else await loc.dt(dt_datetime.now())
     response = await update_daily_note_events(date_time)
     return PlainTextResponse(content=response, status_code=200)
 
-async def update_daily_note_events(date_time: datetime):
+async def update_daily_note_events(date_time: dt_datetime):
     L.DEBUG(f"Looking up events on date: {date_time.strftime('%Y-%m-%d')}")
     try:    
-        events = await calendar.get_events(date_time, date_time)
+        events = await cal.get_events(date_time, date_time)
         L.DEBUG(f"Raw events: {events}")
         event_data = {
             "date": date_time.strftime('%Y-%m-%d'),
@@ -1241,4 +793,538 @@ async def update_daily_note_events(date_time: datetime):
     except Exception as e:
         L.ERR(f"Error processing events: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+
+
+
+### CLIPPER ###
+@note.post("/clip")
+async def clip_post(
+    bg_tasks: BackgroundTasks,
+    url: Optional[str] = Form(None),
+    source: Optional[str] = Form(None),
+    title: Optional[str] = Form(None),
+    tts: str = Form('summary'),
+    voice: str = Form(DEFAULT_VOICE),
+    encoding: str = Form('utf-8')
+):
+    markdown_filename = await process_article(bg_tasks, url, title, encoding, source, tts, voice)
+    return {"message": "Clip saved successfully", "markdown_filename": markdown_filename}
+
+@note.post("/archive")
+async def archive_post(
+    url: Optional[str] = Form(None),
+    source: Optional[str] = Form(None),
+    title: Optional[str] = Form(None),
+    encoding: str = Form('utf-8')
+):
+    markdown_filename = await process_archive(url, title, encoding, source)
+    return {"message": "Clip saved successfully", "markdown_filename": markdown_filename}
+
+@note.get("/clip")
+async def clip_get(
+    bg_tasks: BackgroundTasks,
+    url: str,
+    title: Optional[str] = Query(None),
+    encoding: str = Query('utf-8'),
+    tts: str = Query('summary'),
+    voice: str = Query(DEFAULT_VOICE)
+):
+    markdown_filename = await process_article(bg_tasks, url, title, encoding, tts=tts, voice=voice)
+    return {"message": "Clip saved successfully", "markdown_filename": markdown_filename}
+
+@note.post("/note/add")
+async def note_add_endpoint(file: Optional[UploadFile] = File(None), text: Optional[str] = Form(None), source: Optional[str] = Form(None), bg_tasks: BackgroundTasks = None):
+    L.DEBUG(f"Received request on /note/add...")
+    if not file and not text:
+        L.WARN(f"... without any file or text!")
+        raise HTTPException(status_code=400, detail="Either text or a file must be provided")
+    else:
+        result = await process_for_daily_note(file, text, source, bg_tasks)
+        L.INFO(f"Result on /note/add: {result}")
+        return JSONResponse(result, status_code=204)
+
+async def process_for_daily_note(file: Optional[UploadFile] = File(None), text: Optional[str] = None, source: Optional[str] = None, bg_tasks: BackgroundTasks = None):
+    now = dt_datetime.now()
+    transcription_entry = ""
+    file_entry = ""
+    if file:
+        L.DEBUG("File received...")
+        file_content = await file.read()
+        audio_io = BytesIO(file_content)
+        
+        # Improve error handling for file type guessing
+        guessed_type = mimetypes.guess_type(file.filename)
+        file_type = guessed_type[0] if guessed_type[0] else "application/octet-stream"
+        
+        L.DEBUG(f"Processing as {file_type}...")
+        
+        # Extract the main type (e.g., 'audio', 'image', 'video')
+        main_type = file_type.split('/')[0]
+        subdir = main_type.title() if main_type else "Documents"
+        
+        absolute_path, relative_path = assemble_journal_path(now, subdir=subdir, filename=file.filename)
+        L.DEBUG(f"Destination path: {absolute_path}")
+        
+        with open(absolute_path, 'wb') as f:
+            f.write(file_content)
+        L.DEBUG(f"Processing {f.name}...")
+        
+        if main_type == 'audio':
+            transcription = await asr.transcribe_audio(file_path=absolute_path, params=asr.TranscribeParams(model="small-en", language="en", threads=6))
+            file_entry = f"![[{relative_path}]]"
+        elif main_type == 'image':
+            file_entry = f"![[{relative_path}]]"
+        else:
+            file_entry = f"[Source]({relative_path})"
+    
+    text_entry = text if text else ""
+    L.DEBUG(f"transcription: {transcription_entry}\nfile_entry: {file_entry}\ntext_entry: {text_entry}")
+    return await add_to_daily_note(transcription_entry, file_entry, text_entry, now)
+
+async def add_to_daily_note(transcription: str = None, file_link: str = None, additional_text: str = None, date_time: dt_datetime = None):
+    date_time = date_time or dt_datetime.now()
+    note_path, _ = assemble_journal_path(date_time, filename='Notes', extension=".md", no_timestamp = True)
+    time_str = date_time.strftime("%H:%M")
+    
+    entry_lines = []
+    if additional_text and additional_text.strip():
+        entry_lines.append(f"\t* {additional_text.strip()}") 
+    if transcription and transcription.strip():
+        entry_lines.append(f"\t* {transcription.strip()}") 
+    if file_link and file_link.strip():
+        entry_lines.append(f"\t\t {file_link.strip()}")
+
+    entry = f"\n* **{time_str}**\n" + "\n".join(entry_lines)
+
+    # Write the entry to the end of the file
+    if note_path.exists():
+        with open(note_path, 'a', encoding='utf-8') as note_file:
+            note_file.write(entry)
+    else: 
+        date_str = date_time.strftime("%Y-%m-%d")
+        frontmatter = f"""---
+date: {date_str}
+tags:
+ - notes
+---
+
+"""
+        content = frontmatter + entry
+        # If the file doesn't exist, create it and start with "Notes"
+        with open(note_path, 'w', encoding='utf-8') as note_file:
+            note_file.write(content)
+
+    return entry
+
+
+
+async def process_document(
+    bg_tasks: BackgroundTasks,
+    document: File,
+    title: Optional[str] = None,
+    tts_mode: str = "summary",
+    voice: str = DEFAULT_VOICE
+):
+    timestamp = dt_datetime.now().strftime('%b %d, %Y at %H:%M')
+
+    # Save the document to OBSIDIAN_RESOURCES_DIR
+    document_content = await document.read()
+    file_path = Path(OBSIDIAN_VAULT_DIR) / OBSIDIAN_RESOURCES_DIR / document.filename
+    with open(file_path, 'wb') as f:
+        f.write(document_content)
+
+    parsed_content = await llm.extract_text(file_path)  # Ensure extract_text is awaited
+
+    llm_title, summary = await llm.title_and_summary(parsed_content)
+    try:
+        readable_title = sanitize_filename(title if title else document.filename)
+
+        if tts_mode == "full" or tts_mode == "content" or tts_mode == "body":
+            tts_text = parsed_content
+        elif tts_mode == "summary" or tts_mode == "excerpt":
+            tts_text = summary
+        else:
+            tts_text = None
+
+        frontmatter = f"""---
+title: {readable_title}
+added: {timestamp}
+---
+"""
+        body = f"# {readable_title}\n\n"
+
+        if tts_text:
+            try:
+                datetime_str = dt_datetime.now().strftime("%Y%m%d%H%M%S")
+                audio_filename = f"{datetime_str} {readable_title}"
+                audio_path = await tts.generate_speech(
+                    bg_tasks=bg_tasks,
+                    text=tts_text,
+                    voice=voice,
+                    model="eleven_turbo_v2",
+                    podcast=True,
+                    title=audio_filename,
+                    output_dir=Path(OBSIDIAN_VAULT_DIR) / OBSIDIAN_RESOURCES_DIR
+                )
+                audio_ext = Path(audio_path).suffix
+                obsidian_link = f"![[{OBSIDIAN_RESOURCES_DIR}/{audio_filename}{audio_ext}]]"
+                body += f"{obsidian_link}\n\n"
+            except Exception as e:
+                L.ERR(f"Failed in the TTS portion of clipping: {e}")
+
+        body += f"> [!summary]+\n"
+        body += f"> {summary}\n\n"
+        body += parsed_content
+        markdown_content = frontmatter + body
+
+        markdown_filename = f"{readable_title}.md"
+        encoding = 'utf-8'
+
+        with open(markdown_filename, 'w', encoding=encoding) as md_file:
+            md_file.write(markdown_content)
+
+        L.INFO(f"Successfully saved to {markdown_filename}")
+
+        return markdown_filename
+
+    except Exception as e:
+        L.ERR(f"Failed to clip: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
+async def process_article(
+    bg_tasks: BackgroundTasks,
+    parsed_content: Article,
+    tts_mode: str = "summary", 
+    voice: str = DEFAULT_11L_VOICE
+):
+    timestamp = dt_datetime.now().strftime('%b %d, %Y at %H:%M')
+
+    readable_title = sanitize_filename(parsed_content.title or timestamp)
+    markdown_filename, relative_path = assemble_journal_path(dt_datetime.now(), subdir="Articles", filename=readable_title, extension=".md")
+
+    try:
+        summary = await llm.summarize_text(parsed_content.clean_doc, "Summarize the provided text. Respond with the summary and nothing else. Do not otherwise acknowledge the request. Just provide the requested summary.")
+        summary = summary.replace('\n', ' ')  # Remove line breaks
+
+        if tts_mode == "full" or tts_mode == "content":
+            tts_text = parsed_content.clean_doc
+        elif tts_mode == "summary" or tts_mode == "excerpt":
+            tts_text = summary
+        else:
+            tts_text = None
+
+        banner_markdown = ''
+        try:
+            banner_url = parsed_content.top_image
+            if banner_url != '':
+                banner_image = download_file(banner_url, Path(OBSIDIAN_VAULT_DIR / OBSIDIAN_RESOURCES_DIR))
+                if banner_image:
+                    banner_markdown = f"![[{OBSIDIAN_RESOURCES_DIR}/{banner_image}]]"
+                
+        except Exception as e:
+            L.ERR(f"No image found in article")
+
+        authors = ', '.join('[[{}]]'.format(author) for author in parsed_content.authors)
+        published_date = parsed_content.publish_date
+        frontmatter = f"""---
+title: {readable_title}
+authors: {authors}
+published: {published_date}
+added: {timestamp}
+banner: "{banner_markdown}"
+tags:
+
+"""
+        frontmatter += '\n'.join(f" - {tag}" for tag in parsed_content.tags)
+        frontmatter += '\n---\n'
+
+        body = f"# {readable_title}\n\n"
+        if tts_text:
+            audio_filename = f"{published_date} {readable_title}"
+            try:
+                audio_path = await tts.generate_speech(bg_tasks=bg_tasks, text=tts_text, voice=voice, model="eleven_turbo_v2", podcast=True, title=audio_filename,
+                output_dir=Path(OBSIDIAN_VAULT_DIR) / OBSIDIAN_RESOURCES_DIR)
+                audio_ext = Path(audio_path).suffix
+                obsidian_link = f"![[{OBSIDIAN_RESOURCES_DIR}/{audio_filename}{audio_ext}]]"
+                body += f"{obsidian_link}\n\n"
+            except Exception as e:
+                L.ERR(f"Failed to generate TTS for np3k. {e}")
+
+        try:
+            body += f"by {authors} in {parsed_content.canonical_link}" # update with method for getting the newspaper name
+            body += f"> [!summary]+\n"
+            body += f"> {summary}\n\n"
+            body += parsed_content["content"]
+            markdown_content = frontmatter + body
+
+        except Exception as e:
+            L.ERR(f"Failed to combine elements of article markdown.")
+
+        try:
+            with open(markdown_filename, 'w') as md_file:
+                md_file.write(markdown_content)
+
+            L.INFO(f"Successfully saved to {markdown_filename}")
+            add_to_daily_note
+            return markdown_filename
+        
+        except Exception as e:
+            L.ERR(f"Failed to write markdown file")
+            raise HTTPException(status_code=500, detail=str(e))
+        
+    except Exception as e:
+        L.ERR(f"Failed to clip: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+async def process_article2(
+    bg_tasks: BackgroundTasks,
+    url: str,
+    title: Optional[str] = None,
+    encoding: str = 'utf-8',
+    source: Optional[str] = None,
+    tts_mode: str = "summary", 
+    voice: str = DEFAULT_11L_VOICE
+):
+
+    timestamp = dt_datetime.now().strftime('%b %d, %Y at %H:%M')
+
+    parsed_content = await parse_article(url, source)
+    if parsed_content is None:
+        return {"error": "Failed to retrieve content"}
+
+    readable_title = sanitize_filename(title or parsed_content.get("title") or timestamp)
+    markdown_filename, relative_path = assemble_journal_path(dt_datetime.now(), subdir="Articles", filename=readable_title, extension=".md")
+
+    try:
+        summary = await llm.summarize_text(parsed_content["content"], "Summarize the provided text. Respond with the summary and nothing else. Do not otherwise acknowledge the request. Just provide the requested summary.")
+        summary = summary.replace('\n', ' ')  # Remove line breaks
+
+        if tts_mode == "full" or tts_mode == "content":
+            tts_text = parsed_content["content"]
+        elif tts_mode == "summary" or tts_mode == "excerpt":
+            tts_text = summary
+        else:
+            tts_text = None
+
+        banner_markdown = ''
+        try:
+            banner_url = parsed_content.get('image', '')
+            if banner_url != '':
+                banner_image = download_file(banner_url, Path(OBSIDIAN_VAULT_DIR / OBSIDIAN_RESOURCES_DIR))
+                if banner_image:
+                    banner_markdown = f"![[{OBSIDIAN_RESOURCES_DIR}/{banner_image}]]"
+                
+        except Exception as e:
+            L.ERR(f"No image found in article")
+
+        authors = ', '.join('[[{}]]'.format(author) for author in parsed_content.get('authors', ['Unknown']))
+
+        frontmatter = f"""---
+title: {readable_title}
+authors: {', '.join('[[{}]]'.format(author) for author in parsed_content.get('authors', ['Unknown']))}
+published: {parsed_content.get('date_published', 'Unknown')}
+added: {timestamp}
+excerpt: {parsed_content.get('excerpt', '')}
+banner: "{banner_markdown}"
+tags:
+
+"""
+        frontmatter += '\n'.join(f" - {tag}" for tag in parsed_content.get('tags', []))
+        frontmatter += '\n---\n'
+
+        body = f"# {readable_title}\n\n"
+
+        if tts_text:
+            datetime_str = dt_datetime.now().strftime("%Y%m%d%H%M%S")
+            audio_filename = f"{datetime_str} {readable_title}"
+            try:
+                audio_path = await tts.generate_speech(bg_tasks=bg_tasks, text=tts_text, voice=voice, model="eleven_turbo_v2", podcast=True, title=audio_filename,
+                output_dir=Path(OBSIDIAN_VAULT_DIR) / OBSIDIAN_RESOURCES_DIR)
+                audio_ext = Path(audio_path).suffix
+                obsidian_link = f"![[{OBSIDIAN_RESOURCES_DIR}/{audio_filename}{audio_ext}]]"
+                body += f"{obsidian_link}\n\n"
+            except Exception as e:
+                L.ERR(f"Failed to generate TTS for np3k. {e}")
+
+        try:
+            body += f"by {authors} in [{parsed_content.get('domain', urlparse(url).netloc.replace('www.', ''))}]({url}).\n\n"
+            body += f"> [!summary]+\n"
+            body += f"> {summary}\n\n"
+            body += parsed_content["content"]
+            markdown_content = frontmatter + body
+
+        except Exception as e:
+            L.ERR(f"Failed to combine elements of article markdown.")
+
+        try:
+            with open(markdown_filename, 'w', encoding=encoding) as md_file:
+                md_file.write(markdown_content)
+
+            L.INFO(f"Successfully saved to {markdown_filename}")
+            add_to_daily_note
+            return markdown_filename
+        
+        except Exception as e:
+            L.ERR(f"Failed to write markdown file")
+            raise HTTPException(status_code=500, detail=str(e))
+        
+    except Exception as e:
+        L.ERR(f"Failed to clip {url}: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
+async def parse_article(url: str, source: Optional[str] = None) -> Article:
+    source = source if source else trafilatura.fetch_url(url)
+    traf = trafilatura.extract_metadata(filecontent=source, default_url=url)
+
+    # Create and parse the newspaper3k Article
+    article = Article(url)
+    article.set_html(source)
+    article.parse()
+
+    L.INFO(f"Parsed {article.title}")
+
+    # Update or set properties based on trafilatura and additional processing
+    article.title = article.title or traf.title or url
+    article.authors = article.authors or (traf.author if isinstance(traf.author, list) else [traf.author])
+    
+    article.publish_date = article.publish_date or traf.date
+    try:
+        article.publish_date = await loc.dt(article.publish_date, "UTC")
+    except:
+        L.DEBUG(f"Failed to localize {article.publish_date}")
+        article.publish_date = await loc.dt(dt_datetime.now(), "UTC")
+
+    article.meta_description = article.meta_description or traf.description
+    article.text = trafilatura.extract(source, output_format="markdown", include_comments=False) or article.text
+    article.top_image = article.top_image or traf.image
+    article.source_url = traf.sitename or urlparse(url).netloc.replace('www.', '').title()
+    article.meta_keywords = article.meta_keywords or traf.categories or traf.tags
+    article.meta_keywords = article.meta_keywords if isinstance(article.meta_keywords, list) else [article.meta_keywords]
+
+    # Set additional data in the additional_data dictionary
+    article.additional_data = {
+        'excerpt': article.meta_description,
+        'domain': article.source_url,
+        'tags': article.meta_keywords,
+        'content': article.text  # Store the markdown content here
+    }
+
+    return article
+
+
+
+async def html_to_markdown(url: str = None, source: str = None) -> Optional[str]:
+    if source:
+        html_content = source
+    elif url:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as response:
+                html_content = await response.text()
+    else:
+        L.ERR(f"Unable to convert nothing to markdown.")
+        return None
+
+    # Use readability to extract the main content
+    doc = Document(html_content)
+    cleaned_html = doc.summary()
+
+    # Parse the cleaned HTML with BeautifulSoup for any additional processing
+    soup = BeautifulSoup(cleaned_html, 'html.parser')
+
+    # Remove any remaining unwanted elements
+    for element in soup(['script', 'style']):
+        element.decompose()
+
+    # Convert to markdown
+    markdown_content = md(str(soup), heading_style="ATX")
+
+    return markdown_content
+
+
+async def process_archive(
+    url: str,
+    title: Optional[str] = None,
+    encoding: str = 'utf-8',
+    source: Optional[str] = None,
+) -> Path:
+    timestamp = dt_datetime.now().strftime('%b %d, %Y at %H:%M')
+    readable_title = title if title else f"{url} - {timestamp}"
+    
+    content = await html_to_markdown(url, source)
+    if content is None:
+        raise HTTPException(status_code=400, detail="Failed to convert content to markdown")
+    
+    markdown_path, relative_path = assemble_archive_path(readable_title, ".md")
+    
+    markdown_content = f"---\n"
+    markdown_content += f"title: {readable_title}\n"
+    markdown_content += f"added: {timestamp}\n"
+    markdown_content += f"url: {url}"
+    markdown_content += f"date: {dt_datetime.now().strftime('%Y-%m-%d')}"
+    markdown_content += f"---\n\n"
+    markdown_content += f"# {readable_title}\n\n"
+    markdown_content += f"Clipped from [{url}]({url}) on {timestamp}"
+    markdown_content += content
+    
+    try:
+        markdown_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(markdown_path, 'w', encoding=encoding) as md_file:
+            md_file.write(markdown_content)
+        L.DEBUG(f"Successfully saved to {markdown_path}")
+        return markdown_path
+    except Exception as e:
+        L.WARN(f"Failed to write markdown file: {str(e)}")
+        return None
+
+def download_file(url, folder):
+    os.makedirs(folder, exist_ok=True)
+    filename = str(uuid.uuid4()) + os.path.splitext(urlparse(url).path)[-1]
+    filepath = os.path.join(folder, filename)
+    
+    session = requests.Session()
+    retries = Retry(total=5, backoff_factor=1, status_forcelist=[502, 503, 504])
+    session.mount('http://', HTTPAdapter(max_retries=retries))
+    session.mount('https://', HTTPAdapter(max_retries=retries))
+
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'
+    }
+
+    try:
+        response = session.get(url, headers=headers, timeout=10)
+        if response.status_code == 200:
+            if 'image' in response.headers.get('Content-Type', ''):
+                with open(filepath, 'wb') as f:
+                    f.write(response.content)
+            else:
+                L.ERR(f"Failed to download image: {url}, invalid content type: {response.headers.get('Content-Type')}")
+                return None
+        else:
+            L.ERR(f"Failed to download image: {url}, status code: {response.status_code}")
+            return None
+    except Exception as e:
+        L.ERR(f"Failed to download image: {url}, error: {str(e)}")
+        return None
+    return filename
+
+def copy_file(local_path, folder):
+    os.makedirs(folder, exist_ok=True)
+    filename = os.path.basename(local_path)
+    destination_path = os.path.join(folder, filename)
+    shutil.copy(local_path, destination_path)
+    return filename
+
+
+async def save_file(file: UploadFile, folder: Path) -> Path:
+    file_path = folder / f"{dt_datetime.now().strftime('%Y%m%d_%H%M%S')}_{file.filename}"
+    with open(file_path, 'wb') as f:
+        shutil.copyfileobj(file.file, f)
+    return file_path
 
