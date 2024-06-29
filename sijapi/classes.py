@@ -338,8 +338,14 @@ class Geocoder:
         processed_locations = []
         for loc in locations:
             if isinstance(loc, tuple):
-                processed_locations.append(Location(latitude=loc[0], longitude=loc[1]))
+                processed_locations.append(Location(
+                    latitude=loc[0], 
+                    longitude=loc[1],
+                    datetime=datetime.now(timezone.utc)
+                ))
             elif isinstance(loc, Location):
+                if loc.datetime is None:
+                    loc.datetime = datetime.now(timezone.utc)
                 processed_locations.append(loc)
             else:
                 raise ValueError(f"Unsupported location type: {type(loc)}")
@@ -348,26 +354,39 @@ class Geocoder:
         
         geocode_results = await asyncio.gather(*[self.location(lat, lon) for lat, lon in coordinates])
         elevations = await asyncio.gather(*[self.elevation(lat, lon) for lat, lon in coordinates])
-        timezones = await asyncio.gather(*[self.timezone(lat, lon) for lat, lon in coordinates])
+        timezone_results = await asyncio.gather(*[self.timezone(lat, lon) for lat, lon in coordinates])
+
+                
+        def create_display_name(override_name, result):
+            parts = []
+            if override_name:
+                parts.append(override_name)
+            if result.get('name') and result['name'] != override_name:
+                parts.append(result['name'])
+            if result.get('admin1'):
+                parts.append(result['admin1'])
+            if result.get('cc'):
+                parts.append(result['cc'])
+            return ', '.join(filter(None, parts))
 
         geocoded_locations = []
-        for location, result, elevation, timezone in zip(processed_locations, geocode_results, elevations, timezones):
+        for location, result, elevation, tz_result in zip(processed_locations, geocode_results, elevations, timezone_results):
             result = result[0]  # Unpack the first result
             override_name = result.get('override_name')
             geocoded_location = Location(
                 latitude=location.latitude,
                 longitude=location.longitude,
                 elevation=elevation,
-                datetime=location.datetime or datetime.now(timezone.utc),
+                datetime=location.datetime,
                 zip=result.get("admin2"),
                 city=result.get("name"),
                 state=result.get("admin1"),
                 country=result.get("cc"),
                 context=location.context or {},
                 name=override_name or result.get("name"),
-                display_name=f"{override_name or result.get('name')}, {result.get('admin1')}, {result.get('cc')}",
+                display_name=create_display_name(override_name, result),
                 country_code=result.get("cc"),
-                timezone=timezone
+                timezone=tz_result
             )
 
             # Merge original location data with geocoded data

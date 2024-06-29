@@ -78,11 +78,10 @@ def select_voice(voice_name: str) -> str:
             raise HTTPException(status_code=404, detail="Voice file not found")
     except Exception as e:
         L.ERR(f"Voice file not found: {str(e)}")
-        L.ERR(traceback.format_exc())
-        raise HTTPException(status_code=404, detail="Voice file not found")
+        return None
 
 
-
+@tts.post("/tts")
 @tts.post("/tts/speak")
 @tts.post("/v1/audio/speech")
 async def generate_speech_endpoint(
@@ -116,7 +115,6 @@ async def generate_speech_endpoint(
         L.ERR(traceback.format_exc())
         raise HTTPException(status_code=666, detail="error in TTS")
 
-
 async def generate_speech(
     bg_tasks: BackgroundTasks,
     text: str,
@@ -136,33 +134,36 @@ async def generate_speech(
         model = model if model else await get_model(voice, voice_file)
 
         if model == "eleven_turbo_v2":
-            L.INFO(f"Using ElevenLabs.")
+            L.INFO("Using ElevenLabs.")
             audio_file_path = await elevenlabs_tts(model, text, voice, title, output_dir)
-            return str(audio_file_path)
-        
-        elif model == "xtts":
-            L.INFO(f"Using XTTS2")
-            final_output_dir = await local_tts(text, speed, voice, voice_file, podcast, bg_tasks, title, output_dir)
-            bg_tasks.add_task(os.remove, str(final_output_dir))
-            return str(final_output_dir)
-        else:
-            raise HTTPException(status_code=400, detail="Invalid model specified")
-    except HTTPException as e:
-        L.ERR(f"HTTP error: {e}")
-        L.ERR(traceback.format_exc())
-        raise e
+        else: # if model == "xtts":
+            L.INFO("Using XTTS2")
+            audio_file_path = await local_tts(text, speed, voice, voice_file, podcast, bg_tasks, title, output_dir)
+        #else:
+        #    raise HTTPException(status_code=400, detail="Invalid model specified")
+
+        if podcast == True:
+            podcast_path = PODCAST_DIR / audio_file_path.name
+            L.DEBUG(f"Podcast path: {podcast_path}")
+            shutil.copy(str(audio_file_path), str(podcast_path))
+            bg_tasks.add_task(os.remove, str(audio_file_path))
+            return str(podcast_path)
+
+        return str(audio_file_path)
+
     except Exception as e:
-        L.ERR(f"Error: {e}")
-        L.ERR(traceback.format_exc())
-        raise e
+        L.ERROR(f"Failed to generate speech: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate speech: {str(e)}")
 
 
 
 async def get_model(voice: str = None, voice_file: UploadFile = None):
     if voice_file or (voice and select_voice(voice)):
         return "xtts"
+    
     elif voice and await determine_voice_id(voice):
         return "eleven_turbo_v2"
+    
     else:
         raise HTTPException(status_code=400, detail="No model or voice specified")
 
@@ -216,7 +217,7 @@ async def elevenlabs_tts(model: str, input_text: str, voice: str, title: str = N
         "model_id": model
     }
     headers = {"Content-Type": "application/json", "xi-api-key": ELEVENLABS_API_KEY}
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=httpx.Timeout(300.0)) as client:  # 5 minutes timeout
         response = await client.post(url, json=payload, headers=headers)
         output_dir = output_dir if output_dir else TTS_OUTPUT_DIR
         title = title if title else datetime.now().strftime("%Y%m%d%H%M%S")

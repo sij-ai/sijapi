@@ -201,7 +201,7 @@ async def summarize_single_email(this_email: IncomingEmail, podcast: bool = Fals
     md_summary += f'title: {this_email.subject}\n'
     md_summary += f'{summary}\n'
     md_summary += f'```\n\n'
-    md_summary += f'![[{tts_path}]]\n' if tts_path.exists() else ''
+    md_summary += f'![[{tts_relative}]]\n'# if tts_path.exists() else ''
 
     return md_summary
 
