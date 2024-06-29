@@ -12,7 +12,7 @@ from typing import List, Optional
 import traceback
 import logging
 from .logs import Logger
-from .classes import AutoResponder, IMAPConfig, SMTPConfig, EmailAccount, EmailContact, IncomingEmail, TimezoneTracker, Database, Geocoder
+from .classes import AutoResponder, IMAPConfig, SMTPConfig, EmailAccount, EmailContact, IncomingEmail, Database, Geocoder
 
 # from sijapi.config.config import load_config
 # cfg = load_config()

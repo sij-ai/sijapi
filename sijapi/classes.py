@@ -3,6 +3,8 @@ from typing import List, Optional, Any, Tuple, Dict, Union, Tuple
 from datetime import datetime, timedelta, timezone
 import asyncio
 import json
+import yaml
+import math
 from timezonefinder import TimezoneFinder
 from pathlib import Path
 import asyncpg
@@ -46,6 +48,7 @@ class Location(BaseModel):
         }
 
 
+
 class Geocoder:
     def __init__(self, named_locs: Union[str, Path] = None, cache_file: Union[str, Path] = 'timezone_cache.json'):
         self.tf = TimezoneFinder()
@@ -56,10 +59,52 @@ class Geocoder:
         self.last_update: Optional[datetime] = None
         self.last_location: Optional[Tuple[float, float]] = None
         self.executor = ThreadPoolExecutor()
+        self.override_locations = self.load_override_locations()
+
+    def load_override_locations(self):
+        if self.named_locs and self.named_locs.exists():
+            with open(self.named_locs, 'r') as file:
+                return yaml.safe_load(file)
+        return []
+
+    def haversine(self, lat1, lon1, lat2, lon2):
+        R = 6371
+
+        lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
+        dlat = lat2 - lat1
+        dlon = lon2 - lon1
+
+        a = math.sin(dlat/2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon/2)**2
+        c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+
+        return R * c
+
+    def find_override_location(self, lat: float, lon: float) -> Optional[str]:
+        closest_location = None
+        closest_distance = float('inf')
+        
+        for location in self.override_locations:
+            loc_name = location.get("name")
+            loc_lat = location.get("latitude")
+            loc_lon = location.get("longitude")
+            loc_radius = location.get("radius")
+            
+            distance = self.haversine(lat, lon, loc_lat, loc_lon)
+            
+            if distance <= loc_radius:
+                if distance < closest_distance:
+                    closest_distance = distance
+                    closest_location = loc_name
+        
+        return closest_location
 
     async def location(self, lat: float, lon: float):
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(self.executor, rg.search, [(lat, lon)])
+        result = await loop.run_in_executor(self.executor, rg.search, [(lat, lon)])
+        override = self.find_override_location(lat, lon)
+        if override:
+            result[0]['override_name'] = override
+        return result
 
     async def elevation(self, latitude: float, longitude: float, unit: str = "m") -> float:
         loop = asyncio.get_running_loop()
@@ -107,12 +152,14 @@ class Geocoder:
 
         coordinates = [(location.latitude, location.longitude) for location in processed_locations]
         
-        geocode_results = await self.location(*zip(*coordinates))
+        geocode_results = await asyncio.gather(*[self.location(lat, lon) for lat, lon in coordinates])
         elevations = await asyncio.gather(*[self.elevation(lat, lon) for lat, lon in coordinates])
         timezones = await asyncio.gather(*[self.timezone(lat, lon) for lat, lon in coordinates])
 
         geocoded_locations = []
         for location, result, elevation, timezone in zip(processed_locations, geocode_results, elevations, timezones):
+            result = result[0]  # Unpack the first result
+            override_name = result.get('override_name')
             geocoded_location = Location(
                 latitude=location.latitude,
                 longitude=location.longitude,
@@ -123,8 +170,8 @@ class Geocoder:
                 state=result.get("admin1"),
                 country=result.get("cc"),
                 context=location.context or {},
-                name=result.get("name"),
-                display_name=f"{result.get('name')}, {result.get('admin1')}, {result.get('cc')}",
+                name=override_name or result.get("name"),
+                display_name=f"{override_name or result.get('name')}, {result.get('admin1')}, {result.get('cc')}",
                 country_code=result.get("cc"),
                 timezone=timezone
             )
@@ -176,44 +223,12 @@ class Geocoder:
             timezone=await self.timezone(latitude, longitude)
         )
 
-    
-    def load_override_locations(self):
-        if self.named_locs and self.named_locs.exists():
-            with open(self.named_locs, 'r') as file:
-                return yaml.safe_load(file)
-        return []
-    
 
-    def haversine(self, lat1, lon1, lat2, lon2):
-        R = 6371  # Earth's radius in kilometers
+    def round_coords(self, lat: float, lon: float, decimal_places: int = 2) -> Tuple[float, float]:
+        return (round(lat, decimal_places), round(lon, decimal_places))
 
-        lat1, lon1, lat2, lon2 = map(radians, [lat1, lon1, lat2, lon2])
-        dlat = lat2 - lat1
-        dlon = lon2 - lon1
-
-        a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
-        c = 2 * atan2(sqrt(a), sqrt(1-a))
-
-        return R * c
-
-    async def find_override_location(self, lat: float, lon: float) -> Optional[str]:
-        closest_location = None
-        closest_distance = float('inf')
-        
-        for location in self.override_locations:
-            loc_name = location.get("name")
-            loc_lat = location.get("latitude")
-            loc_lon = location.get("longitude")
-            loc_radius = location.get("radius")
-            
-            distance = self.haversine(lat, lon, loc_lat, loc_lon)
-            
-            if distance <= loc_radius:
-                if distance < closest_distance:
-                    closest_distance = distance
-                    closest_location = loc_name
-        
-        return closest_location
+    def coords_equal(self, coord1: Tuple[float, float], coord2: Tuple[float, float], tolerance: float = 1e-5) -> bool:
+        return math.isclose(coord1[0], coord2[0], abs_tol=tolerance) and math.isclose(coord1[1], coord2[1], abs_tol=tolerance)
 
     async def refresh_timezone(self, location: Union[Location, Tuple[float, float]], force: bool = False) -> str:
         if isinstance(location, Location):
@@ -221,16 +236,20 @@ class Geocoder:
         else:
             lat, lon = location
 
+        rounded_location = self.round_coords(lat, lon)
         current_time = datetime.now()
+
         if (force or
             not self.last_update or
             current_time - self.last_update > timedelta(hours=1) or
-            self.last_location != (lat, lon)):
+            not self.coords_equal(rounded_location, self.round_coords(*self.last_location) if self.last_location else (None, None))):
+            
             new_timezone = await self.timezone(lat, lon)
             self.last_timezone = new_timezone
             self.last_update = current_time
-            self.last_location = (lat, lon)
+            self.last_location = (lat, lon)  # Store the original, non-rounded coordinates
             await self.tz_save()
+        
         return self.last_timezone
 
     async def tz_save(self):
@@ -260,6 +279,17 @@ class Geocoder:
     async def tz_last(self) -> Optional[str]:
         await self.tz_cached()
         return self.last_timezone
+    
+
+    async def tz_at(self, lat: float, lon: float) -> str:
+        """
+        Get the timezone at a specific latitude and longitude without affecting the cache.
+        
+        :param lat: Latitude
+        :param lon: Longitude
+        :return: Timezone string
+        """
+        return await self.timezone(lat, lon)
 
     def __del__(self):
         self.executor.shutdown()
