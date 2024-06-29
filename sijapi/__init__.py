@@ -17,30 +17,29 @@ BASE_DIR = Path(__file__).resolve().parent
 CONFIG_DIR = BASE_DIR / "config"
 ENV_PATH = CONFIG_DIR / ".env"
 LOGS_DIR = BASE_DIR / "logs"
+
 L = Logger("Central", LOGS_DIR)
 os.makedirs(LOGS_DIR, exist_ok=True)
 load_dotenv(ENV_PATH)
 
 ### API essentials
 API_CONFIG_PATH = CONFIG_DIR / "api.yaml"
-SECRETS_CONFIG_PATH = CONFIG_DIR / "secrets.yaml"
-API = APIConfig.load_from_yaml(API_CONFIG_PATH, SECRETS_CONFIG_PATH)
+SECRETS_PATH = CONFIG_DIR / "secrets.yaml"
+API = APIConfig.load(API_CONFIG_PATH, SECRETS_PATH)
+DIR_CONFIG_PATH = CONFIG_DIR / "dirs.yaml"
+L.DEBUG(f"Loading DIR configuration from: {DIR_CONFIG_PATH}")
+DIR = Configuration.load(DIR_CONFIG_PATH)
+L.DEBUG(f"Loaded DIR configuration: {DIR.__dict__}")
+
 DB = Database.from_env()
-ROUTERS = os.getenv('ROUTERS', '').split(',')
-PUBLIC_SERVICES = os.getenv('PUBLIC_SERVICES', '').split(',')
-GLOBAL_API_KEY = os.getenv("GLOBAL_API_KEY") 
-# HOST_NET and HOST_PORT comprise HOST, which is what the server will bind to
-HOST_NET = os.getenv("HOST_NET", "127.0.0.1") 
-HOST_PORT = int(os.getenv("HOST_PORT", 4444))
-HOST = f"{HOST_NET}:{HOST_PORT}" 
-BASE_URL = os.getenv("BASE_URL", f"http://{HOST}")
+
+HOST = f"{API.BIND}:{API.PORT}" 
 LOCAL_HOSTS = [ipaddress.ip_address(localhost.strip()) for localhost in os.getenv('LOCAL_HOSTS', '127.0.0.1').split(',')] + ['localhost']
 SUBNET_BROADCAST = os.getenv("SUBNET_BROADCAST", '10.255.255.255')
-TRUSTED_SUBNETS = [ipaddress.ip_network(subnet.strip()) for subnet in os.getenv('TRUSTED_SUBNETS', '127.0.0.1/32').split(',')]
 MAX_CPU_CORES = min(int(os.getenv("MAX_CPU_CORES", int(multiprocessing.cpu_count()/2))), multiprocessing.cpu_count())
 
+
 ### Directories & general paths
-HOME_DIR = Path.home()
 ROUTER_DIR = BASE_DIR / "routers"
 DATA_DIR = BASE_DIR / "data"
 os.makedirs(DATA_DIR, exist_ok=True)
@@ -49,7 +48,6 @@ os.makedirs(ALERTS_DIR, exist_ok=True)
 REQUESTS_DIR = LOGS_DIR / "requests"
 os.makedirs(REQUESTS_DIR, exist_ok=True)
 REQUESTS_LOG_PATH = LOGS_DIR / "requests.log"
-
 
 ### LOCATE AND WEATHER LOCALIZATIONS
 USER_FULLNAME = os.getenv('USER_FULLNAME')
@@ -68,7 +66,7 @@ GEO = Geocoder(NAMED_LOCATIONS, TZ_CACHE)
 ### Obsidian & notes
 ALLOWED_FILENAME_CHARS = r'[^\w \.-]'
 MAX_PATH_LENGTH = 254
-OBSIDIAN_VAULT_DIR = Path(os.getenv("OBSIDIAN_BASE_DIR") or HOME_DIR / "Nextcloud" / "notes")
+OBSIDIAN_VAULT_DIR = Path(os.getenv("OBSIDIAN_BASE_DIR") or Path(DIR.HOME) / "Nextcloud" / "notes")
 OBSIDIAN_JOURNAL_DIR = OBSIDIAN_VAULT_DIR / "journal"
 OBSIDIAN_RESOURCES_DIR = "obsidian/resources"
 OBSIDIAN_BANNER_DIR = f"{OBSIDIAN_RESOURCES_DIR}/banners"
@@ -122,7 +120,7 @@ SD_CONFIG_PATH = CONFIG_DIR / 'sd.yaml'
 ### ASR
 ASR_DIR = DATA_DIR / "asr"
 os.makedirs(ASR_DIR, exist_ok=True)
-WHISPER_CPP_DIR = HOME_DIR / str(os.getenv("WHISPER_CPP_DIR"))
+WHISPER_CPP_DIR = Path(DIR.HOME) / str(os.getenv("WHISPER_CPP_DIR"))
 WHISPER_CPP_MODELS = os.getenv('WHISPER_CPP_MODELS', 'NULL,VOID').split(',')
 
 ### TTS
@@ -185,7 +183,7 @@ CF_IP = DATA_DIR / "cf_ip.txt" # to be deprecated soon
 CF_DOMAINS_PATH = DATA_DIR / "cf_domains.json" # to be deprecated soon
 
 ### Caddy - not fully implemented
-BASE_URL = os.getenv("BASE_URL")
+API.URL = os.getenv("API.URL")
 CADDY_SERVER = os.getenv('CADDY_SERVER', None)
 CADDYFILE_PATH = os.getenv("CADDYFILE_PATH", "") if CADDY_SERVER is not None else None
 CADDY_API_KEY = os.getenv("CADDY_API_KEY")

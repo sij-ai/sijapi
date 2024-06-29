@@ -30,7 +30,7 @@ from dateutil.parser import parse as dateutil_parse
 from fastapi import HTTPException, status
 from pathlib import Path
 from fastapi import APIRouter, Query, HTTPException
-from sijapi import L, OBSIDIAN_VAULT_DIR, OBSIDIAN_RESOURCES_DIR, ARCHIVE_DIR, BASE_URL, OBSIDIAN_BANNER_SCENE, DEFAULT_11L_VOICE, DEFAULT_VOICE, GEO
+from sijapi import API, L, OBSIDIAN_VAULT_DIR, OBSIDIAN_RESOURCES_DIR, OBSIDIAN_BANNER_SCENE, DEFAULT_11L_VOICE, DEFAULT_VOICE, GEO
 from sijapi.routers import cal, loc, tts, llm, time, sd, weather, asr
 from sijapi.utilities import assemble_journal_path, assemble_archive_path, convert_to_12_hour_format, sanitize_filename, convert_degrees_to_cardinal, check_file_name, HOURLY_COLUMNS_MAPPING
 from sijapi.classes import Location
@@ -399,7 +399,7 @@ async def post_update_daily_weather_and_calendar_and_timeslips(date: str) -> Pla
     await update_dn_weather(date_time)
     await update_daily_note_events(date_time)
     await build_daily_timeslips(date_time)
-    return f"[Refresh]({BASE_URL}/update/note/{date_time.strftime('%Y-%m-%d')}"
+    return f"[Refresh]({API.URL}/update/note/{date_time.strftime('%Y-%m-%d')}"
 
 async def update_dn_weather(date_time: dt_datetime, lat: float = None, lon: float = None):
     L.WARN(f"Using {date_time.strftime('%Y-%m-%d %H:%M:%S')} as our datetime in update_dn_weather.")

@@ -29,9 +29,7 @@ args = parser.parse_args()
 from sijapi import L
 L.setup_from_args(args)
 
-from sijapi import HOST, ENV_PATH, GLOBAL_API_KEY, REQUESTS_DIR, ROUTER_DIR, REQUESTS_LOG_PATH, PUBLIC_SERVICES, TRUSTED_SUBNETS, ROUTERS
-
-
+from sijapi import ROUTER_DIR
 
 # Initialize a FastAPI application
 api = FastAPI()
@@ -52,13 +50,14 @@ class SimpleAPIKeyMiddleware(BaseHTTPMiddleware):
         if request.method == "OPTIONS":
             # Allow CORS preflight requests
             return JSONResponse(status_code=200)
-        if request.url.path not in PUBLIC_SERVICES:
-            if not any(client_ip in subnet for subnet in TRUSTED_SUBNETS):
+        if request.url.path not in API.PUBLIC:
+            trusted_subnets = [ipaddress.ip_network(subnet) for subnet in API.TRUSTED_SUBNETS]
+            if not any(client_ip in subnet for subnet in trusted_subnets):
                 api_key_header = request.headers.get("Authorization")
                 api_key_query = request.query_params.get("api_key")
                 if api_key_header:
                     api_key_header = api_key_header.lower().split("bearer ")[-1]
-                if api_key_header != GLOBAL_API_KEY and api_key_query != GLOBAL_API_KEY:
+                if api_key_header not in API.KEYS and api_key_query not in API.KEYS:
                     L.ERR(f"Invalid API key provided by a requester.")
                     return JSONResponse(
                         status_code=401,
@@ -68,7 +67,9 @@ class SimpleAPIKeyMiddleware(BaseHTTPMiddleware):
         # L.DEBUG(f"Request from {client_ip} is complete")
         return response
 
+# Add the middleware to your FastAPI app
 api.add_middleware(SimpleAPIKeyMiddleware)
+
 
 canceled_middleware = """
 @api.middleware("http")

@@ -25,7 +25,7 @@ import tempfile
 import random
 import re
 import os
-from sijapi import L, HOME_DIR, DATA_DIR, DEFAULT_VOICE, TTS_DIR, TTS_SEGMENTS_DIR, VOICE_DIR, PODCAST_DIR, TTS_OUTPUT_DIR, ELEVENLABS_API_KEY
+from sijapi import L, DEFAULT_VOICE, TTS_SEGMENTS_DIR, VOICE_DIR, PODCAST_DIR, TTS_OUTPUT_DIR, ELEVENLABS_API_KEY
 from sijapi.utilities import sanitize_filename
 
 
