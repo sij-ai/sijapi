@@ -6,7 +6,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import ClientDisconnect
 from hypercorn.asyncio import serve
-from hypercorn.config import Config
+from hypercorn.config import Config as HypercornConfig
 import sys
 import asyncio 
 import httpx
@@ -18,15 +18,13 @@ from dotenv import load_dotenv
 from pathlib import Path
 from datetime import datetime
 import argparse
-from . import L, API, OBSIDIAN_VAULT_DIR
-from .logs import Logger
 
 parser = argparse.ArgumentParser(description='Personal API.')
 parser.add_argument('--debug', action='store_true', help='Set log level to L.INFO')
 parser.add_argument('--test', type=str, help='Load only the specified module.')
 args = parser.parse_args()
 
-from sijapi import L
+from . import L, API, ROUTER_DIR
 L.setup_from_args(args)
 
 from sijapi import ROUTER_DIR
@@ -132,11 +130,10 @@ def main(argv):
             if getattr(API.MODULES, module_name):
                 load_router(module_name)
     
-    config = Config()
-    config.keep_alive_timeout = 1200 
-    config.bind = [API.BIND]
+   
+    config = HypercornConfig()
+    config.bind = [API.BIND]  # Use the resolved BIND value
     asyncio.run(serve(api, config))
-
 
 if __name__ == "__main__":
     main(sys.argv[1:])

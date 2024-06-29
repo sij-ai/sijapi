@@ -1,56 +1,36 @@
-from pydantic import BaseModel, Field
-from typing import List, Optional, Any, Tuple, Dict, Union, Tuple
-from datetime import datetime, timedelta, timezone
 import asyncio
 import json
-import os
-import re
-from pathlib import Path
-from typing import Union, Dict, Any, Optional
-from pydantic import BaseModel, create_model
-import yaml
-from dotenv import load_dotenv
-import os
-import re
-import yaml
 import math
-from timezonefinder import TimezoneFinder
-from pathlib import Path
-import asyncpg
-import aiohttp
-import aiofiles
-from contextlib import asynccontextmanager
-from concurrent.futures import ThreadPoolExecutor
-import reverse_geocoder as rg
-from timezonefinder import TimezoneFinder
-from srtm import get_data
-from pathlib import Path
-import yaml
-from typing import Union, List, TypeVar, Type
-from pydantic import BaseModel, create_model
-
-from pydantic import BaseModel, Field
-from typing import List, Dict
-import yaml
-from pathlib import Path
 import os
+import re
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple, Union, TypeVar, Type
+
+import aiofiles
+import aiohttp
+import asyncpg
+import reverse_geocoder as rg
+import yaml
 from dotenv import load_dotenv
+from pydantic import BaseModel, Field, create_model
+from srtm import get_data
+from timezonefinder import TimezoneFinder
 
 T = TypeVar('T', bound='Configuration')
 
-from pydantic import BaseModel, Field, create_model
-from typing import List, Optional, Any, Dict
-from pathlib import Path
-import yaml
 
 class APIConfig(BaseModel):
-    BIND: str
+    HOST: str
     PORT: int
+    BIND: str
     URL: str
     PUBLIC: List[str]
     TRUSTED_SUBNETS: List[str]
     MODULES: Any  # This will be replaced with a dynamic model
-    BaseTZ: Optional[str] = 'UTC'
+    TZ: str
     KEYS: List[str]
 
     @classmethod
@@ -72,6 +52,11 @@ class APIConfig(BaseModel):
         except yaml.YAMLError as e:
             print(f"Error parsing secrets YAML: {e}")
             secrets_data = {}
+        
+        # Resolve internal placeholders
+        config_data = cls.resolve_placeholders(config_data)
+        
+        print(f"Resolved config: {config_data}")  # Debug print
         
         # Handle KEYS placeholder
         if isinstance(config_data.get('KEYS'), list) and len(config_data['KEYS']) == 1:
@@ -104,6 +89,33 @@ class APIConfig(BaseModel):
         config_data['MODULES'] = DynamicModulesConfig(**modules_data)
         
         return cls(**config_data)
+
+    @classmethod
+    def resolve_placeholders(cls, config_data: Dict[str, Any]) -> Dict[str, Any]:
+        def resolve_value(value):
+            if isinstance(value, str):
+                pattern = r'\{\{\s*([^}]+)\s*\}\}'
+                matches = re.findall(pattern, value)
+                for match in matches:
+                    if match in config_data:
+                        value = value.replace(f'{{{{ {match} }}}}', str(config_data[match]))
+            return value
+
+        resolved_data = {}
+        for key, value in config_data.items():
+            if isinstance(value, dict):
+                resolved_data[key] = cls.resolve_placeholders(value)
+            elif isinstance(value, list):
+                resolved_data[key] = [resolve_value(item) for item in value]
+            else:
+                resolved_data[key] = resolve_value(value)
+        
+        # Resolve BIND separately to ensure HOST and PORT are used
+        if 'BIND' in resolved_data:
+            resolved_data['BIND'] = resolved_data['BIND'].replace('{{ HOST }}', str(resolved_data['HOST']))
+            resolved_data['BIND'] = resolved_data['BIND'].replace('{{ PORT }}', str(resolved_data['PORT']))
+        
+        return resolved_data
 
     def __getattr__(self, name: str) -> Any:
         if name == 'MODULES':
