@@ -30,11 +30,10 @@ from dateutil.parser import parse as dateutil_parse
 from fastapi import HTTPException, status
 from pathlib import Path
 from fastapi import APIRouter, Query, HTTPException
-from sijapi import L, OBSIDIAN_VAULT_DIR, OBSIDIAN_RESOURCES_DIR, ARCHIVE_DIR, BASE_URL, OBSIDIAN_BANNER_SCENE, DEFAULT_11L_VOICE, DEFAULT_VOICE, TZ, DynamicTZ, GEO
+from sijapi import L, OBSIDIAN_VAULT_DIR, OBSIDIAN_RESOURCES_DIR, ARCHIVE_DIR, BASE_URL, OBSIDIAN_BANNER_SCENE, DEFAULT_11L_VOICE, DEFAULT_VOICE, GEO
 from sijapi.routers import cal, loc, tts, llm, time, sd, weather, asr
-from sijapi.routers.loc import Location
 from sijapi.utilities import assemble_journal_path, assemble_archive_path, convert_to_12_hour_format, sanitize_filename, convert_degrees_to_cardinal, HOURLY_COLUMNS_MAPPING
-
+from sijapi.classes import Location
 
 note = APIRouter()
 
@@ -70,7 +69,7 @@ async def build_daily_note_endpoint(
             date_str = dt_datetime.now().strftime("%Y-%m-%d")
         if location:
             lat, lon = map(float, location.split(','))
-            tz = ZoneInfo(DynamicTZ.find(lat, lon))
+            tz = GEO.tz_at(lat, lon)
             date_time = dateutil_parse(date_str).replace(tzinfo=tz)
         else:
             raise ValueError("Location is not provided or invalid.")

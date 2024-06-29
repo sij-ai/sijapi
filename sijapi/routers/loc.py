@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 from dateutil.parser import parse as dateutil_parse
 from typing import Optional, List, Union
 from datetime import datetime
-from sijapi import L, DB, TZ, NAMED_LOCATIONS, DynamicTZ, GEO
+from sijapi import L, DB, TZ, NAMED_LOCATIONS, GEO
 from sijapi.classes import Location
 from sijapi.utilities import haversine
 
@@ -35,8 +35,8 @@ async def dt(
         # Handle provided timezone
         if tz is not None:
             if tz == "local":
-                last_loc = await get_last_location(date_time)
-                tz_str = DynamicTZ.find(last_loc.latitude, last_loc.longitude)
+                last_loc = await get_timezone_without_timezone(date_time)
+                tz_str = GEO.tz(last_loc.latitude, last_loc.longitude)
                 try:
                     tz = ZoneInfo(tz_str)
                 except Exception as e:
@@ -50,7 +50,7 @@ async def dt(
                     L.ERR(f"Invalid timezone string '{tz}'. Error: {e}")
                     raise ValueError(f"Invalid timezone string: {tz}")
             elif isinstance(tz, ZoneInfo):
-                pass  # tz is already a ZoneInfo object
+                tz = tz  # tz is already a ZoneInfo object
             else:
                 raise ValueError("tz must be 'local', a string, or a ZoneInfo object.")
             
@@ -64,18 +64,16 @@ async def dt(
         
         # If no timezone provided, only fill in missing timezone info
         elif date_time.tzinfo is None:
-            last_loc = get_last_location(date_time)
-            tz_str = DynamicTZ.find(last_loc.latitude, last_loc.longitude)
+            tz_str = await get_timezone_without_timezone(date_time)
             try:
                 tz = ZoneInfo(tz_str)
             except Exception as e:
-                L.WARN(f"Invalid timezone string '{tz_str}' from DynamicTZ. Falling back to UTC. Error: {e}")
+                L.WARN(f"Invalid timezone string '{tz_str}' from Geocoder. Falling back to UTC. Error: {e}")
                 tz = ZoneInfo('UTC')
             
             date_time = date_time.replace(tzinfo=tz)
             L.DEBUG(f"Filled in missing timezone info: {tz}")
-        
-        # If datetime already has timezone and no new timezone provided, do nothing
+                    
         else:
             L.DEBUG(f"Datetime already has timezone {date_time.tzinfo}. No changes made.")
 
@@ -86,6 +84,24 @@ async def dt(
     except Exception as e:
         L.ERR(f"Unexpected error in dt: {e}")
         raise ValueError(f"Failed to localize datetime: {e}")
+
+async def get_timezone_without_timezone(date_time):
+    # This is a bit convoluted because we're trying to solve the paradox of needing to know the location in order to determine the timezone, but needing the timezone to be certain we've got the right location if this datetime coincided with inter-timezone travel. Our imperfect solution is to use UTC for an initial location query to determine roughly where we were at the time, get that timezone, then check the location again using that timezone, and if this location is different from the one using UTC, get the timezone again usng it, otherwise use the one we already sourced using UTC.
+            
+    # Step 1: Use UTC as an interim timezone to query location
+    interim_dt = date_time.replace(tzinfo=ZoneInfo("UTC"))
+    interim_loc = await fetch_last_location_before(interim_dt)
+    
+    # Step 2: Get a preliminary timezone based on the interim location
+    interim_tz = await GEO.tz_current((interim_loc.latitude, interim_loc.longitude))
+    
+    # Step 3: Apply this preliminary timezone and query location again
+    query_dt = date_time.replace(tzinfo=ZoneInfo(interim_tz))
+    query_loc = await fetch_last_location_before(query_dt)
+    
+    # Step 4: Get the final timezone, reusing interim_tz if location hasn't changed
+    return interim_tz if query_loc == interim_loc else await GEO.tz_current(query_loc.latitude, query_loc.longitude)
+            
 
 async def get_last_location() -> Optional[Location]:
     query_datetime = datetime.now(TZ)
@@ -329,7 +345,7 @@ async def post_locate_endpoint(locations: Union[Location, List[Location]]):
     # Prepare locations
     for location in locations:
         if not location.datetime:
-            tz = DynamicTZ.find(location.latitude, location.longitude)
+            tz = GEO.tz_current(location.latitude, location.longitude)
             location.datetime = datetime.now(tz).isoformat()
         
         if not location.context:
