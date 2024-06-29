@@ -12,7 +12,7 @@ from typing import List, Optional
 import traceback
 import logging
 from .logs import Logger
-from .classes import AutoResponder, IMAPConfig, SMTPConfig, EmailAccount, EmailContact, IncomingEmail, TimezoneTracker, Database, PyGeolocator
+from .classes import AutoResponder, IMAPConfig, SMTPConfig, EmailAccount, EmailContact, IncomingEmail, TimezoneTracker, Database, Geocoder
 
 # from sijapi.config.config import load_config
 # cfg = load_config()
@@ -68,7 +68,7 @@ GEONAMES_TXT = DATA_DIR / "geonames.txt"
 LOCATIONS_CSV = DATA_DIR / "US.csv"
 TZ = tz.gettz(os.getenv("TZ", "America/Los_Angeles"))
 TZ_CACHE = DATA_DIR / "tzcache.json"
-DynamicTZ = TimezoneTracker(TZ_CACHE)
+GEO = Geocoder(NAMED_LOCATIONS, TZ_CACHE)
 
 ### Obsidian & notes
 ALLOWED_FILENAME_CHARS = r'[^\w \.-]'
@@ -90,7 +90,6 @@ YEAR_FMT = os.getenv("YEAR_FMT")
 MONTH_FMT = os.getenv("MONTH_FMT")
 DAY_FMT = os.getenv("DAY_FMT")
 DAY_SHORT_FMT = os.getenv("DAY_SHORT_FMT")
-GEOLOCATOR = PyGeolocator
 
 ### Large language model
 LLM_URL = os.getenv("LLM_URL", "http://localhost:11434")

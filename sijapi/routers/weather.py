@@ -10,9 +10,9 @@ from typing import Dict
 from datetime import datetime
 from shapely.wkb import loads
 from binascii import unhexlify
-from sijapi import L, VISUALCROSSING_API_KEY, TZ, DB
+from sijapi import L, VISUALCROSSING_API_KEY, TZ, DB, GEO
 from sijapi.utilities import haversine
-from sijapi.routers import locate
+from sijapi.routers import loc
 
 weather = APIRouter()
 
@@ -20,19 +20,19 @@ weather = APIRouter()
 async def get_weather(date_time: datetime, latitude: float, longitude: float):
     # request_date_str = date_time.strftime("%Y-%m-%d")
     L.DEBUG(f"Called get_weather with lat: {latitude}, lon: {longitude}, date_time: {date_time}")
+    L.WARN(f"Using {date_time.strftime('%Y-%m-%d %H:%M:%S')} as our datetime in get_weather.")
     daily_weather_data = await get_weather_from_db(date_time, latitude, longitude)
     fetch_new_data = True
     if daily_weather_data:
         try:
             L.DEBUG(f"Daily weather data from db: {daily_weather_data}")
             last_updated = str(daily_weather_data['DailyWeather'].get('last_updated'))
-            last_updated = await locate.localize_datetime(last_updated)
+            last_updated = await loc.dt(last_updated)
             stored_loc_data = unhexlify(daily_weather_data['DailyWeather'].get('location'))
             stored_loc = loads(stored_loc_data)
             stored_lat = stored_loc.y
             stored_lon = stored_loc.x
             stored_ele = stored_loc.z
-
             
             hourly_weather = daily_weather_data.get('HourlyWeather')
 
@@ -53,6 +53,7 @@ async def get_weather(date_time: datetime, latitude: float, longitude: float):
     if fetch_new_data:
         L.DEBUG(f"We require new data!")
         request_date_str = date_time.strftime("%Y-%m-%d")
+        L.WARN(f"Using {date_time.strftime('%Y-%m-%d')} as our datetime for fetching new data.")
         url = f"https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/{latitude},{longitude}/{request_date_str}/{request_date_str}?unitGroup=us&key={VISUALCROSSING_API_KEY}"
         try:
             async with AsyncClient() as client:
@@ -85,6 +86,7 @@ async def get_weather(date_time: datetime, latitude: float, longitude: float):
 
 
 async def store_weather_to_db(date_time: datetime, weather_data: dict):
+    L.WARN(f"Using {date_time.strftime('%Y-%m-%d %H:%M:%S')} as our datetime in store_weather_to_db")
     async with DB.get_connection() as conn:
         try:
             day_data = weather_data.get('days')[0]
@@ -95,16 +97,21 @@ async def store_weather_to_db(date_time: datetime, weather_data: dict):
             stations_array = day_data.get('stations', []) or []
 
             date_str = date_time.strftime("%Y-%m-%d")
+            L.WARN(f"Using {date_str} in our query in store_weather_to_db.")
 
             # Get location details from weather data if available
             longitude = weather_data.get('longitude')
             latitude = weather_data.get('latitude')
-            elevation = await locate.get_elevation(latitude, longitude) # 152.4  # default until we add a geocoder that can look up actual elevation; weather_data.get('elevation')  # assuming 'elevation' key, replace if different
+            elevation = await GEO.elevation(latitude, longitude)
             location_point = f"POINTZ({longitude} {latitude} {elevation})" if longitude and latitude and elevation else None
 
             # Correct for the datetime objects 
-            day_data['datetime'] = await locate.localize_datetime(day_data.get('datetime')) #day_data.get('datetime'))
+            L.WARN(f"Uncorrected datetime in store_weather_to_db: {day_data['datetime']}")
+            day_data['datetime'] = await loc.dt(day_data.get('datetime')) #day_data.get('datetime'))
+            L.WARN(f"Corrected datetime in store_weather_to_db with localized datetime: {day_data['datetime']}")
+            L.WARN(f"Uncorrected sunrise time in store_weather_to_db: {day_data['sunrise']}")
             day_data['sunrise'] = day_data['datetime'].replace(hour=int(day_data.get('sunrise').split(':')[0]), minute=int(day_data.get('sunrise').split(':')[1]))
+            L.WARN(f"Corrected sunrise time in store_weather_to_db with localized datetime: {day_data['sunrise']}")
             day_data['sunset'] = day_data['datetime'].replace(hour=int(day_data.get('sunset').split(':')[0]), minute=int(day_data.get('sunset').split(':')[1])) 
 
             daily_weather_params = (
@@ -160,7 +167,7 @@ async def store_weather_to_db(date_time: datetime, weather_data: dict):
                         await asyncio.sleep(0.1)
                     #    hour_data['datetime'] = parse_date(hour_data.get('datetime'))
                         hour_timestamp = date_str + ' ' + hour_data['datetime']
-                        hour_data['datetime'] = await locate.localize_datetime(hour_timestamp)
+                        hour_data['datetime'] = await loc.dt(hour_timestamp)
                         L.DEBUG(f"Processing hours now...")
                         # L.DEBUG(f"Processing {hour_data['datetime']}")
 
@@ -226,6 +233,7 @@ async def store_weather_to_db(date_time: datetime, weather_data: dict):
 
 
 async def get_weather_from_db(date_time: datetime, latitude: float, longitude: float):
+    L.WARN(f"Using {date_time.strftime('%Y-%m-%d %H:%M:%S')} as our datetime in get_weather_from_db.")
     async with DB.get_connection() as conn:
         query_date = date_time.date()
         try:
@@ -238,25 +246,38 @@ async def get_weather_from_db(date_time: datetime, latitude: float, longitude: f
                 LIMIT 1
             '''
 
-            daily_weather_data = await conn.fetchrow(query, query_date, longitude, latitude, longitude, latitude)
+            
+            daily_weather_record = await conn.fetchrow(query, query_date, longitude, latitude, longitude, latitude)
 
-            if daily_weather_data is None:
+            if daily_weather_record is None:
                 L.DEBUG(f"No daily weather data retrieved from database.")
                 return None
-            # else:
-                # L.DEBUG(f"Daily_weather_data: {daily_weather_data}")
+
+            # Convert asyncpg.Record to a mutable dictionary
+            daily_weather_data = dict(daily_weather_record)
+
+            # Now we can modify the dictionary
+            daily_weather_data['datetime'] = await loc.dt(daily_weather_data.get('datetime'))
+
             # Query to get hourly weather data
             query = '''
                 SELECT HW.* FROM HourlyWeather HW
                 WHERE HW.daily_weather_id = $1
             '''
-            hourly_weather_data = await conn.fetch(query, daily_weather_data['id'])
+            
+            hourly_weather_records = await conn.fetch(query, daily_weather_data['id'])
+            
+            hourly_weather_data = []
+            for record in hourly_weather_records:
+                hour_data = dict(record)
+                hour_data['datetime'] = await loc.dt(hour_data.get('datetime'))
+                hourly_weather_data.append(hour_data)
 
-            day: Dict = {
-                'DailyWeather': dict(daily_weather_data),
-                'HourlyWeather': [dict(row) for row in hourly_weather_data],
+            day = {
+                'DailyWeather': daily_weather_data,
+                'HourlyWeather': hourly_weather_data,
             }
-            # L.DEBUG(f"day: {day}")
+            L.DEBUG(f"day: {day}")
             return day
         except Exception as e:
             L.ERR(f"Unexpected error occurred: {e}")

@@ -80,14 +80,6 @@ async def generate_response(prompt: str):
     )
     return {"response": output['response']}
 
-@llm.post("/llm/query")
-async def llm_query_endpoint(
-    message: str = Form(...),
-    file: Optional(UploadFile) = Form(...)
-):
-    return None
-
-
 
 async def query_ollama(usr: str, sys: str = LLM_SYS_MSG, model: str = DEFAULT_LLM, max_tokens: int = 200):
     messages = [{"role": "system", "content": sys},

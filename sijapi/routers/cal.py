@@ -17,16 +17,16 @@ from datetime import datetime, timedelta
 from Foundation import NSDate, NSRunLoop
 import EventKit as EK
 from sijapi import L, ICAL_TOGGLE, ICALENDARS, MS365_TOGGLE, MS365_CLIENT_ID, MS365_SECRET, MS365_AUTHORITY_URL, MS365_SCOPE, MS365_REDIRECT_PATH, MS365_TOKEN_PATH
-from sijapi.routers.locate import localize_datetime
+from sijapi.routers import loc
 
-calendar = APIRouter()
+cal = APIRouter()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/token")
 timeout = httpx.Timeout(12)
 
 if MS365_TOGGLE is True:
     L.CRIT(f"Visit https://api.sij.ai/o365/login to obtain your Microsoft 365 authentication token.")
 
-    @calendar.get("/o365/login")
+    @cal.get("/o365/login")
     async def login():
         L.DEBUG(f"Received request to /o365/login")
         L.DEBUG(f"SCOPE: {MS365_SCOPE}")
@@ -40,7 +40,7 @@ if MS365_TOGGLE is True:
         L.INFO(f"Redirecting to authorization URL: {authorization_url}")
         return RedirectResponse(authorization_url)
 
-    @calendar.get("/o365/oauth_redirect")
+    @cal.get("/o365/oauth_redirect")
     async def oauth_redirect(code: str = None, error: str = None):
         L.DEBUG(f"Received request to /o365/oauth_redirect")
         if error:
@@ -73,7 +73,7 @@ if MS365_TOGGLE is True:
                 detail="Failed to obtain access token"
             )
 
-    @calendar.get("/o365/me")
+    @cal.get("/o365/me")
     async def read_items():
         L.DEBUG(f"Received request to /o365/me")
         token = await load_token()
@@ -212,10 +212,10 @@ def datetime_to_nsdate(dt: datetime) -> NSDate:
     return NSDate.dateWithTimeIntervalSince1970_(dt.timestamp())
 
 
-@calendar.get("/events")
+@cal.get("/events")
 async def get_events_endpoint(start_date: str, end_date: str):
-    start_dt = await localize_datetime(start_date)
-    end_dt = await localize_datetime(end_date)
+    start_dt = await loc.dt(start_date)
+    end_dt = await loc.dt(end_date)
     datetime.strptime(start_date, "%Y-%m-%d") or datetime.now()
     end_dt = datetime.strptime(end_date, "%Y-%m-%d") or datetime.now()
     response = await get_events(start_dt, end_dt)
@@ -341,8 +341,8 @@ async def get_ms365_events(start_date: datetime, end_date: datetime):
 
 
 async def parse_calendar_for_day(range_start: datetime, range_end: datetime, events: List[Dict[str, Any]]):
-    range_start = await localize_datetime(range_start)
-    range_end = await localize_datetime(range_end)
+    range_start = await loc.dt(range_start)
+    range_end = await loc.dt(range_end)
     event_list = []
 
     for event in events:
@@ -361,13 +361,13 @@ async def parse_calendar_for_day(range_start: datetime, range_end: datetime, eve
             L.INFO(f"End date string not a dict")
 
         try:
-            start_date = await localize_datetime(start_str) if start_str else None
+            start_date = await loc.dt(start_str) if start_str else None
         except (ValueError, TypeError) as e:
             L.ERR(f"Invalid start date format: {start_str}, error: {e}")
             continue
 
         try:
-            end_date = await localize_datetime(end_str) if end_str else None
+            end_date = await loc.dt(end_str) if end_str else None
         except (ValueError, TypeError) as e:
             L.ERR(f"Invalid end date format: {end_str}, error: {e}")
             continue
@@ -376,13 +376,13 @@ async def parse_calendar_for_day(range_start: datetime, range_end: datetime, eve
 
         if start_date:
             # Ensure start_date is timezone-aware
-            start_date = await localize_datetime(start_date)
+            start_date = await loc.dt(start_date)
             
             # If end_date is not provided, assume it's the same as start_date
             if not end_date:
                 end_date = start_date
             else:
-                end_date = await localize_datetime(end_date)
+                end_date = await loc.dt(end_date)
             
             # Check if the event overlaps with the given range
             if (start_date < range_end) and (end_date > range_start):

@@ -4,7 +4,7 @@ import json
 
 filename = 'location_log.json'
 server = '!{!{ ENTER A PUBLIC URL TO YOUR SIJAPI INSTANCE }!}!'
-api_key = !{!{ ENTER YOUR GLOBAL_API_KEY HERE }!}!
+api_key = '!{!{ ENTER YOUR GLOBAL_API_KEY HERE }!}!'
 
 def upload_location_data(data):
     headers = {
