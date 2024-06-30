@@ -287,12 +287,12 @@ async def get_weather_from_db(date_time: dt_datetime, latitude: float, longitude
                 # hour_data['datetime'] = await loc.dt(hour_data.get('datetime'), tz)
                 hourly_weather_data.append(hour_data)
 
-            L.DEBUG(f"Hourly weather data after tz corrections: {hourly_weather_data}")
+            # L.DEBUG(f"Hourly weather data after tz corrections: {hourly_weather_data}")
             day = {
                 'DailyWeather': daily_weather_data,
                 'HourlyWeather': hourly_weather_data,
             }
-            L.DEBUG(f"day: {day}")
+            # L.DEBUG(f"day: {day}")
             return day
         except Exception as e:
             L.ERR(f"Unexpected error occurred: {e}")
