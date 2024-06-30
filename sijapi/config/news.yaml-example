@@ -1,0 +1,32 @@
+sites:
+  - name: The Intercept
+    url: https://theintercept.com
+    max_articles: 5
+    days_back: 14
+    summarize: True
+    tts: off
+    tts_voice: Kiel
+    podcast: True
+  - name: The New York Times
+    url: https://www.nytimes.com
+    max_articles: 10
+    days_back: 7
+    summarize: True
+    tts: off
+    tts_voice: Luna
+    podcast: True
+  - name: The Guardian
+    url: https://theguardian.com
+    max_articles: 10
+    days_back: 7
+    summarize: True
+    tts: off
+    tts_voice: Attenborough
+    podcast: True
+llm:
+  model: llama3
+tts:
+  model: elevenlabs-v2
+  voice: Luna
+  podcast: True
+

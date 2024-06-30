@@ -22,6 +22,119 @@ from timezonefinder import TimezoneFinder
 T = TypeVar('T', bound='Configuration')
 
 
+
+import os
+from pathlib import Path
+from typing import Union, Optional, Any, Dict, List
+import yaml
+import re
+from pydantic import BaseModel, create_model
+from dotenv import load_dotenv
+
+class Configuration(BaseModel):
+    HOME: Path = Path.home()
+    _dir_config: Optional['Configuration'] = None
+
+    @classmethod
+    def load(cls, yaml_path: Union[str, Path], secrets_path: Optional[Union[str, Path]] = None, dir_config: Optional['Configuration'] = None) -> 'Configuration':
+        yaml_path = cls._resolve_path(yaml_path, 'config')
+        if secrets_path:
+            secrets_path = cls._resolve_path(secrets_path, 'config')
+        
+        try:
+            with yaml_path.open('r') as file:
+                config_data = yaml.safe_load(file)
+            
+            print(f"Loaded configuration data from {yaml_path}")
+            
+            if secrets_path:
+                with secrets_path.open('r') as file:
+                    secrets_data = yaml.safe_load(file)
+                print(f"Loaded secrets data from {secrets_path}")
+                config_data.update(secrets_data)
+            
+            # Ensure HOME is set
+            if config_data.get('HOME') is None:
+                config_data['HOME'] = str(Path.home())
+                print(f"HOME was None in config, set to default: {config_data['HOME']}")
+            
+            load_dotenv()
+            
+            instance = cls.create_dynamic_model(**config_data)
+            instance._dir_config = dir_config or instance
+            
+            resolved_data = instance.resolve_placeholders(config_data)
+            instance = cls.create_dynamic_model(**resolved_data)
+            instance._dir_config = dir_config or instance
+            
+            return instance
+        except Exception as e:
+            print(f"Error loading configuration: {str(e)}")
+            raise
+
+    @classmethod
+    def _resolve_path(cls, path: Union[str, Path], default_dir: str) -> Path:
+        base_path = Path(__file__).parent.parent  # This will be two levels up from this file
+        path = Path(path)
+        if not path.suffix:
+            path = base_path / 'sijapi' / default_dir / f"{path.name}.yaml"
+        elif not path.is_absolute():
+            path = base_path / path
+        return path
+
+    def resolve_placeholders(self, data: Any) -> Any:
+        if isinstance(data, dict):
+            return {k: self.resolve_placeholders(v) for k, v in data.items()}
+        elif isinstance(data, list):
+            return [self.resolve_placeholders(v) for v in data]
+        elif isinstance(data, str):
+            return self.resolve_string_placeholders(data)
+        else:
+            return data
+
+    def resolve_string_placeholders(self, value: str) -> Any:
+        pattern = r'\{\{\s*([^}]+)\s*\}\}'
+        matches = re.findall(pattern, value)
+        
+        for match in matches:
+            parts = match.split('.')
+            if len(parts) == 1:  # Internal reference
+                replacement = getattr(self._dir_config, parts[0], str(Path.home() / parts[0].lower()))
+            elif len(parts) == 2 and parts[0] == 'Dir':
+                replacement = getattr(self._dir_config, parts[1], str(Path.home() / parts[1].lower()))
+            elif len(parts) == 2 and parts[0] == 'ENV':
+                replacement = os.getenv(parts[1], '')
+            else:
+                replacement = value  # Keep original if not recognized
+            
+            value = value.replace('{{' + match + '}}', str(replacement))
+        
+        # Convert to Path if it looks like a file path
+        if isinstance(value, str) and (value.startswith(('/', '~')) or (':' in value and value[1] == ':')):
+            return Path(value).expanduser()
+        return value
+
+    @classmethod
+    def create_dynamic_model(cls, **data):
+        for key, value in data.items():
+            if isinstance(value, dict):
+                data[key] = cls.create_dynamic_model(**value)
+            elif isinstance(value, list) and all(isinstance(item, dict) for item in value):
+                data[key] = [cls.create_dynamic_model(**item) for item in value]
+        
+        DynamicModel = create_model(
+            f'Dynamic{cls.__name__}',
+            __base__=cls,
+            **{k: (Any, v) for k, v in data.items()}
+        )
+        return DynamicModel(**data)
+
+    class Config:
+        extra = "allow"
+        arbitrary_types_allowed = True
+
+
+
 class APIConfig(BaseModel):
     HOST: str
     PORT: int
@@ -34,7 +147,10 @@ class APIConfig(BaseModel):
     KEYS: List[str]
 
     @classmethod
-    def load(cls, config_path: Path, secrets_path: Path):
+    def load(cls, config_path: Union[str, Path], secrets_path: Union[str, Path]):
+        config_path = cls._resolve_path(config_path, 'config')
+        secrets_path = cls._resolve_path(secrets_path, 'config')
+
         # Load main configuration
         with open(config_path, 'r') as file:
             config_data = yaml.safe_load(file)
@@ -91,6 +207,16 @@ class APIConfig(BaseModel):
         return cls(**config_data)
 
     @classmethod
+    def _resolve_path(cls, path: Union[str, Path], default_dir: str) -> Path:
+        base_path = Path(__file__).parent.parent  # This will be two levels up from this file
+        path = Path(path)
+        if not path.suffix:
+            path = base_path / "sijapi" / default_dir / f"{path.name}.yaml"
+        elif not path.is_absolute():
+            path = base_path / path
+        return path
+
+    @classmethod
     def resolve_placeholders(cls, config_data: Dict[str, Any]) -> Dict[str, Any]:
         def resolve_value(value):
             if isinstance(value, str):
@@ -126,87 +252,6 @@ class APIConfig(BaseModel):
     def active_modules(self) -> List[str]:
         return [module for module, is_active in self.MODULES.__dict__.items() if is_active]
 
-
-class Configuration(BaseModel):
-    HOME: Path = Path.home()
-    _dir_config: Optional['Configuration'] = None
-
-    @classmethod
-    def load(cls, yaml_path: Union[str, Path], dir_config: Optional['Configuration'] = None) -> 'Configuration':
-        yaml_path = Path(yaml_path)
-        try:
-            with yaml_path.open('r') as file:
-                config_data = yaml.safe_load(file)
-            
-            print(f"Loaded configuration data: {config_data}")
-            
-            # Ensure HOME is set
-            if config_data.get('HOME') is None:
-                config_data['HOME'] = str(Path.home())
-                print(f"HOME was None in config, set to default: {config_data['HOME']}")
-            
-            load_dotenv()
-            
-            instance = cls.create_dynamic_model(**config_data)
-            instance._dir_config = dir_config or instance
-            
-            resolved_data = instance.resolve_placeholders(config_data)
-            for key, value in resolved_data.items():
-                setattr(instance, key, value)
-            
-            return instance
-        except Exception as e:
-            print(f"Error loading configuration from {yaml_path}: {str(e)}")
-            raise
-
-    def resolve_placeholders(self, data: Any) -> Any:
-        if isinstance(data, dict):
-            return {k: self.resolve_placeholders(v) for k, v in data.items()}
-        elif isinstance(data, list):
-            return [self.resolve_placeholders(v) for v in data]
-        elif isinstance(data, str):
-            return self.resolve_string_placeholders(data)
-        else:
-            return data
-
-    def resolve_string_placeholders(self, value: str) -> Any:
-        pattern = r'\{\{\s*([^}]+)\s*\}\}'
-        matches = re.findall(pattern, value)
-        
-        for match in matches:
-            parts = match.split('.')
-            if len(parts) == 1:  # Internal reference
-                replacement = getattr(self._dir_config, parts[0], str(Path.home() / parts[0].lower()))
-            elif len(parts) == 2 and parts[0] == 'DIR':
-                replacement = getattr(self._dir_config, parts[1], str(Path.home() / parts[1].lower()))
-            elif len(parts) == 2 and parts[0] == 'ENV':
-                replacement = os.getenv(parts[1], '')
-            else:
-                replacement = value  # Keep original if not recognized
-            
-            value = value.replace('{{' + match + '}}', str(replacement))
-        
-        # Convert to Path if it looks like a file path
-        if isinstance(value, str) and (value.startswith(('/', '~')) or (':' in value and value[1] == ':')):
-            return Path(value).expanduser()
-        return value
-
-    @classmethod
-    def create_dynamic_model(cls, **data):
-        for key, value in data.items():
-            if isinstance(value, dict):
-                data[key] = cls.create_dynamic_model(**value)
-        
-        DynamicModel = create_model(
-            f'Dynamic{cls.__name__}',
-            __base__=cls,
-            **{k: (type(v), v) for k, v in data.items()}
-        )
-        return DynamicModel(**data)
-
-    class Config:
-        extra = "allow"
-        arbitrary_types_allowed = True
 
 
 class Location(BaseModel):

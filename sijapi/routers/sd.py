@@ -43,11 +43,10 @@ async def sd_endpoint(request: Request):
     prompt = request_data.get("prompt")
     model = request_data.get("model")
     size = request_data.get("size")
-    style = request_data.get("style") or "photorealistic"
     earlyurl = request_data.get("earlyurl", None)
     earlyout = "web" if earlyurl else None
 
-    image_path = await workflow(prompt=prompt, scene=model, size=size, style=style, earlyout=earlyout)
+    image_path = await workflow(prompt=prompt, scene=model, size=size, earlyout=earlyout)
 
     if earlyout == "web":
         return JSONResponse({"image_url": image_path})
@@ -70,12 +69,13 @@ async def sd_endpoint(
     else:
         return JSONResponse({"image_url": image_path})
 
-async def workflow(prompt: str, scene: str = None, size: str = None, style: str = "photorealistic", earlyout: str = None, destination_path: str = None, downscale_to_fit: bool = False):
+async def workflow(prompt: str, scene: str = None, size: str = None, earlyout: str = None, destination_path: str = None, downscale_to_fit: bool = False):
     scene_data = get_scene(scene)
     if not scene_data:
         scene_data = get_matching_scene(prompt)
     prompt = scene_data.get('llm_pre_prompt') + prompt
-    image_concept = await query_ollama(usr=prompt, sys=scene_data.get('llm_sys_msg'), max_tokens=100)
+    prompt_model = scene_data.get('prompt_model')
+    image_concept = await query_ollama(usr=prompt, sys=scene_data.get('llm_sys_msg'), model=prompt_model, max_tokens=100)
 
     scene_workflow = random.choice(scene_data['workflows'])
     if size:
@@ -384,12 +384,6 @@ async def get_generation_options():
             "type": "string", 
             "default": "1024x1024",
             "example": "512x512"
-        },
-        "style": {
-            "description": "The style for the generated images.",
-            "type": "string",
-            "default": "photorealistic",
-            "example": "cartoon"
         },
         "raw": {
             "description": "Whether to return raw image data or not.",
