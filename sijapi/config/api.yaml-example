@@ -24,6 +24,7 @@ MODULES:
   ig: off
   llm: on
   loc: on
+  news: on
   note: on
   rag: off
   sd: on
