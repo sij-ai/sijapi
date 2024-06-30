@@ -1,5 +1,5 @@
 '''
-Manages an Obsidian vault, in particular daily notes, using information and functionality drawn from the other routers, primarily calendar, email, ig, llm, rag, sd, serve, time, tts, and weather.
+Manages an Obsidian vault, in particular daily notes, using information and functionality drawn from the other routers, primarily calendar, email, ig, llm, rag, img, serve, time, tts, and weather.
 '''
 from fastapi import APIRouter, BackgroundTasks, File, UploadFile, Form, HTTPException, Response, Query, Path as FastAPIPath
 from fastapi.responses import JSONResponse, PlainTextResponse
@@ -14,7 +14,7 @@ from fastapi import HTTPException, status
 from pathlib import Path
 from fastapi import APIRouter, Query, HTTPException
 from sijapi import API, L, OBSIDIAN_VAULT_DIR, OBSIDIAN_RESOURCES_DIR, OBSIDIAN_BANNER_SCENE, DEFAULT_11L_VOICE, DEFAULT_VOICE, GEO
-from sijapi.routers import cal, loc, tts, llm, time, sd, weather, asr
+from sijapi.routers import cal, img, loc, tts, llm, time, weather, asr
 from sijapi.utilities import assemble_journal_path, assemble_archive_path, convert_to_12_hour_format, sanitize_filename, convert_degrees_to_cardinal, check_file_name, HOURLY_COLUMNS_MAPPING
 from sijapi.classes import Location
 
@@ -270,7 +270,7 @@ async def generate_banner(dt, location: Location = None, forecast: str = None, m
 
     prompt = await generate_context(date_time, location, forecast, mood, other_context)
     L.DEBUG(f"Prompt: {prompt}")
-    final_path = await sd.workflow(prompt, scene=OBSIDIAN_BANNER_SCENE, destination_path=destination_path)
+    final_path = await img.workflow(prompt, scene=OBSIDIAN_BANNER_SCENE, destination_path=destination_path)
     if not str(local_path) in str(final_path):
         L.INFO(f"Apparent mismatch between local path, {local_path}, and final_path, {final_path}")
     jpg_embed = f"\"![[{local_path}]]\""

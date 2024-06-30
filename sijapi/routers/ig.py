@@ -32,7 +32,7 @@ from urllib.parse import urlparse
 from instagrapi.exceptions import LoginRequired as ClientLoginRequiredError
 import json
 from ollama import Client as oLlama
-from sd import sd
+from sijapi.routers.img import img
 from dotenv import load_dotenv
 from sijapi import L, COMFYUI_DIR
 

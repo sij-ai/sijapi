@@ -27,7 +27,7 @@ MODULES:
   news: on
   note: on
   rag: off
-  sd: on
+  img: on
   serve: on
   time: on
   tts: on

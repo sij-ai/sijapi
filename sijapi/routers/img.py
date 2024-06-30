@@ -32,12 +32,12 @@ import shutil
 from sijapi.routers.llm import query_ollama
 from sijapi import API, L, COMFYUI_URL, COMFYUI_OUTPUT_DIR, SD_CONFIG_PATH, SD_IMAGE_DIR, SD_WORKFLOWS_DIR
 
-sd = APIRouter()
+img = APIRouter()
 
 CLIENT_ID = str(uuid.uuid4())
 
-@sd.post("/sd")
-@sd.post("/v1/images/generations")
+@img.post("/img")
+@img.post("/v1/images/generations")
 async def sd_endpoint(request: Request):
     request_data = await request.json()
     prompt = request_data.get("prompt")
@@ -54,8 +54,8 @@ async def sd_endpoint(request: Request):
     else:
         return JSONResponse({"image_url": image_path})
     
-@sd.get("/sd")
-@sd.get("/v1/images/generations")
+@img.get("/img")
+@img.get("/v1/images/generations")
 async def sd_endpoint(
     request: Request,
     prompt: str = Query(..., description="The prompt for image generation"),
@@ -252,8 +252,9 @@ def get_matching_scene(prompt):
         count = sum(1 for trigger in sc['triggers'] if trigger in prompt_lower)
         if count > max_count:
             max_count = count
-            L.DEBUG(f"Found better-matching scene: the prompt contains {max_count} words that match triggers for {scene_data.get('name')}!")
             scene_data = sc
+            if scene_data:
+                L.DEBUG(f"Found better-matching scene: the prompt contains {max_count} words that match triggers for {scene_data.get('name')}!")
     if scene_data:
         return scene_data
     else:
@@ -333,7 +334,7 @@ async def ensure_comfy(retries: int = 4, timeout: float = 6.0):
 
 
 
-@sd.get("/image/{prompt_id}")
+@img.get("/image/{prompt_id}")
 async def get_image_status(prompt_id: str):
     status_data = await poll_status(prompt_id)
     save_image_key = None
@@ -349,7 +350,7 @@ async def get_image_status(prompt_id: str):
     else:
         return JSONResponse(content={"status": "Processing", "details": status_data}, status_code=202)
 
-@sd.get("/image-status/{prompt_id}")
+@img.get("/image-status/{prompt_id}")
 async def get_image_processing_status(prompt_id: str):
     try:
         status_data = await poll_status(prompt_id)
@@ -359,7 +360,7 @@ async def get_image_processing_status(prompt_id: str):
 
 
 
-@sd.options("/v1/images/generations", tags=["generations"])
+@img.options("/v1/images/generations", tags=["generations"])
 async def get_generation_options():
     return {
         "model": {

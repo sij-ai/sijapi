@@ -21,7 +21,7 @@ import yaml
 from typing import List, Dict, Optional, Set
 from datetime import datetime as dt_datetime
 from sijapi import L, PODCAST_DIR, DEFAULT_VOICE, EMAIL_CONFIG, EMAIL_LOGS
-from sijapi.routers import loc, tts, llm, sd
+from sijapi.routers import img, loc, tts, llm
 from sijapi.utilities import clean_text, assemble_journal_path, extract_text, prefix_lines
 from sijapi.classes import EmailAccount, IMAPConfig, SMTPConfig, IncomingEmail, EmailContact, AutoResponder
 from sijapi.classes import EmailAccount
@@ -302,7 +302,7 @@ async def autorespond_single_email(message, uid_str: str, account: EmailAccount,
         if response_body:
             subject = f"Re: {this_email.subject}"
             # add back scene=profile.image_scene,  to workflow call
-            jpg_path = await sd.workflow(profile.image_prompt, earlyout=False, downscale_to_fit=True) if profile.image_prompt else None
+            jpg_path = await img.workflow(profile.image_prompt, earlyout=False, downscale_to_fit=True) if profile.image_prompt else None
             success = await send_response(this_email.sender, subject, response_body, profile, jpg_path)
             if success:
                 L.WARN(f"Auto-responded to email: {this_email.subject}")

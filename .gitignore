@@ -5,10 +5,10 @@ sijapi/data/geocoder/
 sijapi/data/courtlistener/
 sijapi/data/tts/
 sijapi/data/db/
-sijapi/data/sd/workflows/private
+sijapi/data/img/workflows/private
 sijapi/data/*.pbf
 sijapi/data/geonames.txt
-sijapi/data/sd/images/
+sijapi/data/img/images/
 sijapi/config/*.yaml
 sijapi/config/O365/
 sijapi/local_only/
