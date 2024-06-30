@@ -143,7 +143,7 @@ async def generate_speech(
         #    raise HTTPException(status_code=400, detail="Invalid model specified")
 
         if podcast == True:
-            podcast_path = PODCAST_DIR / audio_file_path.name
+            podcast_path = Path(PODCAST_DIR) / audio_file_path.name
             L.DEBUG(f"Podcast path: {podcast_path}")
             shutil.copy(str(audio_file_path), str(podcast_path))
             bg_tasks.add_task(os.remove, str(audio_file_path))
@@ -152,7 +152,7 @@ async def generate_speech(
         return str(audio_file_path)
 
     except Exception as e:
-        L.ERROR(f"Failed to generate speech: {str(e)}")
+        L.ERR(f"Failed to generate speech: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to generate speech: {str(e)}")
 
 
@@ -331,7 +331,7 @@ async def local_tts(
 
     # Export the combined audio in a separate thread
     if podcast:
-        podcast_file_path = PODCAST_DIR / file_path.name
+        podcast_file_path = Path(PODCAST_DIR) / file_path.name
         await asyncio.to_thread(combined_audio.export, podcast_file_path, format="wav")
     
     await asyncio.to_thread(combined_audio.export, file_path, format="wav")
@@ -425,7 +425,7 @@ def copy_to_podcast_dir(file_path):
         file_name = Path(file_path).name
         
         # Construct the destination path in the PODCAST_DIR
-        destination_path = PODCAST_DIR / file_name
+        destination_path = Path(PODCAST_DIR) / file_name
         
         # Copy the file to the PODCAST_DIR
         shutil.copy(file_path, destination_path)

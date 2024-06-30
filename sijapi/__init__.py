@@ -23,21 +23,16 @@ os.makedirs(LOGS_DIR, exist_ok=True)
 load_dotenv(ENV_PATH)
 
 ### API essentials
-API_CONFIG_PATH = CONFIG_DIR / "api.yaml"
-SECRETS_PATH = CONFIG_DIR / "secrets.yaml"
-API = APIConfig.load(API_CONFIG_PATH, SECRETS_PATH)
-DIR_CONFIG_PATH = CONFIG_DIR / "dirs.yaml"
-L.DEBUG(f"Loading DIR configuration from: {DIR_CONFIG_PATH}")
-DIR = Configuration.load(DIR_CONFIG_PATH)
-L.DEBUG(f"Loaded DIR configuration: {DIR.__dict__}")
-
-DB = Database.from_env()
-
+API = APIConfig.load('api', 'secrets')
+Dir = Configuration.load('dirs')
 HOST = f"{API.BIND}:{API.PORT}" 
 LOCAL_HOSTS = [ipaddress.ip_address(localhost.strip()) for localhost in os.getenv('LOCAL_HOSTS', '127.0.0.1').split(',')] + ['localhost']
 SUBNET_BROADCAST = os.getenv("SUBNET_BROADCAST", '10.255.255.255')
 MAX_CPU_CORES = min(int(os.getenv("MAX_CPU_CORES", int(multiprocessing.cpu_count()/2))), multiprocessing.cpu_count())
+DB = Database.from_env()
 
+News = Configuration.load('news', 'secrets')
+SD = Configuration.load('sd', 'secrets')
 
 ### Directories & general paths
 ROUTER_DIR = BASE_DIR / "routers"
@@ -66,7 +61,7 @@ GEO = Geocoder(NAMED_LOCATIONS, TZ_CACHE)
 ### Obsidian & notes
 ALLOWED_FILENAME_CHARS = r'[^\w \.-]'
 MAX_PATH_LENGTH = 254
-OBSIDIAN_VAULT_DIR = Path(os.getenv("OBSIDIAN_BASE_DIR") or Path(DIR.HOME) / "Nextcloud" / "notes")
+OBSIDIAN_VAULT_DIR = Path(os.getenv("OBSIDIAN_BASE_DIR") or Path(Dir.HOME) / "Nextcloud" / "notes")
 OBSIDIAN_JOURNAL_DIR = OBSIDIAN_VAULT_DIR / "journal"
 OBSIDIAN_RESOURCES_DIR = "obsidian/resources"
 OBSIDIAN_BANNER_DIR = f"{OBSIDIAN_RESOURCES_DIR}/banners"
@@ -118,7 +113,7 @@ SD_CONFIG_PATH = CONFIG_DIR / 'sd.yaml'
 ### ASR
 ASR_DIR = DATA_DIR / "asr"
 os.makedirs(ASR_DIR, exist_ok=True)
-WHISPER_CPP_DIR = Path(DIR.HOME) / str(os.getenv("WHISPER_CPP_DIR"))
+WHISPER_CPP_DIR = Path(Dir.HOME) / str(os.getenv("WHISPER_CPP_DIR"))
 WHISPER_CPP_MODELS = os.getenv('WHISPER_CPP_MODELS', 'NULL,VOID').split(',')
 
 ### TTS
@@ -134,6 +129,7 @@ os.makedirs(TTS_OUTPUT_DIR, exist_ok=True)
 TTS_SEGMENTS_DIR = TTS_DIR / 'segments'
 os.makedirs(TTS_SEGMENTS_DIR, exist_ok=True)
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
+
 
 ### Calendar & email account
 MS365_TOGGLE = True if os.getenv("MS365_TOGGLE") == "True" else False
