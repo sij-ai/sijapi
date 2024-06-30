@@ -10,7 +10,10 @@
   },
   "6": {
     "inputs": {
-      "text": "API_PrePrompt",
+      "text": [
+        "50",
+        0
+      ],
       "clip": [
         "4",
         1
@@ -23,7 +26,10 @@
   },
   "7": {
     "inputs": {
-      "text": "API_NegativePrompt",
+      "text": [
+        "51",
+        0
+      ],
       "clip": [
         "4",
         1
@@ -58,16 +64,16 @@
       "Z": 0,
       "evolution": 0.1,
       "frame": 1,
-      "scale": 6.66,
+      "scale": 2,
       "octaves": 8,
       "persistence": 3,
-      "lacunarity": 6.66,
-      "exponent": 1,
+      "lacunarity": 4,
+      "exponent": 2,
       "brightness": 0,
       "contrast": 0,
       "clamp_min": 0,
       "clamp_max": 1,
-      "seed": 300432080108380,
+      "seed": 477685752000597,
       "device": "cpu",
       "optional_vae": [
         "4",
@@ -81,25 +87,25 @@
   },
   "13": {
     "inputs": {
-      "seed": 1125631171146107,
+      "seed": 686880884118590,
       "steps": 10,
       "cfg": 1.8,
-      "sampler_name": "dpmpp_2s_ancestral",
+      "sampler_name": "dpmpp_sde",
       "scheduler": "karras",
       "start_at_step": 0,
       "end_at_step": 10000,
       "enable_denoise": "false",
       "denoise": 1,
       "add_noise": "enable",
-      "return_with_leftover_noise": "enable",
+      "return_with_leftover_noise": "disable",
       "noise_type": "brownian_fractal",
       "noise_blending": "cuberp",
       "noise_mode": "additive",
       "scale": 1,
       "alpha_exponent": 1,
-      "modulator": 1,
+      "modulator": 1.05,
       "sigma_tolerance": 0.5,
-      "boost_leading_sigma": "false",
+      "boost_leading_sigma": "true",
       "guide_use_noise": "true",
       "model": [
         "4",
@@ -138,13 +144,13 @@
       "Z": 0,
       "evolution": 0,
       "frame": 0,
-      "scale": 5,
+      "scale": 2.5,
       "octaves": 5,
       "persistence": 4,
-      "lacunarity": 5,
-      "exponent": 4.28,
-      "brightness": -0.3,
-      "contrast": -0.2
+      "lacunarity": 3,
+      "exponent": 2,
+      "brightness": -0.1,
+      "contrast": -0.1
     },
     "class_type": "Perlin Power Fractal Settings (PPF Noise)",
     "_meta": {
@@ -155,12 +161,12 @@
     "inputs": {
       "frequency": 332.65500000000003,
       "octaves": 32,
-      "persistence": 1.616,
-      "num_colors": 256,
+      "persistence": 1.4000000000000001,
+      "num_colors": 128,
       "color_tolerance": 0.05,
-      "angle_degrees": 180,
-      "brightness": -0.5,
-      "contrast": -0.05,
+      "angle_degrees": 45,
+      "brightness": -0.25,
+      "contrast": 0,
       "blur": 1.3
     },
     "class_type": "Cross-Hatch Power Fractal Settings (PPF Noise)",
@@ -209,19 +215,10 @@
       "title": "ConditioningZeroOut"
     }
   },
-  "24": {
-    "inputs": {
-      "model_name": "RealESRGAN_x4plus.pth"
-    },
-    "class_type": "UpscaleModelLoader",
-    "_meta": {
-      "title": "Load Upscale Model"
-    }
-  },
   "26": {
     "inputs": {
       "upscale_model": [
-        "24",
+        "58",
         0
       ],
       "image": [
@@ -236,7 +233,7 @@
   },
   "27": {
     "inputs": {
-      "factor": 0.5,
+      "factor": 0.25,
       "interpolation_mode": "bicubic",
       "image": [
         "30",
@@ -280,62 +277,310 @@
   },
   "39": {
     "inputs": {
-      "upscale_by": 2,
-      "seed": 687912408861107,
-      "steps": 20,
-      "cfg": 1.9000000000000001,
-      "sampler_name": "heun",
-      "scheduler": "sgm_uniform",
-      "denoise": 0.2,
-      "mode_type": "Linear",
-      "tile_width": 512,
-      "tile_height": 512,
-      "mask_blur": 8,
-      "tile_padding": 32,
-      "seam_fix_mode": "Band Pass",
-      "seam_fix_denoise": 1,
-      "seam_fix_width": 64,
-      "seam_fix_mask_blur": 8,
-      "seam_fix_padding": 16,
-      "force_uniform_tiles": true,
-      "tiled_decode": true,
+      "noise_seed": 690275685743412,
+      "steps": 16,
+      "cfg": 7.5,
+      "base_ratio": 0.85,
+      "denoise": 0.25,
+      "scaled_width": [
+        "60",
+        0
+      ],
+      "scaled_height": [
+        "64",
+        0
+      ],
+      "noise_offset": 1,
+      "refiner_strength": 1,
+      "softness": 0,
+      "base_model": [
+        "40",
+        0
+      ],
+      "base_positive": [
+        "45",
+        0
+      ],
+      "base_negative": [
+        "46",
+        0
+      ],
+      "refiner_model": [
+        "42",
+        0
+      ],
+      "refiner_positive": [
+        "43",
+        0
+      ],
+      "refiner_negative": [
+        "44",
+        0
+      ],
       "image": [
         "38",
         0
       ],
-      "model": [
-        "4",
-        0
-      ],
-      "positive": [
-        "6",
-        0
-      ],
-      "negative": [
-        "23",
-        0
-      ],
       "vae": [
-        "4",
+        "41",
         2
       ],
+      "sampler_name": [
+        "47",
+        0
+      ],
+      "scheduler": [
+        "47",
+        1
+      ],
       "upscale_model": [
-        "40",
+        "58",
         0
       ]
     },
-    "class_type": "UltimateSDUpscale",
+    "class_type": "SeargeSDXLImage2ImageSampler2",
     "_meta": {
-      "title": "Ultimate SD Upscale"
+      "title": "Image2Image Sampler v2 (Searge)"
     }
   },
   "40": {
     "inputs": {
-      "model_name": "RealESRGAN_x2.pth"
+      "lora_name": "SDXL/SDXLLandskaper_v1-000003.safetensors",
+      "strength_model": 1,
+      "strength_clip": 1,
+      "model": [
+        "48",
+        0
+      ],
+      "clip": [
+        "48",
+        1
+      ]
+    },
+    "class_type": "LoraLoader",
+    "_meta": {
+      "title": "Load LoRA"
+    }
+  },
+  "41": {
+    "inputs": {
+      "ckpt_name": "SDXL/realismEngineSDXL_v20VAE.safetensors"
+    },
+    "class_type": "CheckpointLoaderSimple",
+    "_meta": {
+      "title": "Load Checkpoint"
+    }
+  },
+  "42": {
+    "inputs": {
+      "ckpt_name": "SDXL/sdxl_refiner_1.0.safetensors"
+    },
+    "class_type": "CheckpointLoaderSimple",
+    "_meta": {
+      "title": "Load Checkpoint"
+    }
+  },
+  "43": {
+    "inputs": {
+      "text": [
+        "50",
+        0
+      ],
+      "clip": [
+        "42",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    }
+  },
+  "44": {
+    "inputs": {
+      "text": [
+        "51",
+        0
+      ],
+      "clip": [
+        "42",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    }
+  },
+  "45": {
+    "inputs": {
+      "text": [
+        "50",
+        0
+      ],
+      "clip": [
+        "40",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    }
+  },
+  "46": {
+    "inputs": {
+      "text": [
+        "51",
+        0
+      ],
+      "clip": [
+        "40",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    }
+  },
+  "47": {
+    "inputs": {
+      "sampler_name": "dpmpp_2m_sde",
+      "scheduler": "karras"
+    },
+    "class_type": "SeargeSamplerInputs",
+    "_meta": {
+      "title": "Sampler Settings"
+    }
+  },
+  "48": {
+    "inputs": {
+      "lora_name": "SDXL/add-detail-xl.safetensors",
+      "strength_model": 1,
+      "strength_clip": 1,
+      "model": [
+        "41",
+        0
+      ],
+      "clip": [
+        "41",
+        1
+      ]
+    },
+    "class_type": "LoraLoader",
+    "_meta": {
+      "title": "Load LoRA"
+    }
+  },
+  "50": {
+    "inputs": {
+      "text": "API_PrePrompt"
+    },
+    "class_type": "JWStringMultiline",
+    "_meta": {
+      "title": "String (Multiline)"
+    }
+  },
+  "51": {
+    "inputs": {
+      "text": "API_NegativePrompt"
+    },
+    "class_type": "JWStringMultiline",
+    "_meta": {
+      "title": "String (Multiline)"
+    }
+  },
+  "52": {
+    "inputs": {
+      "image": [
+        "38",
+        0
+      ]
+    },
+    "class_type": "Image Size to Number",
+    "_meta": {
+      "title": "Image Size to Number"
+    }
+  },
+  "55": {
+    "inputs": {
+      "op": "a * b",
+      "a": [
+        "52",
+        2
+      ],
+      "b": [
+        "65",
+        0
+      ],
+      "c": 0
+    },
+    "class_type": "SeargeFloatMath",
+    "_meta": {
+      "title": "Float Math"
+    }
+  },
+  "58": {
+    "inputs": {
+      "model_name": "4x_foolhardy_Remacri.pth"
     },
     "class_type": "UpscaleModelLoader",
     "_meta": {
       "title": "Load Upscale Model"
+    }
+  },
+  "59": {
+    "inputs": {
+      "op": "a * b",
+      "a": [
+        "52",
+        3
+      ],
+      "b": [
+        "65",
+        0
+      ],
+      "c": 0
+    },
+    "class_type": "SeargeFloatMath",
+    "_meta": {
+      "title": "Float Math"
+    }
+  },
+  "60": {
+    "inputs": {
+      "value": [
+        "55",
+        0
+      ],
+      "mode": "round"
+    },
+    "class_type": "JWFloatToInteger",
+    "_meta": {
+      "title": "Float to Integer"
+    }
+  },
+  "64": {
+    "inputs": {
+      "value": [
+        "59",
+        0
+      ],
+      "mode": "round"
+    },
+    "class_type": "JWFloatToInteger",
+    "_meta": {
+      "title": "Float to Integer"
+    }
+  },
+  "65": {
+    "inputs": {
+      "value": 2
+    },
+    "class_type": "JWFloat",
+    "_meta": {
+      "title": "Float"
     }
   }
 }

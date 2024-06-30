@@ -267,7 +267,7 @@ async def generate_banner(dt, location: Location = None, forecast: str = None, m
             location = locations[0]
     if not forecast:
         forecast = await update_dn_weather(date_time, False, location.latitude, location.longitude)
-        
+
     prompt = await generate_context(date_time, location, forecast, mood, other_context)
     L.DEBUG(f"Prompt: {prompt}")
     final_path = await sd.workflow(prompt, scene=OBSIDIAN_BANNER_SCENE, destination_path=destination_path)
@@ -332,6 +332,8 @@ async def generate_context(date_time, location: Location, forecast: str, mood: s
 
     prompt = "Generate an aesthetically appealing banner image for a daily note that helps to visualize the following scene information: "
     prompt += "\n".join([display_name, forecast, mood, other_context])
+
+    return prompt
 
 
 

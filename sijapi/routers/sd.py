@@ -235,6 +235,7 @@ def get_scene(scene):
         SD_CONFIG = yaml.safe_load(SD_CONFIG_file)
     for scene_data in SD_CONFIG['scenes']:
         if scene_data['scene'] == scene:
+            L.DEBUG(f"Found scene for \"{scene}\".")
             return scene_data
     return None
 
@@ -251,8 +252,13 @@ def get_matching_scene(prompt):
         count = sum(1 for trigger in sc['triggers'] if trigger in prompt_lower)
         if count > max_count:
             max_count = count
+            L.DEBUG(f"Found better-matching scene: the prompt contains {max_count} words that match triggers for {scene_data.get('name')}!")
             scene_data = sc
-    return scene_data if scene_data else SD_CONFIG['scenes'][0]  # fall back on first scene, which should be an appropriate default scene.
+    if scene_data:
+        return scene_data
+    else:
+        L.DEBUG(f"No matching scenes found, falling back to default scene.")
+        return SD_CONFIG['scenes'][0]
 
 
 
