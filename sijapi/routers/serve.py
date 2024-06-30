@@ -1,5 +1,5 @@
 '''
-Web server module. Used by other modules when serving static content is required, e.g. the sd image generation module. Also used to serve PUBLIC_KEY.
+Web server module. Used by other modules when serving static content is required, e.g. the img image generation module. Also used to serve PUBLIC_KEY.
 '''
 import os
 import io

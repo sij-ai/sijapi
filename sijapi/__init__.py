@@ -32,7 +32,7 @@ MAX_CPU_CORES = min(int(os.getenv("MAX_CPU_CORES", int(multiprocessing.cpu_count
 DB = Database.from_env()
 
 News = Configuration.load('news', 'secrets')
-SD = Configuration.load('sd', 'secrets')
+IMG = Configuration.load('img', 'secrets')
 
 ### Directories & general paths
 ROUTER_DIR = BASE_DIR / "routers"
@@ -100,15 +100,15 @@ SUMMARY_INSTRUCT_TTS = os.getenv('SUMMARY_INSTRUCT_TTS', "You are an AI assistan
 
 
 ### Stable diffusion
-SD_IMAGE_DIR = DATA_DIR / "sd" / "images"
-os.makedirs(SD_IMAGE_DIR, exist_ok=True)
-SD_WORKFLOWS_DIR = DATA_DIR / "sd" / "workflows"
-os.makedirs(SD_WORKFLOWS_DIR, exist_ok=True)
+IMG_DIR = DATA_DIR / "img" / "images"
+os.makedirs(IMG_DIR, exist_ok=True)
+IMG_WORKFLOWS_DIR = DATA_DIR / "img" / "workflows"
+os.makedirs(IMG_WORKFLOWS_DIR, exist_ok=True)
 COMFYUI_URL = os.getenv('COMFYUI_URL', "http://localhost:8188")
 COMFYUI_DIR = Path(os.getenv('COMFYUI_DIR'))
 COMFYUI_OUTPUT_DIR = COMFYUI_DIR / 'output'
 COMFYUI_LAUNCH_CMD = os.getenv('COMFYUI_LAUNCH_CMD', 'mamba activate comfyui && python main.py')
-SD_CONFIG_PATH = CONFIG_DIR / 'sd.yaml'
+IMG_CONFIG_PATH = CONFIG_DIR / 'img.yaml'
 
 ### ASR
 ASR_DIR = DATA_DIR / "asr"

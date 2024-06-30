@@ -1,0 +1,39 @@
+scenes:
+  - scene: default
+    triggers: 
+      - ""
+    API_PrePrompt: "Highly-detailed image of "
+    API_StylePrompt: ", masterpiece, subtle, nuanced, best quality, ultra detailed, ultra high resolution, 8k, documentary, american transcendental, cinematic, filmic, moody, dynamic lighting, realistic, wallpaper, landscape photography, professional, earthporn, eliot porter, frans lanting, daniel kordan, landscape photography, ultra detailed, earth tones, moody"
+    API_NegativePrompt: "3d, bad art, illustrated, deformed, blurry, duplicate, video game, render, anime, cartoon, fake, tiling, out of frame, bad art, bad anatomy, 3d render, nsfw, worst quality, low quality, text, watermark, Thomas Kinkade, sentimental, kitsch, kitschy, twee, commercial, holiday card, comic, cartoon"
+    llm_sys_msg: "You are a helpful AI who assists in generating prompts that will be used to generate highly realistic images. Distill the described image or scene to its visual essence, in the form of the most evocative and visually descriptive words, phrases, and sentence fragments. Emphasize tone, lighting, composition, and any interesting juxtapositions between foreground and background, or center of frame and outer frame areas. Strive for nuance and originality. Avoid cliches, common tropes, and sentimentality. Avoid vague or abstract concepts. Avoid any words or descriptions based on emotion or any senses besides vision. Strive to show rather than tell. Space is limited, so be efficient with your words."
+    llm_pre_prompt: "Using the most visually descriptive sentence fragments, phrases, and words, distill the scene description to its essence, staying true to what it describes: "
+    prompt_model: "dolphin-llama3:70b"
+    workflows:
+      - workflow: default.json
+        size: 1024x768
+  - scene: wallpaper
+    triggers: 
+      - wallpaper
+    API_PrePrompt: "Stunning widescreen image of "
+    API_StylePrompt: ", masterpiece, subtle, nuanced, best quality, ultra detailed, ultra high resolution, 8k, documentary, american transcendental, cinematic, filmic, moody, dynamic lighting, realistic, wallpaper, landscape photography, professional, earthporn, eliot porter, frans lanting, daniel kordan, landscape photography, ultra detailed, earth tones, moody"
+    API_NegativePrompt: "3d, bad art, illustrated, deformed, blurry, duplicate, video game, render, anime, cartoon, fake, tiling, out of frame, bad art, bad anatomy, 3d render, nsfw, worst quality, low quality, text, watermark, Thomas Kinkade, sentimental, kitsch, kitschy, twee, commercial, holiday card, comic, cartoon"
+    llm_sys_msg: "You are a helpful AI who assists in generating prompts that will be used to generate highly realistic images. Distill the described image or scene to its visual essence, in the form of the most evocative and visually descriptive words, phrases, and sentence fragments. Emphasize tone, lighting, composition, and any interesting juxtapositions between foreground and background, or center of frame and outer frame areas. Strive for nuance and originality. Avoid cliches, common tropes, and sentimentality. Avoid vague or abstract concepts. Avoid any words or descriptions based on emotion or any senses besides vision. Strive to show rather than tell. Space is limited, so be efficient with your words."
+    llm_pre_prompt: "Using the most visually descriptive sentence fragments, phrases, and words, distill the scene description to its essence, staying true to what it describes: "
+    prompt_model: "dolphin-llama3:70b"
+    workflows:
+      - workflow: wallpaper.json
+        size: 1024x640
+  - scene: portrait
+    triggers:
+      - portrait
+      - profile
+      - headshot
+    API_PrePrompt: "Highly-detailed portrait photo of "
+    API_StylePrompt: "; attractive, cute, (((masterpiece))); ((beautiful lighting)), subdued, fine detail, extremely sharp, 8k, insane detail, dynamic lighting, cinematic, best quality, ultra detailed."
+    API_NegativePrompt: "canvas frame, 3d, bad art, illustrated, deformed, blurry, duplicate, bad anatomy, worst quality, low quality, watermark, FastNegativeV2, easynegative, epiCNegative, easynegative, verybadimagenegative_v1.3, nsfw, nude"
+    llm_sys_msg: "You are a helpful AI who assists in refining prompts that will be used to generate highly realistic portrait photos. Upon receiving a prompt, you refine it by simplifying and distilling it to its essence, retaining the most visually evocative and distinct elements from what was provided, focusing in particular on the pictured individual's eyes, pose, and other distinctive features. You may infer some visual details that were not provided in the prompt, so long as they are consistent with the rest of the prompt. Always use the most visually descriptive terms possible, and avoid any vague or abstract concepts. Do not include any words or descriptions based on other senses or emotions. Strive to show rather than tell. Space is limited, so be efficient with your words. Remember that the final product will be a still image, and action verbs are not as helpful as simple descriptions of position, appearance, background, etc."
+    llm_pre_prompt: "Using the most visually descriptive sentence fragments, phrases, and words, distill this portrait photo to its essence: "
+    prompt_model: "dolphin-llama3:70b"
+    workflows:
+      - workflow: selfie.json
+        size: 768x1024

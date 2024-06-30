@@ -1,0 +1,486 @@
+{
+  "4": {
+    "inputs": {
+      "ckpt_name": "SDXL/hassansdxl_v10.safetensors"
+    },
+    "class_type": "CheckpointLoaderSimple",
+    "_meta": {
+      "title": "Load Checkpoint"
+    }
+  },
+  "6": {
+    "inputs": {
+      "text": [
+        "17",
+        0
+      ],
+      "clip": [
+        "15",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    }
+  },
+  "7": {
+    "inputs": {
+      "text": [
+        "18",
+        0
+      ],
+      "clip": [
+        "15",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    }
+  },
+  "12": {
+    "inputs": {
+      "lora_name": "SDXL/styleWegg.safetensors",
+      "strength_model": 0.3,
+      "strength_clip": 0.25,
+      "model": [
+        "91",
+        0
+      ],
+      "clip": [
+        "91",
+        1
+      ]
+    },
+    "class_type": "LoraLoader",
+    "_meta": {
+      "title": "Load LoRA"
+    }
+  },
+  "13": {
+    "inputs": {
+      "lora_name": "SDXL/add-detail-xl.safetensors",
+      "strength_model": 0.2,
+      "strength_clip": 0.2,
+      "model": [
+        "12",
+        0
+      ],
+      "clip": [
+        "12",
+        1
+      ]
+    },
+    "class_type": "LoraLoader",
+    "_meta": {
+      "title": "Load LoRA"
+    }
+  },
+  "14": {
+    "inputs": {
+      "lora_name": "SDXL/amazing_portraits_xl_v1b.safetensors",
+      "strength_model": 0.5,
+      "strength_clip": 0.45,
+      "model": [
+        "13",
+        0
+      ],
+      "clip": [
+        "13",
+        1
+      ]
+    },
+    "class_type": "LoraLoader",
+    "_meta": {
+      "title": "Load LoRA"
+    }
+  },
+  "15": {
+    "inputs": {
+      "lora_name": "SDXL/sd_xl_offset_example-lora_1.0.safetensors",
+      "strength_model": 0.2,
+      "strength_clip": 0.15,
+      "model": [
+        "53",
+        0
+      ],
+      "clip": [
+        "53",
+        1
+      ]
+    },
+    "class_type": "LoraLoader",
+    "_meta": {
+      "title": "Load LoRA"
+    }
+  },
+  "17": {
+    "inputs": {
+      "text": "API_PrePrompt"
+    },
+    "class_type": "JWStringMultiline",
+    "_meta": {
+      "title": "String (Multiline)"
+    }
+  },
+  "18": {
+    "inputs": {
+      "text": "API_NegativePrompt"
+    },
+    "class_type": "JWStringMultiline",
+    "_meta": {
+      "title": "String (Multiline)"
+    }
+  },
+  "23": {
+    "inputs": {
+      "X": 0,
+      "Y": 0,
+      "Z": 0,
+      "evolution": 0,
+      "frame": 0,
+      "scale": 5,
+      "octaves": 8,
+      "persistence": 1.5,
+      "lacunarity": 2,
+      "exponent": 4,
+      "brightness": 0,
+      "contrast": 0
+    },
+    "class_type": "Perlin Power Fractal Settings (PPF Noise)",
+    "_meta": {
+      "title": "Perlin Power Fractal Settings 🦚"
+    }
+  },
+  "24": {
+    "inputs": {
+      "frequency": 320,
+      "octaves": 12,
+      "persistence": 1.5,
+      "num_colors": 16,
+      "color_tolerance": 0.05,
+      "angle_degrees": 45,
+      "brightness": 0,
+      "contrast": 0,
+      "blur": 2.5
+    },
+    "class_type": "Cross-Hatch Power Fractal Settings (PPF Noise)",
+    "_meta": {
+      "title": "Cross-Hatch Power Fractal Settings 🦚"
+    }
+  },
+  "37": {
+    "inputs": {
+      "seed": 923916094743956
+    },
+    "class_type": "Seed",
+    "_meta": {
+      "title": "Seed"
+    }
+  },
+  "38": {
+    "inputs": {
+      "batch_size": 1.3125,
+      "width": [
+        "95",
+        0
+      ],
+      "height": [
+        "95",
+        1
+      ],
+      "resampling": "nearest-exact",
+      "X": 0,
+      "Y": 0,
+      "Z": 0,
+      "evolution": 0,
+      "frame": 0,
+      "scale": 10,
+      "octaves": 8,
+      "persistence": 1.5,
+      "lacunarity": 3,
+      "exponent": 5,
+      "brightness": 0,
+      "contrast": 0,
+      "clamp_min": 0,
+      "clamp_max": 1,
+      "seed": [
+        "37",
+        3
+      ],
+      "device": "cpu",
+      "optional_vae": [
+        "4",
+        2
+      ],
+      "ppf_settings": [
+        "23",
+        0
+      ]
+    },
+    "class_type": "Perlin Power Fractal Latent (PPF Noise)",
+    "_meta": {
+      "title": "Perlin Power Fractal Noise 🦚"
+    }
+  },
+  "43": {
+    "inputs": {
+      "seed": [
+        "37",
+        3
+      ],
+      "steps": 32,
+      "cfg": 8.5,
+      "sampler_name": "dpmpp_2m_sde",
+      "scheduler": "karras",
+      "start_at_step": 0,
+      "end_at_step": 10000,
+      "enable_denoise": "false",
+      "denoise": 1,
+      "add_noise": "enable",
+      "return_with_leftover_noise": "disable",
+      "noise_type": "brownian_fractal",
+      "noise_blending": "cuberp",
+      "noise_mode": "additive",
+      "scale": 1,
+      "alpha_exponent": 1,
+      "modulator": 1,
+      "sigma_tolerance": 0.5,
+      "boost_leading_sigma": "false",
+      "guide_use_noise": "true",
+      "model": [
+        "15",
+        0
+      ],
+      "positive": [
+        "98",
+        0
+      ],
+      "negative": [
+        "7",
+        0
+      ],
+      "latent_image": [
+        "38",
+        0
+      ],
+      "ppf_settings": [
+        "23",
+        0
+      ],
+      "ch_settings": [
+        "24",
+        0
+      ]
+    },
+    "class_type": "Power KSampler Advanced (PPF Noise)",
+    "_meta": {
+      "title": "Power KSampler Advanced 🦚"
+    }
+  },
+  "44": {
+    "inputs": {
+      "samples": [
+        "43",
+        0
+      ],
+      "vae": [
+        "4",
+        2
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "45": {
+    "inputs": {
+      "filename_prefix": "API_",
+      "images": [
+        "44",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Save Image"
+    }
+  },
+  "53": {
+    "inputs": {
+      "lora_name": "SDXL/PerfectEyesXL.safetensors",
+      "strength_model": 0.5,
+      "strength_clip": 0.5,
+      "model": [
+        "14",
+        0
+      ],
+      "clip": [
+        "14",
+        1
+      ]
+    },
+    "class_type": "LoraLoader",
+    "_meta": {
+      "title": "Load LoRA"
+    }
+  },
+  "89": {
+    "inputs": {
+      "lora_name": "SDXL/ahxl_v1.safetensors",
+      "strength_model": 0.4,
+      "strength_clip": 0.33,
+      "model": [
+        "92",
+        0
+      ],
+      "clip": [
+        "93",
+        0
+      ]
+    },
+    "class_type": "LoraLoader",
+    "_meta": {
+      "title": "Load LoRA"
+    }
+  },
+  "90": {
+    "inputs": {
+      "lora_name": "SDXL/age.safetensors",
+      "strength_model": -0.8,
+      "strength_clip": -0.7000000000000001,
+      "model": [
+        "89",
+        0
+      ],
+      "clip": [
+        "89",
+        1
+      ]
+    },
+    "class_type": "LoraLoader",
+    "_meta": {
+      "title": "Load LoRA"
+    }
+  },
+  "91": {
+    "inputs": {
+      "lora_name": "SDXL/StokeRealV1.safetensors",
+      "strength_model": 0.2,
+      "strength_clip": 0.2,
+      "model": [
+        "90",
+        0
+      ],
+      "clip": [
+        "90",
+        1
+      ]
+    },
+    "class_type": "LoraLoader",
+    "_meta": {
+      "title": "Load LoRA"
+    }
+  },
+  "92": {
+    "inputs": {
+      "input": 0.36,
+      "middle": 0.5,
+      "out": 0.64,
+      "model1": [
+        "4",
+        0
+      ],
+      "model2": [
+        "94",
+        0
+      ]
+    },
+    "class_type": "ModelMergeBlocks",
+    "_meta": {
+      "title": "ModelMergeBlocks"
+    }
+  },
+  "93": {
+    "inputs": {
+      "ratio": 0.45,
+      "clip1": [
+        "4",
+        1
+      ],
+      "clip2": [
+        "94",
+        1
+      ]
+    },
+    "class_type": "CLIPMergeSimple",
+    "_meta": {
+      "title": "CLIPMergeSimple"
+    }
+  },
+  "94": {
+    "inputs": {
+      "ckpt_name": "SDXL/dreamshaperXL_alpha2Xl10.safetensors"
+    },
+    "class_type": "CheckpointLoaderSimple",
+    "_meta": {
+      "title": "Load Checkpoint"
+    }
+  },
+  "95": {
+    "inputs": {
+      "width_ratio": 5,
+      "height_ratio": 7,
+      "side_length": 1025,
+      "rounding_value": 64
+    },
+    "class_type": "AnyAspectRatio",
+    "_meta": {
+      "title": "AnyAspectRatio"
+    }
+  },
+  "96": {
+    "inputs": {
+      "text": "API_StylePrompt"
+    },
+    "class_type": "JWStringMultiline",
+    "_meta": {
+      "title": "String (Multiline)"
+    }
+  },
+  "97": {
+    "inputs": {
+      "text": [
+        "96",
+        0
+      ],
+      "clip": [
+        "15",
+        1
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    }
+  },
+  "98": {
+    "inputs": {
+      "conditioning_1": [
+        "6",
+        0
+      ],
+      "conditioning_2": [
+        "97",
+        0
+      ]
+    },
+    "class_type": "ConditioningCombine",
+    "_meta": {
+      "title": "Conditioning (Combine)"
+    }
+  }
+}
