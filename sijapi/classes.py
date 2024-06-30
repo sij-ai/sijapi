@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union, TypeVar, Type
-
+from zoneinfo import ZoneInfo
 import aiofiles
 import aiohttp
 import asyncpg
@@ -311,13 +311,13 @@ class Geocoder:
         else:
             raise ValueError(f"Unsupported unit: {unit}")
 
-
-    async def timezone(self, lat: float, lon: float):
+    async def timezone(self, lat: float, lon: float) -> Optional[ZoneInfo]:
         loop = asyncio.get_running_loop()
-        timezone = await loop.run_in_executor(self.executor, lambda: self.tf.timezone_at(lat=lat, lng=lon))
-        return timezone if timezone else 'Unknown'
+        timezone_str = await loop.run_in_executor(self.executor, lambda: self.tf.timezone_at(lat=lat, lng=lon))
+        return ZoneInfo(timezone_str) if timezone_str else None
 
 
+    
     async def lookup(self, lat: float, lon: float):
         city, state, country = (await self.location(lat, lon))[0]['name'], (await self.location(lat, lon))[0]['admin1'], (await self.location(lat, lon))[0]['cc']
         elevation = await self.elevation(lat, lon)
@@ -443,7 +443,7 @@ class Geocoder:
     def coords_equal(self, coord1: Tuple[float, float], coord2: Tuple[float, float], tolerance: float = 1e-5) -> bool:
         return math.isclose(coord1[0], coord2[0], abs_tol=tolerance) and math.isclose(coord1[1], coord2[1], abs_tol=tolerance)
 
-    async def refresh_timezone(self, location: Union[Location, Tuple[float, float]], force: bool = False) -> str:
+    async def refresh_timezone(self, location: Union[Location, Tuple[float, float]], force: bool = False) -> Optional[ZoneInfo]:
         if isinstance(location, Location):
             lat, lon = location.latitude, location.longitude
         else:
@@ -457,6 +457,7 @@ class Geocoder:
             current_time - self.last_update > timedelta(hours=1) or
             not self.coords_equal(rounded_location, self.round_coords(*self.last_location) if self.last_location else (None, None))):
             
+            
             new_timezone = await self.timezone(lat, lon)
             self.last_timezone = new_timezone
             self.last_update = current_time
@@ -465,9 +466,10 @@ class Geocoder:
         
         return self.last_timezone
 
+    
     async def tz_save(self):
         cache_data = {
-            'last_timezone': self.last_timezone,
+            'last_timezone': str(self.last_timezone) if self.last_timezone else None,
             'last_update': self.last_update.isoformat() if self.last_update else None,
             'last_location': self.last_location
         }
@@ -478,29 +480,31 @@ class Geocoder:
         try:
             async with aiofiles.open(self.cache_file, 'r') as f:
                 cache_data = json.loads(await f.read())
-            self.last_timezone = cache_data.get('last_timezone')
+            self.last_timezone = ZoneInfo(cache_data['last_timezone']) if cache_data.get('last_timezone') else None
             self.last_update = datetime.fromisoformat(cache_data['last_update']) if cache_data.get('last_update') else None
             self.last_location = tuple(cache_data['last_location']) if cache_data.get('last_location') else None
+        
         except (FileNotFoundError, json.JSONDecodeError):
             # If file doesn't exist or is invalid, we'll start fresh
-            pass
+            self.last_timezone = None
+            self.last_update = None
+            self.last_location = None
 
-    async def tz_current(self, location: Union[Location, Tuple[float, float]]) -> str:
+    async def tz_current(self, location: Union[Location, Tuple[float, float]]) -> Optional[ZoneInfo]:
         await self.tz_cached()
         return await self.refresh_timezone(location)
 
-    async def tz_last(self) -> Optional[str]:
+    async def tz_last(self) -> Optional[ZoneInfo]:
         await self.tz_cached()
         return self.last_timezone
-    
 
-    async def tz_at(self, lat: float, lon: float) -> str:
+    async def tz_at(self, lat: float, lon: float) -> Optional[ZoneInfo]:
         """
         Get the timezone at a specific latitude and longitude without affecting the cache.
         
         :param lat: Latitude
         :param lon: Longitude
-        :return: Timezone string
+        :return: ZoneInfo object representing the timezone
         """
         return await self.timezone(lat, lon)
 

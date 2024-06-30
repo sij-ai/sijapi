@@ -84,14 +84,14 @@ async def build_daily_note_endpoint(
             date_str = dt_datetime.now().strftime("%Y-%m-%d")
         if location:
             lat, lon = map(float, location.split(','))
-            tz = GEO.tz_at(lat, lon)
+            tz = await GEO.tz_at(lat, lon)
             date_time = dateutil_parse(date_str).replace(tzinfo=tz)
         else:
             raise ValueError("Location is not provided or invalid.")
     except (ValueError, AttributeError, TypeError) as e:
         L.WARN(f"Falling back to localized datetime due to error: {e}")
         try:
-            date_time = loc.dt(date_str)
+            date_time = await loc.dt(date_str)
             places = await loc.fetch_locations(date_time)
             lat, lon = places[0].latitude, places[0].longitude
         except Exception as e:
@@ -358,14 +358,14 @@ async def generate_banner(dt, location: Location = None, forecast: str = None, m
 async def note_weather_get(
     date: str = Query(default="0", description="Enter a date in YYYY-MM-DD format, otherwise it will default to today."),
     latlon: str = Query(default="45,-125"),
-    refresh: bool = Query(default=False, description="Set to true to refresh the weather data")
+    refresh: str = Query(default="False", description="Set to True to force refresh the weather data")
 ):
-
+    force_refresh_weather = refresh == "True"
     try:
         date_time = dt_datetime.now() if date == "0" else await loc.dt(date)
         L.WARN(f"Using {date_time.strftime('%Y-%m-%d %H:%M:%S')} as our dt_datetime in note_weather_get.")
         L.DEBUG(f"date: {date} .. date_time: {date_time}")
-        content = await update_dn_weather(date_time) #, lat, lon)
+        content = await update_dn_weather(date_time, force_refresh_weather) #, lat, lon)
         return JSONResponse(content={"forecast": content}, status_code=200)
     
     except HTTPException as e:
@@ -377,19 +377,20 @@ async def note_weather_get(
                     
 
 @note.post("/update/note/{date}")
-async def post_update_daily_weather_and_calendar_and_timeslips(date: str) -> PlainTextResponse:
+async def post_update_daily_weather_and_calendar_and_timeslips(date: str, refresh: str="False") -> PlainTextResponse:
     date_time = await loc.dt(date)
     L.WARN(f"Using {date_time.strftime('%Y-%m-%d %H:%M:%S')} as our dt_datetime in post_update_daily_weather_and_calendar_and_timeslips.")
-    await update_dn_weather(date_time)
+    force_refresh_weather = refresh == "True"
+    await update_dn_weather(date_time, force_refresh_weather)
     await update_daily_note_events(date_time)
     await build_daily_timeslips(date_time)
     return f"[Refresh]({API.URL}/update/note/{date_time.strftime('%Y-%m-%d')}"
 
-async def update_dn_weather(date_time: dt_datetime, lat: float = None, lon: float = None):
+async def update_dn_weather(date_time: dt_datetime, force_refresh: bool = False, lat: float = None, lon: float = None):
     L.WARN(f"Using {date_time.strftime('%Y-%m-%d %H:%M:%S')} as our datetime in update_dn_weather.")
     try:
         if lat and lon:
-            place = GEO.code((lat, lon))
+            place = await GEO.code((lat, lon))
 
         else:
             L.DEBUG(f"Updating weather for {date_time}")
@@ -422,8 +423,8 @@ async def update_dn_weather(date_time: dt_datetime, lat: float = None, lon: floa
         L.DEBUG(f"Journal path: absolute_path={absolute_path}, relative_path={relative_path}")
 
         try:
-            L.DEBUG(f"passing date_time {date_time.strftime('%Y-%m-%d %H:%M:%S')}, {lat}/{lon} into fetch_and_store")
-            day = await weather.get_weather(date_time, lat, lon)
+            L.DEBUG(f"passing date_time {date_time.strftime('%Y-%m-%d %H:%M:%S')}, {lat}/{lon} into get_weather")
+            day = await weather.get_weather(date_time, lat, lon, force_refresh)
             L.DEBUG(f"day information obtained from get_weather: {day}")
             if day:
                 DailyWeather = day.get('DailyWeather')

@@ -19,71 +19,59 @@ from sijapi.utilities import haversine
 
 loc = APIRouter()
 
+
 async def dt(
-    date_time: Union[str, datetime],
+    date_time: Union[str, int, datetime],
     tz: Union[str, ZoneInfo, None] = None
 ) -> datetime:
     try:
+        # Convert integer (epoch time) to UTC datetime
+        if isinstance(date_time, int):
+            date_time = datetime.utcfromtimestamp(date_time).replace(tzinfo=timezone.utc)
+            L.DEBUG(f"Converted epoch time {date_time} to UTC datetime object.")
         # Convert string to datetime if necessary
-        if isinstance(date_time, str):
+        elif isinstance(date_time, str):
             date_time = dateutil_parse(date_time)
             L.DEBUG(f"Converted string '{date_time}' to datetime object.")
         
         if not isinstance(date_time, datetime):
-            raise ValueError("Input must be a string or datetime object.")
+            raise ValueError(f"Input must be a string, integer (epoch time), or datetime object. What we received: {date_time}, type {type(date_time)}")
+
+        # Ensure the datetime is timezone-aware (UTC if not specified)
+        if date_time.tzinfo is None:
+            date_time = date_time.replace(tzinfo=timezone.utc)
+            L.DEBUG("Added UTC timezone to naive datetime.")
 
         # Handle provided timezone
         if tz is not None:
-            if tz == "local":
-                last_loc = await get_timezone_without_timezone(date_time)
-                tz_str = GEO.tz(last_loc.latitude, last_loc.longitude)
-                try:
-                    tz = ZoneInfo(tz_str)
-                except Exception as e:
-                    L.WARN(f"Invalid timezone string '{tz_str}' from DynamicTZ. Falling back to UTC. Error: {e}")
-                    tz = ZoneInfo('UTC')
-                L.DEBUG(f"Using local timezone: {tz}")
-            elif isinstance(tz, str):
-                try:
-                    tz = ZoneInfo(tz)
-                except Exception as e:
-                    L.ERR(f"Invalid timezone string '{tz}'. Error: {e}")
-                    raise ValueError(f"Invalid timezone string: {tz}")
+            if isinstance(tz, str): 
+                if tz == "local":
+                    last_loc = await get_timezone_without_timezone(date_time)
+                    tz = await GEO.tz_at(last_loc.latitude, last_loc.longitude)
+                    L.DEBUG(f"Using local timezone: {tz}")
+                else:
+                    try:
+                        tz = ZoneInfo(tz)
+                    except Exception as e:
+                        L.ERR(f"Invalid timezone string '{tz}'. Error: {e}")
+                        raise ValueError(f"Invalid timezone string: {tz}")
             elif isinstance(tz, ZoneInfo):
-                tz = tz  # tz is already a ZoneInfo object
+                pass  # tz is already a ZoneInfo object
             else:
-                raise ValueError("tz must be 'local', a string, or a ZoneInfo object.")
+                raise ValueError(f"What we needed: tz == 'local', a string, or a ZoneInfo object. What we got: tz, a {type(tz)}, == {tz})")
             
-            # Localize to the provided or determined timezone
-            if date_time.tzinfo is None:
-                date_time = date_time.replace(tzinfo=tz)
-                L.DEBUG(f"Localized naive datetime to timezone: {tz}")
-            else:
-                date_time = date_time.astimezone(tz)
-                L.DEBUG(f"Converted datetime from {date_time.tzinfo} to timezone: {tz}")
+            # Convert to the provided or determined timezone
+            date_time = date_time.astimezone(tz)
+            L.DEBUG(f"Converted datetime to timezone: {tz}")
         
-        # If no timezone provided, only fill in missing timezone info
-        elif date_time.tzinfo is None:
-            #tz_str = await get_ti`mezone_without_timezone(date_time)
-            #try:
-            #    tz = ZoneInfo(tz_str)
-            #except Exception as e:
-            #    L.WARN(f"Invalid timezone string '{tz_str}' from Geocoder. Falling back to UTC. Error: {e}")
-            #    tz = ZoneInfo('UTC')
-            tz = ZoneInfo('UTC') # force use of UTC when we can't find real timezone
-            date_time = date_time.replace(tzinfo=tz)
-            L.DEBUG(f"Filled in missing timezone info: {tz}")
-                    
-        else:
-            L.DEBUG(f"Datetime already has timezone {date_time.tzinfo}. No changes made.")
-
         return date_time
     except ValueError as e:
         L.ERR(f"Error in dt: {e}")
         raise
     except Exception as e:
         L.ERR(f"Unexpected error in dt: {e}")
-        raise ValueError(f"Failed to localize datetime: {e}")
+        raise ValueError(f"Failed to process datetime: {e}")
+
 
 async def get_timezone_without_timezone(date_time):
     # This is a bit convoluted because we're trying to solve the paradox of needing to know the location in order to determine the timezone, but needing the timezone to be certain we've got the right location if this datetime coincided with inter-timezone travel. Our imperfect solution is to use UTC for an initial location query to determine roughly where we were at the time, get that timezone, then check the location again using that timezone, and if this location is different from the one using UTC, get the timezone again usng it, otherwise use the one we already sourced using UTC.
