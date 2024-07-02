@@ -1,3 +1,4 @@
+# routers/news.py
 import os
 import uuid
 import asyncio
@@ -90,7 +91,7 @@ async def download_and_save_article(article, site_name, earliest_date, bg_tasks:
         try:
             banner_url = article.top_image
             if banner_url:
-                banner_image = download_file(banner_url, Path(OBSIDIAN_VAULT_DIR / OBSIDIAN_RESOURCES_DIR))
+                banner_image = download_file(banner_url, Path(OBSIDIAN_VAULT_DIR / OBSIDIAN_RESOURCES_DIR / f"{dt_datetime.now().strftime('%Y%m%d%H%M%S')}.jpg"))
                 if banner_image:
                     banner_markdown = f"![[{OBSIDIAN_RESOURCES_DIR}/{banner_image}]]"
         except Exception as e:
@@ -120,7 +121,7 @@ tags:
                     bg_tasks=bg_tasks, 
                     text=tts_text, 
                     voice=voice, 
-                    model="eleven_turbo_v2", 
+                    model="xtts2", 
                     podcast=True, 
                     title=audio_filename,
                     output_dir=Path(OBSIDIAN_VAULT_DIR) / OBSIDIAN_RESOURCES_DIR
@@ -176,7 +177,7 @@ async def process_news_site(site, bg_tasks: BackgroundTasks):
                 earliest_date, 
                 bg_tasks, 
                 tts_mode=site.tts if hasattr(site, 'tts') else "off",
-                voice=site.tts if hasattr(site, 'tts') else DEFAULT_11L_VOICE
+                voice=site.voice if hasattr(site, 'voice') else DEFAULT_11L_VOICE
             ))
             tasks.append(task)
         
@@ -237,12 +238,11 @@ async def archive_post(
 async def clip_get(
     bg_tasks: BackgroundTasks,
     url: str,
-    title: Optional[str] = Query(None),
-    encoding: str = Query('utf-8'),
     tts: str = Query('summary'),
     voice: str = Query(DEFAULT_VOICE)
 ):
-    markdown_filename = await process_article(bg_tasks, url, title, encoding, tts=tts, voice=voice)
+    parsed_content = await parse_article(url)
+    markdown_filename = await process_article(bg_tasks, parsed_content, tts, voice)
     return {"message": "Clip saved successfully", "markdown_filename": markdown_filename}
 
 @news.post("/note/add")

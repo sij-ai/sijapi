@@ -14,7 +14,7 @@ from typing import Optional, Union, List
 from pydub import AudioSegment
 from TTS.api import TTS
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime as dt_datetime
 from time import time
 import torch
 import traceback
@@ -66,19 +66,24 @@ async def list_11l_voices():
      
         
 
-
-def select_voice(voice_name: str) -> str:
+async def select_voice(voice_name: str) -> str:
     try:
-        voice_file = VOICE_DIR / f"{voice_name}.wav"
-        L.DEBUG(f"select_voice received query to use voice: {voice_name}. Looking for {voice_file} inside {VOICE_DIR}.")
+        # Case Insensitive comparison
+        voice_name_lower = voice_name.lower()
+        L.DEBUG(f"Looking for {voice_name_lower}")
+        for item in VOICE_DIR.iterdir():
+            L.DEBUG(f"Checking {item.name.lower()}")
+            if item.name.lower() == f"{voice_name_lower}.wav":
+                L.DEBUG(f"select_voice received query to use voice: {voice_name}. Found {item} inside {VOICE_DIR}.")
+                return str(item)
 
-        if voice_file.is_file():
-            return str(voice_file)
-        else:
-            raise HTTPException(status_code=404, detail="Voice file not found")
+        L.ERR(f"Voice file not found")
+        raise HTTPException(status_code=404, detail="Voice file not found")
+
     except Exception as e:
         L.ERR(f"Voice file not found: {str(e)}")
         return None
+
 
 
 @tts.post("/tts")
@@ -132,13 +137,14 @@ async def generate_speech(
 
     try:
         model = model if model else await get_model(voice, voice_file)
-
+        title = title if title else "TTS audio"
+        output_path = output_dir / f"{dt_datetime.now().strftime('%Y%m%d%H%M%S')} {title}.wav"
         if model == "eleven_turbo_v2":
             L.INFO("Using ElevenLabs.")
             audio_file_path = await elevenlabs_tts(model, text, voice, title, output_dir)
         else: # if model == "xtts":
             L.INFO("Using XTTS2")
-            audio_file_path = await local_tts(text, speed, voice, voice_file, podcast, bg_tasks, title, output_dir)
+            audio_file_path = await local_tts(text, speed, voice, voice_file, podcast, bg_tasks, title, output_path)
         #else:
         #    raise HTTPException(status_code=400, detail="Invalid model specified")
 
@@ -158,7 +164,7 @@ async def generate_speech(
 
 
 async def get_model(voice: str = None, voice_file: UploadFile = None):
-    if voice_file or (voice and select_voice(voice)):
+    if voice_file or (voice and await select_voice(voice)):
         return "xtts"
     
     elif voice and await determine_voice_id(voice):
@@ -220,7 +226,7 @@ async def elevenlabs_tts(model: str, input_text: str, voice: str, title: str = N
     async with httpx.AsyncClient(timeout=httpx.Timeout(300.0)) as client:  # 5 minutes timeout
         response = await client.post(url, json=payload, headers=headers)
         output_dir = output_dir if output_dir else TTS_OUTPUT_DIR
-        title = title if title else datetime.now().strftime("%Y%m%d%H%M%S")
+        title = title if title else dt_datetime.now().strftime("%Y%m%d%H%M%S")
         filename = f"{sanitize_filename(title)}.mp3"
         file_path = Path(output_dir) / filename
         if response.status_code == 200:            
@@ -245,7 +251,9 @@ async def get_text_content(text: Optional[str], file: Optional[UploadFile]) -> s
 
 async def get_voice_file_path(voice: str = None, voice_file: UploadFile = None) -> str:
     if voice:
-        return select_voice(voice)
+        L.DEBUG(f"Looking for voice: {voice}")
+        selected_voice = await select_voice(voice)
+        return selected_voice
     elif voice_file and isinstance(voice_file, UploadFile):
         VOICE_DIR.mkdir(exist_ok=True)
 
@@ -272,8 +280,9 @@ async def get_voice_file_path(voice: str = None, voice_file: UploadFile = None) 
         return str(new_file)
     
     else:
-        L.DEBUG(f"{datetime.now().strftime('%Y%m%d%H%M%S')}: No voice specified or file provided, using default voice: {DEFAULT_VOICE}")
-        return select_voice(DEFAULT_VOICE)
+        L.DEBUG(f"{dt_datetime.now().strftime('%Y%m%d%H%M%S')}: No voice specified or file provided, using default voice: {DEFAULT_VOICE}")
+        selected_voice = await select_voice(DEFAULT_VOICE)
+        return selected_voice
 
 
 
@@ -290,7 +299,7 @@ async def local_tts(
     if output_path:
         file_path = Path(output_path)
     else:
-        datetime_str = datetime.now().strftime("%Y%m%d%H%M%S")
+        datetime_str = dt_datetime.now().strftime("%Y%m%d%H%M%S")
         title = sanitize_filename(title) if title else "Audio"
         filename = f"{datetime_str}_{title}.wav"
         file_path = TTS_OUTPUT_DIR / filename

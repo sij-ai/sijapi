@@ -30,7 +30,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from sijapi import (
     L, LOGS_DIR, TS_ID, CASETABLE_PATH, COURTLISTENER_DOCKETS_URL, COURTLISTENER_API_KEY,
     COURTLISTENER_BASE_URL, COURTLISTENER_DOCKETS_DIR, COURTLISTENER_SEARCH_DIR, ALERTS_DIR,
-    MAC_UN, MAC_PW, MAC_ID, TS_TAILNET, DATA_DIR, SD_IMAGE_DIR, PUBLIC_KEY, OBSIDIAN_VAULT_DIR
+    MAC_UN, MAC_PW, MAC_ID, TS_TAILNET, DATA_DIR, IMG_DIR, PUBLIC_KEY, OBSIDIAN_VAULT_DIR
 )
 from sijapi.utilities import bool_convert, sanitize_filename, assemble_journal_path
 from sijapi.routers import loc, note
@@ -44,7 +44,7 @@ async def get_pgp():
 
 @serve.get("/img/{image_name}")
 def serve_image(image_name: str):
-    image_path = os.path.join(SD_IMAGE_DIR, image_name)
+    image_path = os.path.join(IMG_DIR, image_name)
     if os.path.exists(image_path):
         return FileResponse(image_path)
     else:

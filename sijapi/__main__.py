@@ -1,4 +1,5 @@
 #!/Users/sij/miniforge3/envs/api/bin/python
+#__main__.py
 from fastapi import FastAPI, Request, HTTPException, Response
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
