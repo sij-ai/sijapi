@@ -1,6 +1,7 @@
 '''
 Manages an Obsidian vault, in particular daily notes, using information and functionality drawn from the other routers, primarily calendar, email, ig, llm, rag, img, serve, time, tts, and weather.
 '''
+# routers/note.py
 from fastapi import APIRouter, BackgroundTasks, File, UploadFile, Form, HTTPException, Response, Query, Path as FastAPIPath
 from fastapi.responses import JSONResponse, PlainTextResponse
 import os, re

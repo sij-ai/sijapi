@@ -66,7 +66,7 @@ IG_VISION_LLM = os.getenv("IG_VISION_LLM")
 IG_PROMPT_LLM = os.getenv("IG_PROMPT_LLM")
 IG_IMG_GEN = os.getenv("IG_IMG_GEN", "ComfyUI")
 IG_OUTPUT_PLATFORMS = os.getenv("IG_OUTPUT_PLATFORMS", "ig,ghost,obsidian").split(',')
-SD_WORKFLOWS_DIR = os.path.join(COMFYUI_DIR, 'workflows')
+IMG_WORKFLOWS_DIR = os.path.join(COMFYUI_DIR, 'workflows')
 COMFYUI_OUTPUT_DIR = COMFYUI_DIR / 'output'
 IG_PROFILES_DIR = os.path.join(BASE_DIR, 'profiles')
 IG_PROFILE_DIR = os.path.join(IG_PROFILES_DIR, PROFILE)
@@ -793,7 +793,7 @@ def load_json(json_payload, workflow):
     if json_payload:
         return json.loads(json_payload)
     elif workflow:
-        workflow_path = os.path.join(SD_WORKFLOWS_DIR, f"{workflow}.json" if not workflow.endswith('.json') else workflow)
+        workflow_path = os.path.join(IMG_WORKFLOWS_DIR, f"{workflow}.json" if not workflow.endswith('.json') else workflow)
         with open(workflow_path, 'r') as file:
             return json.load(file)
     else:

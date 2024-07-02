@@ -2,7 +2,7 @@
 Image generation module using StableDiffusion and similar models by way of ComfyUI.
 DEPENDS ON:
   LLM module
-  COMFYUI_URL, COMFYUI_DIR, COMFYUI_OUTPUT_DIR, TS_SUBNET, TS_ADDRESS, DATA_DIR, SD_CONFIG_DIR, SD_IMAGE_DIR, SD_WORKFLOWS_DIR, LOCAL_HOSTS, API.URL, PHOTOPRISM_USER*, PHOTOPRISM_URL*, PHOTOPRISM_PASS*
+  COMFYUI_URL, COMFYUI_DIR, COMFYUI_OUTPUT_DIR, TS_SUBNET, TS_ADDRESS, DATA_DIR, IMG_CONFIG_DIR, IMG_DIR, IMG_WORKFLOWS_DIR, LOCAL_HOSTS, API.URL, PHOTOPRISM_USER*, PHOTOPRISM_URL*, PHOTOPRISM_PASS*
 *unimplemented.
 '''
 
@@ -30,7 +30,7 @@ import shutil
 # from photoprism.Photo import Photo
 # from webdav3.client import Client
 from sijapi.routers.llm import query_ollama
-from sijapi import API, L, COMFYUI_URL, COMFYUI_OUTPUT_DIR, SD_CONFIG_PATH, SD_IMAGE_DIR, SD_WORKFLOWS_DIR
+from sijapi import API, L, COMFYUI_URL, COMFYUI_OUTPUT_DIR, IMG_CONFIG_PATH, IMG_DIR, IMG_WORKFLOWS_DIR
 
 img = APIRouter()
 
@@ -86,7 +86,7 @@ async def workflow(prompt: str, scene: str = None, size: str = None, earlyout: s
     width, height = map(int, size.split('x'))
     L.DEBUG(f"Parsed width: {width}; parsed height: {height}")
 
-    workflow_path = Path(SD_WORKFLOWS_DIR) / scene_workflow['workflow']
+    workflow_path = Path(IMG_WORKFLOWS_DIR) / scene_workflow['workflow']
     workflow_data = json.loads(workflow_path.read_text())
 
     post = {
@@ -104,7 +104,7 @@ async def workflow(prompt: str, scene: str = None, size: str = None, earlyout: s
     print(f"Prompt ID: {prompt_id}")
 
     max_size = max(width, height) if downscale_to_fit else None
-    destination_path = Path(destination_path).with_suffix(".jpg") if destination_path else SD_IMAGE_DIR / f"{prompt_id}.jpg"
+    destination_path = Path(destination_path).with_suffix(".jpg") if destination_path else IMG_DIR / f"{prompt_id}.jpg"
 
     if earlyout:
         asyncio.create_task(generate_and_save_image(prompt_id, saved_file_key, max_size, destination_path))
@@ -132,7 +132,7 @@ async def generate_and_save_image(prompt_id, saved_file_key, max_size, destinati
     
     
 def get_web_path(file_path: Path) -> str:
-    uri = file_path.relative_to(SD_IMAGE_DIR)
+    uri = file_path.relative_to(IMG_DIR)
     web_path = f"{API.URL}/img/{uri}"
     return web_path
 
@@ -174,8 +174,8 @@ async def get_image(status_data, key):
 
 
 async def save_as_jpg(image_data, prompt_id, max_size = None, quality = 100, destination_path: Path = None):
-    destination_path_png = (SD_IMAGE_DIR / prompt_id).with_suffix(".png")
-    destination_path_jpg = destination_path.with_suffix(".jpg") if destination_path else (SD_IMAGE_DIR / prompt_id).with_suffix(".jpg")
+    destination_path_png = (IMG_DIR / prompt_id).with_suffix(".png")
+    destination_path_jpg = destination_path.with_suffix(".jpg") if destination_path else (IMG_DIR / prompt_id).with_suffix(".jpg")
 
     try:
         destination_path_png.parent.mkdir(parents=True, exist_ok=True)
@@ -224,16 +224,16 @@ def set_presets(workflow_data, preset_values):
 
 
 def get_return_path(destination_path):
-    sd_dir = Path(SD_IMAGE_DIR)
+    sd_dir = Path(IMG_DIR)
     if destination_path.parent.samefile(sd_dir):
         return destination_path.name
     else:
         return str(destination_path)
 
 def get_scene(scene):
-    with open(SD_CONFIG_PATH, 'r') as SD_CONFIG_file:
-        SD_CONFIG = yaml.safe_load(SD_CONFIG_file)
-    for scene_data in SD_CONFIG['scenes']:
+    with open(IMG_CONFIG_PATH, 'r') as IMG_CONFIG_file:
+        IMG_CONFIG = yaml.safe_load(IMG_CONFIG_file)
+    for scene_data in IMG_CONFIG['scenes']:
         if scene_data['scene'] == scene:
             L.DEBUG(f"Found scene for \"{scene}\".")
             return scene_data
@@ -246,9 +246,9 @@ def get_matching_scene(prompt):
     prompt_lower = prompt.lower()
     max_count = 0
     scene_data = None
-    with open(SD_CONFIG_PATH, 'r') as SD_CONFIG_file:
-        SD_CONFIG = yaml.safe_load(SD_CONFIG_file)
-    for sc in SD_CONFIG['scenes']:
+    with open(IMG_CONFIG_PATH, 'r') as IMG_CONFIG_file:
+        IMG_CONFIG = yaml.safe_load(IMG_CONFIG_file)
+    for sc in IMG_CONFIG['scenes']:
         count = sum(1 for trigger in sc['triggers'] if trigger in prompt_lower)
         if count > max_count:
             max_count = count
@@ -259,7 +259,7 @@ def get_matching_scene(prompt):
         return scene_data
     else:
         L.DEBUG(f"No matching scenes found, falling back to default scene.")
-        return SD_CONFIG['scenes'][0]
+        return IMG_CONFIG['scenes'][0]
 
 
 
@@ -400,7 +400,7 @@ async def get_generation_options():
 
 
 async def load_workflow(workflow_path: str, workflow:str):
-    workflow_path = workflow_path if workflow_path else os.path.join(SD_WORKFLOWS_DIR, f"{workflow}.json" if not workflow.endswith('.json') else workflow)
+    workflow_path = workflow_path if workflow_path else os.path.join(IMG_WORKFLOWS_DIR, f"{workflow}.json" if not workflow.endswith('.json') else workflow)
     with open(workflow_path, 'r') as file:
         return json.load(file)
 
