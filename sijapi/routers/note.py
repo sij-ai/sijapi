@@ -404,7 +404,7 @@ async def update_dn_weather(date_time: dt_datetime, force_refresh: bool = False,
             place = places[0]
             lat = place.latitude
             lon = place.longitude
-        
+        tz = await GEO.tz_at(lat, lon)
         L.DEBUG(f"lat: {lat}, lon: {lon}, place: {place}")
         city = GEO.find_override_location(lat, lon)
         if city:
@@ -460,8 +460,8 @@ async def update_dn_weather(date_time: dt_datetime, force_refresh: bool = False,
                     uvindex = DailyWeather.get('uvindex', 0)
                     uvwarn = f" - :LiRadiation: Caution! UVI today is {uvindex}! :LiRadiation:\n" if (uvindex and uvindex > 8) else ""
 
-                    sunrise = DailyWeather.get('sunrise')
-                    sunset = DailyWeather.get('sunset')
+                    sunrise = await loc.dt(DailyWeather.get('sunrise'), tz)
+                    sunset = await loc.dt(DailyWeather.get('sunset'), tz)
                     srise_str = sunrise.time().strftime("%H:%M")
                     sset_str = sunset.time().strftime("%H:%M")
                     
@@ -494,16 +494,12 @@ async def update_dn_weather(date_time: dt_datetime, force_refresh: bool = False,
                         times, condition_symbols, temps, winds = [], [], [], []
 
                         for hour in HourlyWeather:
+                            hour['datetime'] = await loc.dt(hour.get('datetime'), tz)
                             if hour.get('datetime').strftime("%H:%M:%S") in HOURLY_COLUMNS_MAPPING.values():
-
                                 times.append(format_hourly_time(hour)) 
-
                                 condition_symbols.append(format_hourly_icon(hour, sunrise, sunset))
-
                                 temps.append(format_hourly_temperature(hour))
-
                                 winds.append(format_hourly_wind(hour))
-                        
                         detailed_forecast += assemble_hourly_data_table(times, condition_symbols, temps, winds)
                         detailed_forecast += f"```\n\n"
                     

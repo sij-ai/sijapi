@@ -104,8 +104,6 @@ async def handle_exception_middleware(request: Request, call_next):
     return response
 
 
-
-
 def load_router(router_name):
     router_file = ROUTER_DIR / f'{router_name}.py'
     L.DEBUG(f"Attempting to load {router_name.capitalize()}...")
@@ -121,6 +119,7 @@ def load_router(router_name):
     else:
         L.ERR(f"Router file for {router_name} does not exist.")
 
+
 def main(argv):
     if args.test:
         load_router(args.test)
@@ -131,10 +130,10 @@ def main(argv):
             if getattr(API.MODULES, module_name):
                 load_router(module_name)
     
-   
     config = HypercornConfig()
     config.bind = [API.BIND]  # Use the resolved BIND value
     asyncio.run(serve(api, config))
+
 
 if __name__ == "__main__":
     main(sys.argv[1:])
