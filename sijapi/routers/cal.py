@@ -1,7 +1,7 @@
 '''
 Calendar module using macOS Calendars and/or Microsoft 365 via its Graph API.
 Depends on: 
-  LOGGER, ICAL_TOGGLE, ICALENDARS, MS365_TOGGLE, MS365_CLIENT_ID, MS365_SECRET, MS365_AUTHORITY_URL, MS365_SCOPE, MS365_REDIRECT_PATH, MS365_TOKEN_PATH
+  LOGGER, ICAL_TOGGLE, ICALENDARS, MS365_TOGGLE, MS365_CLIENT_ID, MS365_SECRET, MS365_AUTHORITY_URL, MS365_SCOPE, MS365_REDIRECT_PATH, Cal.MS365.auth.token
 '''
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.responses import RedirectResponse, JSONResponse
@@ -16,45 +16,46 @@ from typing import Dict, List, Any
 from datetime import datetime, timedelta
 from Foundation import NSDate, NSRunLoop
 import EventKit as EK
-from sijapi import L, ICAL_TOGGLE, ICALENDARS, MS365_TOGGLE, MS365_CLIENT_ID, MS365_SECRET, MS365_AUTHORITY_URL, MS365_SCOPE, MS365_REDIRECT_PATH, MS365_TOKEN_PATH
+from sijapi import L, Cal
 from sijapi.routers import loc
 
 cal = APIRouter()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/token")
 timeout = httpx.Timeout(12)
 
-if MS365_TOGGLE is True:
-    L.CRIT(f"Visit https://api.sij.ai/o365/login to obtain your Microsoft 365 authentication token.")
+print(f"Configuration MS365: {Cal.MS365}")
+if Cal.MS365.toggle == 'on':
+    L.CRIT(f"Visit https://api.sij.ai/MS365/login to obtain your Microsoft 365 authentication token.")
 
-    @cal.get("/o365/login")
+    @cal.get("/MS365/login")
     async def login():
-        L.DEBUG(f"Received request to /o365/login")
-        L.DEBUG(f"SCOPE: {MS365_SCOPE}")
-        if not MS365_SCOPE:
+        L.DEBUG(f"Received request to /MS365/login")
+        L.DEBUG(f"SCOPE: {Cal.MS365.auth.scopes}")
+        if not Cal.MS365.auth.scopes:
             L.ERR("No scopes defined for authorization.")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="No scopes defined for authorization."
             )
-        authorization_url = f"{MS365_AUTHORITY_URL}/oauth2/v2.0/authorize?client_id={MS365_CLIENT_ID}&response_type=code&redirect_uri={MS365_REDIRECT_PATH}&scope={'+'.join(MS365_SCOPE)}"
+        authorization_url = f"{Cal.MS365.auth.url}/oauth2/v2.0/authorize?client_id={Cal.MS365.client}&response_type=code&redirect_uri={Cal.MS365.auth.redirect}&scope={'+'.join(Cal.MS365.auth.scopes)}"
         L.INFO(f"Redirecting to authorization URL: {authorization_url}")
         return RedirectResponse(authorization_url)
 
-    @cal.get("/o365/oauth_redirect")
+    @cal.get("/MS365/oauth_redirect")
     async def oauth_redirect(code: str = None, error: str = None):
-        L.DEBUG(f"Received request to /o365/oauth_redirect")
+        L.DEBUG(f"Received request to /MS365/oauth_redirect")
         if error:
             L.ERR(f"OAuth2 Error: {error}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST, detail="OAuth2 Error"
             )
         L.INFO(f"Requesting token with authorization code: {code}")
-        token_url = f"{MS365_AUTHORITY_URL}/oauth2/v2.0/token"
+        token_url = f"{Cal.MS365.auth.url}/oauth2/v2.0/token"
         data = {
-            "client_id": MS365_CLIENT_ID,
-            "client_secret": MS365_SECRET,
+            "client_id": Cal.MS365.client,
+            "client_secret": Cal.MS365.auth.secret,
             "code": code,
-            "redirect_uri": MS365_REDIRECT_PATH,
+            "redirect_uri": Cal.MS365.auth.redirect,
             "grant_type": "authorization_code"
         }
         async with httpx.AsyncClient(timeout=timeout) as client:
@@ -73,9 +74,9 @@ if MS365_TOGGLE is True:
                 detail="Failed to obtain access token"
             )
 
-    @cal.get("/o365/me")
+    @cal.get("/MS365/me")
     async def read_items():
-        L.DEBUG(f"Received request to /o365/me")
+        L.DEBUG(f"Received request to /MS365/me")
         token = await load_token()
         if not token:
             raise HTTPException(
@@ -102,16 +103,16 @@ if MS365_TOGGLE is True:
         L.DEBUG(f"Saving token: {token}")
         try:
             token["expires_at"] = int(time.time()) + token["expires_in"]
-            with open(MS365_TOKEN_PATH, "w") as file:
+            with open(Cal.MS365.auth.token, "w") as file:
                 json.dump(token, file)
-                L.DEBUG(f"Saved token to {MS365_TOKEN_PATH}")
+                L.DEBUG(f"Saved token to {Cal.MS365.auth.token}")
         except Exception as e:
             L.ERR(f"Failed to save token: {e}")
 
     async def load_token():
-        if os.path.exists(MS365_TOKEN_PATH):
+        if os.path.exists(Cal.MS365.auth.token):
             try:
-                with open(MS365_TOKEN_PATH, "r") as file:
+                with open(Cal.MS365.auth.token, "r") as file:
                     token = json.load(file)
             except FileNotFoundError:
                 L.ERR("Token file not found.")
@@ -128,7 +129,7 @@ if MS365_TOGGLE is True:
                 L.DEBUG("No token found.")
                 return None
         else:
-            L.ERR(f"No file found at {MS365_TOKEN_PATH}")
+            L.ERR(f"No file found at {Cal.MS365.auth.token}")
             return None
 
 
@@ -146,13 +147,13 @@ if MS365_TOGGLE is True:
         return response.status_code == 401
 
     async def get_new_token_with_refresh_token(refresh_token):
-        token_url = f"{MS365_AUTHORITY_URL}/oauth2/v2.0/token"
+        token_url = f"{Cal.MS365.auth.url}/oauth2/v2.0/token"
         data = {
-            "client_id": MS365_CLIENT_ID,
-            "client_secret": MS365_SECRET,
+            "client_id": Cal.MS365.client,
+            "client_secret": Cal.MS365.auth.secret,
             "refresh_token": refresh_token,
             "grant_type": "refresh_token",
-            "scope": " ".join(MS365_SCOPE),
+            "scope": " ".join(Cal.MS365.auth.scopes),
         }
         async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.post(token_url, data=data)
@@ -163,6 +164,36 @@ if MS365_TOGGLE is True:
         else:
             L.ERR("Failed to refresh access token")
             return None
+
+    async def get_ms365_events(start_date: datetime, end_date: datetime):
+        token = await load_token()
+        if token:
+            if await is_token_expired(token):
+                await refresh_token()
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Access token not found",
+            )
+        # this looks like it might need updating to use tz-aware datetimes converted to UTC...
+        graph_url = f"https://graph.microsoft.com/v1.0/me/events?$filter=start/dateTime ge '{start_date}T00:00:00' and end/dateTime le '{end_date}T23:59:59'"
+        headers = {
+            "Authorization": f"Bearer {token['access_token']}",
+            "Prefer": 'outlook.timezone="Pacific Standard Time"',
+        }
+        async with httpx.AsyncClient() as client:
+            response = await client.get(graph_url, headers=headers)
+
+        if response.status_code != 200:
+            L.ERR("Failed to retrieve events from Microsoft 365")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to retrieve events",
+            )
+
+        ms_events = response.json().get("value", [])
+        return ms_events
+
 
 
     async def refresh_token():
@@ -223,12 +254,12 @@ async def get_events_endpoint(start_date: str, end_date: str):
 
 async def get_events(start_dt: datetime, end_dt: datetime) -> List:
     combined_events = []
-    if MS365_TOGGLE:
+    if Cal.MS365.toggle == "on":
         ms_events = await get_ms365_events(start_dt, end_dt)
         combined_events.extend(ms_events)  # Use extend instead of append
     
-    if ICAL_TOGGLE:
-        calendar_ids = ICALENDARS  
+    if Cal.ICAL.toggle == "on":
+        calendar_ids = Cal.ICAL.calendars  
         macos_events = get_macos_calendar_events(start_dt, end_dt, calendar_ids)
         combined_events.extend(macos_events)  # Use extend instead of append
     
@@ -236,108 +267,80 @@ async def get_events(start_dt: datetime, end_dt: datetime) -> List:
     return parsed_events
 
 
-def get_macos_calendar_events(start_date: datetime, end_date: datetime, calendar_ids: List[str] = None) -> List[Dict]:
-    event_store = EK.EKEventStore.alloc().init()
+if Cal.ICAL.toggle == "on":
+    def get_macos_calendar_events(start_date: datetime, end_date: datetime, calendar_ids: List[str] = None) -> List[Dict]:
+        event_store = EK.EKEventStore.alloc().init()
 
-    # Request access to EventKit
-    def request_access() -> bool:
-        access_granted = []
+        # Request access to EventKit
+        def request_access() -> bool:
+            access_granted = []
 
-        def completion_handler(granted, error):
-            if error is not None:
-                L.ERR(f"Error: {error}")
-            access_granted.append(granted)
-            # Notify the main thread that the completion handler has executed
+            def completion_handler(granted, error):
+                if error is not None:
+                    L.ERR(f"Error: {error}")
+                access_granted.append(granted)
+                # Notify the main thread that the completion handler has executed
+                with access_granted_condition:
+                    access_granted_condition.notify()
+
+            access_granted_condition = threading.Condition()
             with access_granted_condition:
-                access_granted_condition.notify()
+                event_store.requestAccessToEntityType_completion_(0, completion_handler)  # 0 corresponds to EKEntityTypeEvent
+                # Wait for the completion handler to be called
+                access_granted_condition.wait(timeout=10)
+                # Verify that the handler was called and access_granted is not empty
+                if access_granted:
+                    return access_granted[0]
+                else:
+                    L.ERR("Request access timed out or failed")
+                    return False
 
-        access_granted_condition = threading.Condition()
-        with access_granted_condition:
-            event_store.requestAccessToEntityType_completion_(0, completion_handler)  # 0 corresponds to EKEntityTypeEvent
-            # Wait for the completion handler to be called
-            access_granted_condition.wait(timeout=10)
-            # Verify that the handler was called and access_granted is not empty
-            if access_granted:
-                return access_granted[0]
-            else:
-                L.ERR("Request access timed out or failed")
-                return False
+        if not request_access():
+            L.ERR("Access to calendar data was not granted")
+            return []
 
-    if not request_access():
-        L.ERR("Access to calendar data was not granted")
-        return []
+        ns_start_date = datetime_to_nsdate(start_date)
+        ns_end_date = datetime_to_nsdate(end_date)
 
-    ns_start_date = datetime_to_nsdate(start_date)
-    ns_end_date = datetime_to_nsdate(end_date)
-
-    # Retrieve all calendars
-    all_calendars = event_store.calendarsForEntityType_(0)  # 0 corresponds to EKEntityTypeEvent
-    if calendar_ids:
-        selected_calendars = [cal for cal in all_calendars if cal.calendarIdentifier() in calendar_ids]
-    else:
-        selected_calendars = all_calendars
-
-    # Filtering events by selected calendars
-    predicate = event_store.predicateForEventsWithStartDate_endDate_calendars_(ns_start_date, ns_end_date, selected_calendars)
-    events = event_store.eventsMatchingPredicate_(predicate)
-
-    event_list = []
-    for event in events:
-        # Check if event.attendees() returns None
-        if event.attendees():
-            attendees = [{'name': att.name(), 'email': att.emailAddress()} for att in event.attendees() if att.emailAddress()]
+        # Retrieve all calendars
+        all_calendars = event_store.calendarsForEntityType_(0)  # 0 corresponds to EKEntityTypeEvent
+        if calendar_ids:
+            selected_calendars = [cal for cal in all_calendars if cal.calendarIdentifier() in calendar_ids]
         else:
-            attendees = []
+            selected_calendars = all_calendars
 
-        # Format the start and end dates properly
-        start_date_str = event.startDate().descriptionWithLocale_(None)
-        end_date_str = event.endDate().descriptionWithLocale_(None)
+        # Filtering events by selected calendars
+        predicate = event_store.predicateForEventsWithStartDate_endDate_calendars_(ns_start_date, ns_end_date, selected_calendars)
+        events = event_store.eventsMatchingPredicate_(predicate)
 
-        event_data = {
-            "subject": event.title(),
-            "id": event.eventIdentifier(),
-            "start": start_date_str,
-            "end": end_date_str,
-            "bodyPreview": event.notes() if event.notes() else '',
-            "attendees": attendees,
-            "location": event.location() if event.location() else '',
-            "onlineMeetingUrl": '',  # Defaulting to empty as macOS EventKit does not provide this
-            "showAs": 'busy',  # Default to 'busy'
-            "isAllDay": event.isAllDay()
-        }
+        event_list = []
+        for event in events:
+            # Check if event.attendees() returns None
+            if event.attendees():
+                attendees = [{'name': att.name(), 'email': att.emailAddress()} for att in event.attendees() if att.emailAddress()]
+            else:
+                attendees = []
 
-        event_list.append(event_data)
+            # Format the start and end dates properly
+            start_date_str = event.startDate().descriptionWithLocale_(None)
+            end_date_str = event.endDate().descriptionWithLocale_(None)
 
-    return event_list
+            event_data = {
+                "subject": event.title(),
+                "id": event.eventIdentifier(),
+                "start": start_date_str,
+                "end": end_date_str,
+                "bodyPreview": event.notes() if event.notes() else '',
+                "attendees": attendees,
+                "location": event.location() if event.location() else '',
+                "onlineMeetingUrl": '',  # Defaulting to empty as macOS EventKit does not provide this
+                "showAs": 'busy',  # Default to 'busy'
+                "isAllDay": event.isAllDay()
+            }
 
-async def get_ms365_events(start_date: datetime, end_date: datetime):
-    token = await load_token()
-    if token:
-        if await is_token_expired(token):
-            await refresh_token()
-    else:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Access token not found",
-        )
-    # this looks like it might need updating to use tz-aware datetimes converted to UTC...
-    graph_url = f"https://graph.microsoft.com/v1.0/me/events?$filter=start/dateTime ge '{start_date}T00:00:00' and end/dateTime le '{end_date}T23:59:59'"
-    headers = {
-        "Authorization": f"Bearer {token['access_token']}",
-        "Prefer": 'outlook.timezone="Pacific Standard Time"',
-    }
-    async with httpx.AsyncClient() as client:
-        response = await client.get(graph_url, headers=headers)
+            event_list.append(event_data)
 
-    if response.status_code != 200:
-        L.ERR("Failed to retrieve events from Microsoft 365")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to retrieve events",
-        )
-
-    ms_events = response.json().get("value", [])
-    return ms_events
+        return event_list
 
 
 async def parse_calendar_for_day(range_start: datetime, range_end: datetime, events: List[Dict[str, Any]]):

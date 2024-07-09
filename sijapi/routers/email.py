@@ -20,7 +20,7 @@ import ssl
 import yaml
 from typing import List, Dict, Optional, Set
 from datetime import datetime as dt_datetime
-from sijapi import L, PODCAST_DIR, DEFAULT_VOICE, EMAIL_CONFIG, EMAIL_LOGS
+from sijapi import L, TTS, Email, Dir
 from sijapi.routers import img, loc, tts, llm
 from sijapi.utilities import clean_text, assemble_journal_path, extract_text, prefix_lines
 from sijapi.classes import EmailAccount, IMAPConfig, SMTPConfig, IncomingEmail, EmailContact, AutoResponder
@@ -28,12 +28,10 @@ from sijapi.classes import EmailAccount
 
 email = APIRouter(tags=["private"])
 
-
 def load_email_accounts(yaml_path: str) -> List[EmailAccount]:
     with open(yaml_path, 'r') as file:
         config = yaml.safe_load(file)
     return [EmailAccount(**account) for account in config['accounts']]
-
 
 def get_imap_connection(account: EmailAccount):
     return Imbox(account.imap.host,
@@ -42,8 +40,6 @@ def get_imap_connection(account: EmailAccount):
         port=account.imap.port,
         ssl=account.imap.encryption == 'SSL',
         starttls=account.imap.encryption == 'STARTTLS')
-
-
 
 def get_smtp_connection(autoresponder):
     # Create an SSL context that doesn't verify certificates
@@ -82,7 +78,6 @@ def get_smtp_connection(autoresponder):
         except Exception as e:
             L.ERR(f"Unencrypted connection failed: {str(e)}")
             raise
-
 
 async def send_response(to_email: str, subject: str, body: str, profile: AutoResponder, image_attachment: Path = None) -> bool:
     server = None
@@ -149,7 +144,7 @@ async def extract_attachments(attachments) -> List[str]:
     return attachment_texts
 
 async def process_account_archival(account: EmailAccount):
-    summarized_log = EMAIL_LOGS / account.name / "summarized.txt"
+    summarized_log = Dir.logs.email / account.name / "summarized.txt"
     os.makedirs(summarized_log.parent, exist_ok = True)
 
     while True:
@@ -196,7 +191,7 @@ async def summarize_single_email(this_email: IncomingEmail, podcast: bool = Fals
         attachment_texts = await extract_attachments(this_email.attachments)
         email_content += "\n—--\n" + "\n—--\n".join([f"Attachment: {text}" for text in attachment_texts])
     summary = await llm.summarize_text(email_content)
-    await tts.local_tts(text_content = summary, speed = 1.1, voice = DEFAULT_VOICE, podcast = podcast, output_path = tts_path)
+    await tts.local_tts(text_content = summary, speed = 1.1, voice = TTS.xtts.voice, podcast = podcast, output_path = tts_path)
     md_summary = f'```ad.summary\n'
     md_summary += f'title: {this_email.subject}\n'
     md_summary += f'{summary}\n'
@@ -266,7 +261,7 @@ def get_matching_autoresponders(this_email: IncomingEmail, account: EmailAccount
 
 
 async def process_account_autoresponding(account: EmailAccount):
-    EMAIL_AUTORESPONSE_LOG = EMAIL_LOGS / account.name / "autoresponded.txt"
+    EMAIL_AUTORESPONSE_LOG = Dir.logs.email / account.name / "autoresponded.txt"
     os.makedirs(EMAIL_AUTORESPONSE_LOG.parent, exist_ok=True)
 
     while True:

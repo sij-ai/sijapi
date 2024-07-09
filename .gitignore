@@ -10,7 +10,7 @@ sijapi/data/*.pbf
 sijapi/data/geonames.txt
 sijapi/data/img/images/
 sijapi/config/*.yaml
-sijapi/config/O365/
+sijapi/config/MS365/
 sijapi/local_only/
 sijapi/testbed/
 khoj/
