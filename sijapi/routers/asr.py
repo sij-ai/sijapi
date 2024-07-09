@@ -15,7 +15,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from typing import Optional
 
-from sijapi import L, ASR_DIR, WHISPER_CPP_MODELS, GARBAGE_COLLECTION_INTERVAL, GARBAGE_TTL, WHISPER_CPP_DIR, MAX_CPU_CORES
+from sijapi import L, API, Dir, ASR
 
 asr = APIRouter()
 
@@ -83,11 +83,11 @@ async def transcribe_endpoint(
 async def transcribe_audio(file_path, params: TranscribeParams):
     L.DEBUG(f"Transcribing audio file from {file_path}...")
     file_path = await convert_to_wav(file_path)
-    model = params.model if params.model in WHISPER_CPP_MODELS else 'small'
-    model_path = WHISPER_CPP_DIR / 'models' / f'ggml-{model}.bin'
-    command = [str(WHISPER_CPP_DIR / 'build' / 'bin' / 'main')]
+    model = params.model if params.model in ASR.MODELS else 'small'
+    model_path = ASR.WHISPER_DIR.models / f'ggml-{model}.bin'
+    command = [str(ASR.WHISPER_DIR.build.bin.main)]
     command.extend(['-m', str(model_path)])
-    command.extend(['-t', str(max(1, min(params.threads or MAX_CPU_CORES, MAX_CPU_CORES)))])
+    command.extend(['-t', str(max(1, min(params.threads or API.MAX_CPU_CORES, API.MAX_CPU_CORES)))])
     command.extend(['-np'])  # Always enable no-prints
 
 
@@ -187,7 +187,7 @@ async def run_transcription(command, file_path):
     return stdout.decode().strip()
 
 async def convert_to_wav(file_path: str):
-    wav_file_path = os.path.join(ASR_DIR, f"{uuid.uuid4()}.wav")
+    wav_file_path = os.path.join(Dir.data.asr, f"{uuid.uuid4()}.wav")
     proc = await asyncio.create_subprocess_exec(
         "ffmpeg", "-y", "-i", file_path, "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1", wav_file_path,
         stdout=asyncio.subprocess.PIPE,

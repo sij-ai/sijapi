@@ -4,20 +4,13 @@ from fastapi import FastAPI, Request, HTTPException, Response
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.requests import ClientDisconnect
 from hypercorn.asyncio import serve
 from hypercorn.config import Config as HypercornConfig
 import sys
 import asyncio 
-import httpx
 import argparse
-import json
 import ipaddress
 import importlib
-from dotenv import load_dotenv
-from pathlib import Path
-from datetime import datetime
 import argparse
 
 parser = argparse.ArgumentParser(description='Personal API.')
@@ -25,17 +18,12 @@ parser.add_argument('--debug', action='store_true', help='Set log level to L.INF
 parser.add_argument('--test', type=str, help='Load only the specified module.')
 args = parser.parse_args()
 
-from . import L, API, ROUTER_DIR
+from . import L, API, Dir
 L.setup_from_args(args)
-
-from sijapi import ROUTER_DIR
-
-# Initialize a FastAPI application
-api = FastAPI()
-
+app = FastAPI()
 
 # CORSMiddleware
-api.add_middleware(
+app.add_middleware(
     CORSMiddleware,
     allow_origins=['*'],
     allow_credentials=True,
@@ -63,41 +51,22 @@ class SimpleAPIKeyMiddleware(BaseHTTPMiddleware):
                         content={"detail": "Invalid or missing API key"}
                     )
         response = await call_next(request)
-        # L.DEBUG(f"Request from {client_ip} is complete")
         return response
 
-# Add the middleware to your FastAPI app
-api.add_middleware(SimpleAPIKeyMiddleware)
+app.add_middleware(SimpleAPIKeyMiddleware)
 
-
-canceled_middleware = """
-@api.middleware("http")
-async def log_requests(request: Request, call_next):
-    L.DEBUG(f"Incoming request: {request.method} {request.url}")
-    L.DEBUG(f"Request headers: {request.headers}")
-    L.DEBUG(f"Request body: {await request.body()}")
-    response = await call_next(request)
-    return response
-
-async def log_outgoing_request(request):
-    L.INFO(f"Outgoing request: {request.method} {request.url}")
-    L.DEBUG(f"Request headers: {request.headers}")
-    L.DEBUG(f"Request body: {request.content}")
-"""
-
-@api.exception_handler(HTTPException)
+@app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
     L.ERR(f"HTTP Exception: {exc.status_code} - {exc.detail}")
     L.ERR(f"Request: {request.method} {request.url}")
     return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
 
-@api.middleware("http")
+@app.middleware("http")
 async def handle_exception_middleware(request: Request, call_next):
     try:
         response = await call_next(request)
     except RuntimeError as exc:
         if str(exc) == "Response content longer than Content-Length":
-            # Update the Content-Length header to match the actual response content length
             response.headers["Content-Length"] = str(len(response.body))
         else:
             raise
@@ -105,20 +74,19 @@ async def handle_exception_middleware(request: Request, call_next):
 
 
 def load_router(router_name):
-    router_file = ROUTER_DIR / f'{router_name}.py'
+    router_file = Dir.ROUTERS / f'{router_name}.py'
     L.DEBUG(f"Attempting to load {router_name.capitalize()}...")
     if router_file.exists():
         module_path = f'sijapi.routers.{router_name}'
         try:
             module = importlib.import_module(module_path)
             router = getattr(module, router_name)
-            api.include_router(router)
+            app.include_router(router)
             L.INFO(f"{router_name.capitalize()} router loaded.")
         except (ImportError, AttributeError) as e:
             L.CRIT(f"Failed to load router {router_name}: {e}")
     else:
         L.ERR(f"Router file for {router_name} does not exist.")
-
 
 def main(argv):
     if args.test:
@@ -132,8 +100,7 @@ def main(argv):
     
     config = HypercornConfig()
     config.bind = [API.BIND]  # Use the resolved BIND value
-    asyncio.run(serve(api, config))
-
+    asyncio.run(serve(app, config))
 
 if __name__ == "__main__":
     main(sys.argv[1:])

@@ -2,6 +2,7 @@
 import asyncio
 import json
 import math
+import multiprocessing
 import os
 import re
 from concurrent.futures import ThreadPoolExecutor
@@ -13,35 +14,196 @@ from zoneinfo import ZoneInfo
 import aiofiles
 import aiohttp
 import asyncpg
+from typing import Union, Any
+from pydantic import BaseModel, Field, ConfigDict
 import reverse_geocoder as rg
-import yaml
 from dotenv import load_dotenv
-from pydantic import BaseModel, Field, create_model
+from pydantic import BaseModel, Field, create_model, ConfigDict, validator
 from srtm import get_data
 from timezonefinder import TimezoneFinder
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Union, TypeVar, Type
+import yaml
+from typing import List, Optional
+from dotenv import load_dotenv
 
 T = TypeVar('T', bound='Configuration')
 
+class HierarchicalPath(os.PathLike):
+    def __init__(self, path=None, base=None, home=None):
+        self.home = Path(home).expanduser() if home else Path.home()
+        self.base = Path(base).resolve() if base else self._find_base()
+        self.path = self._resolve_path(path) if path else self.base
+
+    def _find_base(self):
+        current = Path(__file__).resolve().parent
+        while current.name != 'sijapi' and current != current.parent:
+            current = current.parent
+        return current
+
+    def _resolve_path(self, path):
+        if isinstance(path, HierarchicalPath):
+            return path.path
+        if isinstance(path, Path):
+            return path
+        path = self._resolve_placeholders(path)
+        if path.startswith(('~', 'HOME')):
+            return self.home / path.lstrip('~').lstrip('HOME').lstrip('/')
+        if path.startswith('/'):
+            return Path(path)
+        return self._resolve_relative_path(self.base / path)
+
+    def _resolve_placeholders(self, path):
+        placeholders = {
+            'HOME': str(self.home),
+            'BASE': str(self.base),
+        }
+        pattern = r'\{\{\s*([^}]+)\s*\}\}'
+        return re.sub(pattern, lambda m: placeholders.get(m.group(1).strip(), m.group(0)), path)
+
+    def _resolve_relative_path(self, path):
+        if path.is_file():
+            return path
+        if path.is_dir():
+            return path
+        yaml_path = path.with_suffix('.yaml')
+        if yaml_path.is_file():
+            return yaml_path
+        return path
+
+    def __truediv__(self, other):
+        return HierarchicalPath(self.path / other, base=self.base, home=self.home)
+
+    def __getattr__(self, name):
+        return HierarchicalPath(self.path / name, base=self.base, home=self.home)
+
+    def __str__(self):
+        return str(self.path)
+
+    def __repr__(self):
+        return f"HierarchicalPath('{self.path}')"
+
+    def __fspath__(self):
+        return os.fspath(self.path)
+
+    def __eq__(self, other):
+        if isinstance(other, (HierarchicalPath, Path, str)):
+            return str(self.path) == str(other)
+        return False
+
+    def __lt__(self, other):
+        if isinstance(other, (HierarchicalPath, Path, str)):
+            return str(self.path) < str(other)
+        return False
+
+    def __le__(self, other):
+        if isinstance(other, (HierarchicalPath, Path, str)):
+            return str(self.path) <= str(other)
+        return False
+
+    def __gt__(self, other):
+        if isinstance(other, (HierarchicalPath, Path, str)):
+            return str(self.path) > str(other)
+        return False
+
+    def __ge__(self, other):
+        if isinstance(other, (HierarchicalPath, Path, str)):
+            return str(self.path) >= str(other)
+        return False
+
+    def __hash__(self):
+        return hash(self.path)
+
+    def __getattribute__(self, name):
+        try:
+            return super().__getattribute__(name)
+        except AttributeError:
+            return getattr(self.path, name)
 
 
-import os
-from pathlib import Path
-from typing import Union, Optional, Any, Dict, List
-import yaml
-import re
-from pydantic import BaseModel, create_model
-from dotenv import load_dotenv
+class Dir(BaseModel):
+    HOME: HierarchicalPath = Field(default_factory=lambda: HierarchicalPath(Path.home()))
+    BASE: HierarchicalPath | None = None
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    @classmethod
+    def determine_base(cls) -> HierarchicalPath:
+        return HierarchicalPath(HierarchicalPath()._find_base())
+
+    def __init__(self, **data):
+        super().__init__(**data)
+        if self.BASE is None:
+            self.BASE = self.determine_base()
+
+    @classmethod
+    def load(cls, yaml_path: Union[str, Path] = None) -> 'Dir':
+        yaml_path = cls._resolve_path(yaml_path) if yaml_path else None
+        if yaml_path:
+            with open(yaml_path, 'r') as file:
+                config_data = yaml.safe_load(file)
+            print(f"Loaded directory configuration from {yaml_path}")
+            resolved_data = cls.resolve_placeholders(config_data)
+        else:
+            resolved_data = {}
+        return cls(**resolved_data)
+
+    @classmethod
+    def _resolve_path(cls, path: Union[str, Path]) -> Path:
+        base_path = cls.determine_base().path.parent
+        path = Path(path)
+        if not path.suffix:
+            path = base_path / 'sijapi' / 'config' / f"{path.name}.yaml"
+        elif not path.is_absolute():
+            path = base_path / path
+        return path
+
+    @classmethod
+    def resolve_placeholders(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            return {k: cls.resolve_placeholders(v) for k, v in data.items()}
+        elif isinstance(data, list):
+            return [cls.resolve_placeholders(v) for v in data]
+        elif isinstance(data, str):
+            return cls.resolve_string_placeholders(data)
+        return data
+
+    @classmethod
+    def resolve_string_placeholders(cls, value: str) -> Any:
+        if value.startswith('{{') and value.endswith('}}'):
+            parts = value.strip('{}').strip().split('.')
+            result = cls.HOME
+            for part in parts:
+                result = getattr(result, part)
+            return result
+        elif value == '*~*':
+            return cls.HOME
+        return HierarchicalPath(value)
+
+    def __getattr__(self, name):
+        return HierarchicalPath(self.BASE / name.lower(), base=self.BASE.path, home=self.HOME.path)
+
+    def model_dump(self, *args, **kwargs):
+        d = super().model_dump(*args, **kwargs)
+        return {k: str(v) for k, v in d.items()}
+
+
 
 class Configuration(BaseModel):
-    HOME: Path = Path.home()
+    HOME: Path = Field(default_factory=Path.home)
     _dir_config: Optional['Configuration'] = None
+    dir: Dir = Field(default_factory=Dir)
+
+    class Config:
+        arbitrary_types_allowed = True
+        extra = "allow"  # This allows extra fields
 
     @classmethod
     def load(cls, yaml_path: Union[str, Path], secrets_path: Optional[Union[str, Path]] = None, dir_config: Optional['Configuration'] = None) -> 'Configuration':
         yaml_path = cls._resolve_path(yaml_path, 'config')
         if secrets_path:
             secrets_path = cls._resolve_path(secrets_path, 'config')
-        
+
         try:
             with yaml_path.open('r') as file:
                 config_data = yaml.safe_load(file)
@@ -54,24 +216,30 @@ class Configuration(BaseModel):
                 print(f"Loaded secrets data from {secrets_path}")
                 config_data.update(secrets_data)
             
-            # Ensure HOME is set
-            if config_data.get('HOME') is None:
-                config_data['HOME'] = str(Path.home())
-                print(f"HOME was None in config, set to default: {config_data['HOME']}")
-            
-            load_dotenv()
-            
-            instance = cls.create_dynamic_model(**config_data)
+            instance = cls(**config_data)
             instance._dir_config = dir_config or instance
-            
+
             resolved_data = instance.resolve_placeholders(config_data)
-            instance = cls.create_dynamic_model(**resolved_data)
-            instance._dir_config = dir_config or instance
             
-            return instance
+            return cls._create_nested_config(resolved_data)
         except Exception as e:
             print(f"Error loading configuration: {str(e)}")
             raise
+
+    @classmethod
+    def _create_nested_config(cls, data):
+        if isinstance(data, dict):
+            return cls(**{k: cls._create_nested_config(v) for k, v in data.items()})
+        elif isinstance(data, list):
+            return [cls._create_nested_config(item) for item in data]
+        else:
+            return data
+
+    def __getattr__(self, name):
+        value = self.__dict__.get(name)
+        if isinstance(value, dict):
+            return Configuration(**value)
+        return value
 
     @classmethod
     def _resolve_path(cls, path: Union[str, Path], default_dir: str) -> Path:
@@ -106,7 +274,7 @@ class Configuration(BaseModel):
             elif len(parts) == 2 and parts[0] == 'ENV':
                 replacement = os.getenv(parts[1], '')
             else:
-                replacement = value  # Keep original if not recognized
+                replacement = value
             
             value = value.replace('{{' + match + '}}', str(replacement))
         
@@ -114,26 +282,6 @@ class Configuration(BaseModel):
         if isinstance(value, str) and (value.startswith(('/', '~')) or (':' in value and value[1] == ':')):
             return Path(value).expanduser()
         return value
-
-    @classmethod
-    def create_dynamic_model(cls, **data):
-        for key, value in data.items():
-            if isinstance(value, dict):
-                data[key] = cls.create_dynamic_model(**value)
-            elif isinstance(value, list) and all(isinstance(item, dict) for item in value):
-                data[key] = [cls.create_dynamic_model(**item) for item in value]
-        
-        DynamicModel = create_model(
-            f'Dynamic{cls.__name__}',
-            __base__=cls,
-            **{k: (Any, v) for k, v in data.items()}
-        )
-        return DynamicModel(**data)
-
-    class Config:
-        extra = "allow"
-        arbitrary_types_allowed = True
-
 
 
 class APIConfig(BaseModel):
@@ -146,23 +294,25 @@ class APIConfig(BaseModel):
     MODULES: Any  # This will be replaced with a dynamic model
     TZ: str
     KEYS: List[str]
+    MAX_CPU_CORES: int = Field(default_factory=lambda: min(
+        int(os.getenv("MAX_CPU_CORES", multiprocessing.cpu_count() // 2)), multiprocessing.cpu_count()
+    ))
 
     @classmethod
     def load(cls, config_path: Union[str, Path], secrets_path: Union[str, Path]):
         config_path = cls._resolve_path(config_path, 'config')
         secrets_path = cls._resolve_path(secrets_path, 'config')
 
-        # Load main configuration
         with open(config_path, 'r') as file:
             config_data = yaml.safe_load(file)
         
-        print(f"Loaded main config: {config_data}")  # Debug print
+        print(f"Loaded main config: {config_data}")
         
         # Load secrets
         try:
             with open(secrets_path, 'r') as file:
                 secrets_data = yaml.safe_load(file)
-            print(f"Loaded secrets: {secrets_data}")  # Debug print
+            print(f"Loaded secrets: {secrets_data}")
         except FileNotFoundError:
             print(f"Secrets file not found: {secrets_path}")
             secrets_data = {}
@@ -173,7 +323,7 @@ class APIConfig(BaseModel):
         # Resolve internal placeholders
         config_data = cls.resolve_placeholders(config_data)
         
-        print(f"Resolved config: {config_data}")  # Debug print
+        print(f"Resolved config: {config_data}")
         
         # Handle KEYS placeholder
         if isinstance(config_data.get('KEYS'), list) and len(config_data['KEYS']) == 1:
@@ -185,7 +335,7 @@ class APIConfig(BaseModel):
                     secret_key = parts[1]
                     if secret_key in secrets_data:
                         config_data['KEYS'] = secrets_data[secret_key]
-                        print(f"Replaced KEYS with secret: {config_data['KEYS']}")  # Debug print
+                        print(f"Replaced KEYS with secret: {config_data['KEYS']}")
                     else:
                         print(f"Secret key '{secret_key}' not found in secrets file")
                 else:
@@ -201,10 +351,10 @@ class APIConfig(BaseModel):
                 modules_fields[key] = (bool, value)
             else:
                 raise ValueError(f"Invalid value for module {key}: {value}. Must be 'on', 'off', True, or False.")
-        
+
         DynamicModulesConfig = create_model('DynamicModulesConfig', **modules_fields)
         config_data['MODULES'] = DynamicModulesConfig(**modules_data)
-        
+
         return cls(**config_data)
 
     @classmethod
@@ -236,12 +386,12 @@ class APIConfig(BaseModel):
                 resolved_data[key] = [resolve_value(item) for item in value]
             else:
                 resolved_data[key] = resolve_value(value)
-        
+
         # Resolve BIND separately to ensure HOST and PORT are used
         if 'BIND' in resolved_data:
             resolved_data['BIND'] = resolved_data['BIND'].replace('{{ HOST }}', str(resolved_data['HOST']))
             resolved_data['BIND'] = resolved_data['BIND'].replace('{{ PORT }}', str(resolved_data['PORT']))
-        
+
         return resolved_data
 
     def __getattr__(self, name: str) -> Any:
@@ -252,8 +402,6 @@ class APIConfig(BaseModel):
     @property
     def active_modules(self) -> List[str]:
         return [module for module, is_active in self.MODULES.__dict__.items() if is_active]
-
-
 
 class Location(BaseModel):
     latitude: float
@@ -482,7 +630,6 @@ class Geocoder:
             timezone=await self.timezone(latitude, longitude)
         )
 
-
     def round_coords(self, lat: float, lon: float, decimal_places: int = 2) -> Tuple[float, float]:
         return (round(lat, decimal_places), round(lon, decimal_places))
 
@@ -583,19 +730,18 @@ class Database(BaseModel):
             await conn.close()
 
     @classmethod
-    def from_env(cls):
-        import os
-        return cls(
-            host=os.getenv("DB_HOST", "localhost"),
-            port=int(os.getenv("DB_PORT", 5432)),
-            user=os.getenv("DB_USER"),
-            password=os.getenv("DB_PASSWORD"),
-            database=os.getenv("DB_NAME"),
-            db_schema=os.getenv("DB_SCHEMA")
-        )
+    def from_yaml(cls, yaml_path: Union[str, Path]):
+        yaml_path = Path(yaml_path)
+        if not yaml_path.is_absolute():
+            yaml_path = Path(__file__).parent / 'config' / yaml_path
+
+        with open(yaml_path, 'r') as file:
+            config = yaml.safe_load(file)
+        return cls(**config)
 
     def to_dict(self):
         return self.dict(exclude_none=True)
+
 
 
 class IMAPConfig(BaseModel):
@@ -603,35 +749,56 @@ class IMAPConfig(BaseModel):
     password: str
     host: str
     port: int
-    encryption: str = None
+    encryption: Optional[str]
 
 class SMTPConfig(BaseModel):
     username: str
     password: str
     host: str
     port: int
-    encryption: str = None
+    encryption: Optional[str]
 
 class AutoResponder(BaseModel):
     name: str
     style: str
     context: str
     ollama_model: str = "llama3"
+    image_prompt: Optional[str] = None
+    image_scene: Optional[str] = None
+
+class AccountAutoResponder(BaseModel):
+    name: str
+    smtp: str
     whitelist: List[str]
     blacklist: List[str]
-    image_prompt: Optional[str] = None
-    image_scene:  Optional[str] = None
-    smtp: SMTPConfig
-    
+
 class EmailAccount(BaseModel):
     name: str
-    refresh: int
     fullname: Optional[str]
     bio: Optional[str]
+    refresh: int
     summarize: bool = False
     podcast: bool = False
-    imap: IMAPConfig
-    autoresponders: Optional[List[AutoResponder]]
+    imap: str
+    autoresponders: List[AccountAutoResponder]
+
+class EmailConfiguration(Configuration):
+    imaps: List[IMAPConfig]
+    smtps: List[SMTPConfig]
+    autoresponders: List[AutoResponder]
+    accounts: List[EmailAccount]
+
+    def get_imap(self, username: str) -> Optional[IMAPConfig]:
+        return next((imap for imap in self.imaps if imap.username == username), None)
+
+    def get_smtp(self, username: str) -> Optional[SMTPConfig]:
+        return next((smtp for smtp in self.smtps if smtp.username == username), None)
+
+    def get_autoresponder(self, name: str) -> Optional[AutoResponder]:
+        return next((ar for ar in self.autoresponders if ar.name == name), None)
+
+    def get_account(self, name: str) -> Optional[EmailAccount]:
+        return next((account for account in self.accounts if account.name == name), None)
 
 class EmailContact(BaseModel):
     email: str

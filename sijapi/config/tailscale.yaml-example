@@ -1,0 +1,6 @@
+ID: sij-mbp16
+IP: 100.64.64.20
+SUBNET: 100.64.64.0/24
+MDNS: starling-sailfin.ts.net
+API_KEY: '{{ SECRET.TAILSCALE_API_KEY }}'
+ADDRESS: 'http://{{ ID }}.{{ MDNS }}'
