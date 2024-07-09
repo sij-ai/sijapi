@@ -363,7 +363,7 @@ async def save_processed_uid(filename: Path, account_name: str, uid: str):
 
 
 async def process_all_accounts():
-    email_accounts = load_email_accounts(EMAIL_CONFIG)
+    email_accounts = Email.get_email_accounts()
     summarization_tasks = [asyncio.create_task(process_account_archival(account)) for account in email_accounts]
     autoresponding_tasks = [asyncio.create_task(process_account_autoresponding(account)) for account in email_accounts]
     await asyncio.gather(*summarization_tasks, *autoresponding_tasks)

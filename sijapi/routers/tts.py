@@ -12,7 +12,7 @@ import asyncio
 from pydantic import BaseModel
 from typing import Optional, Union, List
 from pydub import AudioSegment
-from TTS.api import TTS
+from TTS.api import TTS as XTTSv2
 from pathlib import Path
 from datetime import datetime as dt_datetime
 from time import time
@@ -25,7 +25,7 @@ import tempfile
 import random
 import re
 import os
-from sijapi import L, DEFAULT_VOICE, TTS_SEGMENTS_DIR, VOICE_DIR, PODCAST_DIR, TTS_OUTPUT_DIR, ELEVENLABS_API_KEY
+from sijapi import L, Dir, API, TTS
 from sijapi.utilities import sanitize_filename
 
 
@@ -39,14 +39,14 @@ MODEL_NAME = "tts_models/multilingual/multi-dataset/xtts_v2"
 
 @tts.get("/tts/local_voices", response_model=List[str])
 async def list_wav_files():
-    wav_files = [file.split('.')[0] for file in os.listdir(VOICE_DIR) if file.endswith(".wav")]
+    wav_files = [file.split('.')[0] for file in os.listdir(Dir.data.tts.voices) if file.endswith(".wav")]
     return wav_files
 
 @tts.get("/tts/elevenlabs_voices")
 async def list_11l_voices():
     formatted_list = ""
     url = "https://api.elevenlabs.io/v1/voices"
-    headers = {"xi-api-key": ELEVENLABS_API_KEY}
+    headers = {"xi-api-key": TTS.elevenlabs.api_key}
     async with httpx.AsyncClient() as client:
         try:
             response = await client.get(url, headers=headers)
@@ -71,10 +71,10 @@ async def select_voice(voice_name: str) -> str:
         # Case Insensitive comparison
         voice_name_lower = voice_name.lower()
         L.DEBUG(f"Looking for {voice_name_lower}")
-        for item in VOICE_DIR.iterdir():
+        for item in Dir.data.tts.voices.iterdir():
             L.DEBUG(f"Checking {item.name.lower()}")
             if item.name.lower() == f"{voice_name_lower}.wav":
-                L.DEBUG(f"select_voice received query to use voice: {voice_name}. Found {item} inside {VOICE_DIR}.")
+                L.DEBUG(f"select_voice received query to use voice: {voice_name}. Found {item} inside {Dir.data.tts.voices}.")
                 return str(item)
 
         L.ERR(f"Voice file not found")
@@ -131,7 +131,7 @@ async def generate_speech(
     title: str = None,
     output_dir = None
 ) -> str:
-    output_dir = Path(output_dir) if output_dir else TTS_OUTPUT_DIR
+    output_dir = Path(output_dir) if output_dir else TTS.data.tts.outputs
     if not output_dir.exists():
         output_dir.mkdir(parents=True)
 
@@ -149,7 +149,7 @@ async def generate_speech(
         #    raise HTTPException(status_code=400, detail="Invalid model specified")
 
         if podcast == True:
-            podcast_path = Path(PODCAST_DIR) / audio_file_path.name
+            podcast_path = TTS.podcast_dir / audio_file_path.name
             L.DEBUG(f"Podcast path: {podcast_path}")
             shutil.copy(str(audio_file_path), str(podcast_path))
             bg_tasks.add_task(os.remove, str(audio_file_path))
@@ -196,7 +196,7 @@ async def determine_voice_id(voice_name: str) -> str:
 
     L.DEBUG(f"Requested voice not among the hardcoded options.. checking with 11L next.")
     url = "https://api.elevenlabs.io/v1/voices"
-    headers = {"xi-api-key": ELEVENLABS_API_KEY}
+    headers = {"xi-api-key": TTS.elevenlabs.api_key}
     async with httpx.AsyncClient() as client:
         try:
             response = await client.get(url, headers=headers)
@@ -222,10 +222,10 @@ async def elevenlabs_tts(model: str, input_text: str, voice: str, title: str = N
         "text": input_text,
         "model_id": model
     }
-    headers = {"Content-Type": "application/json", "xi-api-key": ELEVENLABS_API_KEY}
+    headers = {"Content-Type": "application/json", "xi-api-key": TTS.elevenlabs.api_key}
     async with httpx.AsyncClient(timeout=httpx.Timeout(300.0)) as client:  # 5 minutes timeout
         response = await client.post(url, json=payload, headers=headers)
-        output_dir = output_dir if output_dir else TTS_OUTPUT_DIR
+        output_dir = output_dir if output_dir else TTS.podcast_dir
         title = title if title else dt_datetime.now().strftime("%Y%m%d%H%M%S")
         filename = f"{sanitize_filename(title)}.mp3"
         file_path = Path(output_dir) / filename
@@ -236,9 +236,6 @@ async def elevenlabs_tts(model: str, input_text: str, voice: str, title: str = N
         else:
             raise HTTPException(status_code=response.status_code, detail="Error from ElevenLabs API")
 
-
-
-
 async def get_text_content(text: Optional[str], file: Optional[UploadFile]) -> str:
     if file:
         return (await file.read()).decode("utf-8").strip()
@@ -247,20 +244,17 @@ async def get_text_content(text: Optional[str], file: Optional[UploadFile]) -> s
     else:
         raise HTTPException(status_code=400, detail="No text provided")
 
-
-
 async def get_voice_file_path(voice: str = None, voice_file: UploadFile = None) -> str:
     if voice:
         L.DEBUG(f"Looking for voice: {voice}")
-        selected_voice = await select_voice(voice)
+        selected_voice = await select_voice(voice) 
         return selected_voice
     elif voice_file and isinstance(voice_file, UploadFile):
-        VOICE_DIR.mkdir(exist_ok=True)
-
+        Dir.data.tts.voices.mkdir(exist_ok=True)
         content = await voice_file.read()
         checksum = hashlib.md5(content).hexdigest()
 
-        existing_file = VOICE_DIR / voice_file.filename
+        existing_file = Dir.data.tts.voices / voice_file.filename
         if existing_file.is_file():
             with open(existing_file, 'rb') as f:
                 existing_checksum = hashlib.md5(f.read()).hexdigest()
@@ -272,7 +266,7 @@ async def get_voice_file_path(voice: str = None, voice_file: UploadFile = None) 
         counter = 1
         new_file = existing_file
         while new_file.is_file():
-            new_file = VOICE_DIR / f"{base_name}{counter:02}.wav"
+            new_file = Dir.data.tts.voices / f"{base_name}{counter:02}.wav"
             counter += 1
 
         with open(new_file, 'wb') as f:
@@ -280,8 +274,8 @@ async def get_voice_file_path(voice: str = None, voice_file: UploadFile = None) 
         return str(new_file)
     
     else:
-        L.DEBUG(f"{dt_datetime.now().strftime('%Y%m%d%H%M%S')}: No voice specified or file provided, using default voice: {DEFAULT_VOICE}")
-        selected_voice = await select_voice(DEFAULT_VOICE)
+        L.DEBUG(f"{dt_datetime.now().strftime('%Y%m%d%H%M%S')}: No voice specified or file provided, using default voice: {TTS.xtts.voice}")
+        selected_voice = await select_voice(TTS.xtts.voice)
         return selected_voice
 
 
@@ -302,7 +296,7 @@ async def local_tts(
         datetime_str = dt_datetime.now().strftime("%Y%m%d%H%M%S")
         title = sanitize_filename(title) if title else "Audio"
         filename = f"{datetime_str}_{title}.wav"
-        file_path = TTS_OUTPUT_DIR / filename
+        file_path = Dir.data.tts.outputs / filename
 
     # Ensure the parent directory exists
     file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -310,14 +304,14 @@ async def local_tts(
     voice_file_path = await get_voice_file_path(voice, voice_file)
     
     # Initialize TTS model in a separate thread
-    XTTS = await asyncio.to_thread(TTS, model_name=MODEL_NAME)
+    XTTS = await asyncio.to_thread(XTTSv2, model_name=MODEL_NAME)
     await asyncio.to_thread(XTTS.to, DEVICE)
 
     segments = split_text(text_content)
     combined_audio = AudioSegment.silent(duration=0)
 
     for i, segment in enumerate(segments):
-        segment_file_path = TTS_SEGMENTS_DIR / f"segment_{i}.wav"
+        segment_file_path = Dir.data.tts.segments / f"segment_{i}.wav"
         L.DEBUG(f"Segment file path: {segment_file_path}")
         
         # Run TTS in a separate thread
@@ -340,7 +334,7 @@ async def local_tts(
 
     # Export the combined audio in a separate thread
     if podcast:
-        podcast_file_path = Path(PODCAST_DIR) / file_path.name
+        podcast_file_path = Path(TTS.podcast_dir) / file_path.name
         await asyncio.to_thread(combined_audio.export, podcast_file_path, format="wav")
     
     await asyncio.to_thread(combined_audio.export, file_path, format="wav")
@@ -368,7 +362,7 @@ async def stream_tts(text_content: str, speed: float, voice: str, voice_file) ->
 async def generate_tts(text: str, speed: float, voice_file_path: str) -> str:
     output_dir = tempfile.mktemp(suffix=".wav", dir=tempfile.gettempdir())
 
-    XTTS = TTS(model_name=MODEL_NAME).to(DEVICE)
+    XTTS = XTTSv2(model_name=MODEL_NAME).to(DEVICE)
     XTTS.tts_to_file(text=text, speed=speed, file_path=output_dir, speaker_wav=[voice_file_path], language="en")
 
     return output_dir
@@ -381,7 +375,7 @@ async def get_audio_stream(model: str, input_text: str, voice: str):
         "text": input_text,
         "model_id": "eleven_turbo_v2"
     }
-    headers = {"Content-Type": "application/json", "xi-api-key": ELEVENLABS_API_KEY}
+    headers = {"Content-Type": "application/json", "xi-api-key": TTS.elevenlabs.api_key}
     response = requests.post(url, json=payload, headers=headers)
 
     if response.status_code == 200:
@@ -434,7 +428,7 @@ def copy_to_podcast_dir(file_path):
         file_name = Path(file_path).name
         
         # Construct the destination path in the PODCAST_DIR
-        destination_path = Path(PODCAST_DIR) / file_name
+        destination_path = TTS.podcast_dir / file_name
         
         # Copy the file to the PODCAST_DIR
         shutil.copy(file_path, destination_path)

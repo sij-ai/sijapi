@@ -23,7 +23,10 @@ cal = APIRouter()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/token")
 timeout = httpx.Timeout(12)
 
-print(f"Configuration MS365: {Cal.MS365}")
+print(f"Cal object: {Cal}")
+print(f"Cal.__dict__: {Cal.__dict__}")
+print(f"Cal.MS365: {Cal.MS365}")
+
 if Cal.MS365.toggle == 'on':
     L.CRIT(f"Visit https://api.sij.ai/MS365/login to obtain your Microsoft 365 authentication token.")
 

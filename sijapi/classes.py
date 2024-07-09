@@ -207,7 +207,6 @@ class Configuration(BaseModel):
         try:
             with yaml_path.open('r') as file:
                 config_data = yaml.safe_load(file)
-            
             print(f"Loaded configuration data from {yaml_path}")
             
             if secrets_path:
@@ -220,7 +219,6 @@ class Configuration(BaseModel):
             instance._dir_config = dir_config or instance
 
             resolved_data = instance.resolve_placeholders(config_data)
-            
             return cls._create_nested_config(resolved_data)
         except Exception as e:
             print(f"Error loading configuration: {str(e)}")
@@ -229,6 +227,8 @@ class Configuration(BaseModel):
     @classmethod
     def _create_nested_config(cls, data):
         if isinstance(data, dict):
+            print(f"Creating nested config for: {cls.__name__}")
+            print(f"Data: {data}")
             return cls(**{k: cls._create_nested_config(v) for k, v in data.items()})
         elif isinstance(data, list):
             return [cls._create_nested_config(item) for item in data]
@@ -267,21 +267,24 @@ class Configuration(BaseModel):
         
         for match in matches:
             parts = match.split('.')
-            if len(parts) == 1:  # Internal reference
-                replacement = getattr(self._dir_config, parts[0], str(Path.home() / parts[0].lower()))
-            elif len(parts) == 2 and parts[0] == 'Dir':
-                replacement = getattr(self._dir_config, parts[1], str(Path.home() / parts[1].lower()))
-            elif len(parts) == 2 and parts[0] == 'ENV':
-                replacement = os.getenv(parts[1], '')
-            else:
-                replacement = value
-            
+            replacement = self._resolve_nested_placeholder(parts)
             value = value.replace('{{' + match + '}}', str(replacement))
         
         # Convert to Path if it looks like a file path
         if isinstance(value, str) and (value.startswith(('/', '~')) or (':' in value and value[1] == ':')):
             return Path(value).expanduser()
         return value
+
+    def _resolve_nested_placeholder(self, parts: List[str]) -> Any:
+        current = self._dir_config
+        for part in parts:
+            if part == 'ENV':
+                return os.getenv(parts[-1], '')
+            elif hasattr(current, part):
+                current = getattr(current, part)
+            else:
+                return str(Path.home() / part.lower())
+        return current
 
 
 class APIConfig(BaseModel):
@@ -788,6 +791,31 @@ class EmailConfiguration(Configuration):
     autoresponders: List[AutoResponder]
     accounts: List[EmailAccount]
 
+    @classmethod
+    def _create_nested_config(cls, data):
+        if isinstance(data, dict):
+            if 'imaps' in data:
+                return cls(
+                    imaps=[IMAPConfig(**imap) for imap in data['imaps']],
+                    smtps=[SMTPConfig(**smtp) for smtp in data['smtps']],
+                    autoresponders=[AutoResponder(**ar) for ar in data['autoresponders']],
+                    accounts=[EmailAccount(**account) for account in data['accounts']],
+                    **{k: v for k, v in data.items() if k not in ['imaps', 'smtps', 'autoresponders', 'accounts']}
+                )
+            else:
+                return data  # Return the dict as-is for nested structures
+        elif isinstance(data, list):
+            return [cls._create_nested_config(item) for item in data]
+        else:
+            return data
+
+    @classmethod
+    def load(cls, yaml_path: Union[str, Path], secrets_path: Optional[Union[str, Path]] = None, dir_config: Optional['Configuration'] = None) -> 'EmailConfiguration':
+        config_data = super().load(yaml_path, secrets_path, dir_config)
+        return cls._create_nested_config(config_data)
+
+    # ... (rest of the methods remain the same)
+
     def get_imap(self, username: str) -> Optional[IMAPConfig]:
         return next((imap for imap in self.imaps if imap.username == username), None)
 
@@ -799,6 +827,9 @@ class EmailConfiguration(Configuration):
 
     def get_account(self, name: str) -> Optional[EmailAccount]:
         return next((account for account in self.accounts if account.name == name), None)
+
+    def get_email_accounts(self) -> List[EmailAccount]:
+        return self.accounts
 
 class EmailContact(BaseModel):
     email: str
