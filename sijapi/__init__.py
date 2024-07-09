@@ -6,11 +6,11 @@ from dotenv import load_dotenv
 from dateutil import tz
 from pathlib import Path
 from .logs import Logger
-from .classes import Database, Geocoder, APIConfig, Configuration, Dir
+from .classes import Database, Geocoder, APIConfig, Configuration, EmailConfiguration, Dir
 
 ### Initial initialization
 API = APIConfig.load('api', 'secrets')
-Dir = Dir.load('dirs')
+Dir = Dir()
 ENV_PATH = Dir.CONFIG / ".env"
 LOGS_DIR = Dir.LOGS
 L = Logger("Central", LOGS_DIR)
@@ -23,9 +23,11 @@ DB = Database.from_yaml('db.yaml')
 ASR = Configuration.load('asr')
 IMG = Configuration.load('img')
 Cal = Configuration.load('cal', 'secrets')
-Email = Configuration.load('email', 'secrets')
+print(f"Cal configuration: {Cal.__dict__}")
+Email = EmailConfiguration.load('email', 'secrets')
 LLM = Configuration.load('llm', 'secrets')
 News = Configuration.load('news', 'secrets')
+Obsidian = Configuration.load('obsidian')
 TTS = Configuration.load('tts', 'secrets')
 CourtListener = Configuration.load('courtlistener', 'secrets')
 Tailscale = Configuration.load('tailscale', 'secrets')
