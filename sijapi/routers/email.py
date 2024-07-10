@@ -100,7 +100,7 @@ async def send_response(to_email: str, subject: str, body: str, profile: AutoRes
 
         L.DEBUG(f"Sending auto-response to {to_email} concerning {subject} from account {profile.name}...")
 
-        server = get_smtp_connection(profile)
+        server = get_smtp_connection(profile.smtp)
         L.DEBUG(f"SMTP connection established: {type(server)}")
         server.login(profile.smtp.username, profile.smtp.password)
         server.send_message(message)
@@ -108,7 +108,6 @@ async def send_response(to_email: str, subject: str, body: str, profile: AutoRes
         L.INFO(f"Auto-response sent to {to_email} concerning {subject} from account {profile.name}!")
         return True
 
-    
     except Exception as e:
         L.ERR(f"Error in preparing/sending auto-response from account {profile.name}: {str(e)}")
         L.ERR(f"SMTP details - Host: {profile.smtp.host}, Port: {profile.smtp.port}, Encryption: {profile.smtp.encryption}")
@@ -121,6 +120,7 @@ async def send_response(to_email: str, subject: str, body: str, profile: AutoRes
                 server.quit()
             except Exception as e:
                 L.ERR(f"Error closing SMTP connection: {str(e)}")
+
 
 
 def clean_email_content(html_content):
