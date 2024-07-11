@@ -31,8 +31,8 @@ from sijapi.utilities import convert_to_unix_time, sanitize_filename, ocr_pdf, c
 from sijapi.routers import tts
 from sijapi.routers.asr import transcribe_audio
 
-
 llm = APIRouter()
+logger = L.get_module_logger("llm")
 
 # Initialize chromadb client
 client = chromadb.Client()
@@ -89,13 +89,13 @@ async def query_ollama(usr: str, sys: str = LLM_SYS_MSG, model: str = DEFAULT_LL
     LLM = Ollama()
     response = await LLM.chat(model=model, messages=messages, options={"num_predict": max_tokens})
 
-    L.DEBUG(response)
+    logger.debug(response)
     if "message" in response:
         if "content" in response["message"]:
             content = response["message"]["content"]
             return content
     else:
-        L.DEBUG("No choices found in response")
+        logger.debug("No choices found in response")
         return None
     
 async def query_ollama_multishot(
@@ -116,12 +116,12 @@ async def query_ollama_multishot(
 
     LLM = Ollama()
     response = await LLM.chat(model=model, messages=messages, options={"num_predict": max_tokens})
-    L.DEBUG(response)
+    logger.debug(response)
 
     if "message" in response and "content" in response["message"]:
         return response["message"]["content"]
     else:
-        L.DEBUG("No content found in response")
+        logger.debug("No content found in response")
         return None
 
 
@@ -140,21 +140,21 @@ async def chat_completions(request: Request):
         raise HTTPException(status_code=400, detail="Message data is required in the request body.")
 
     requested_model = body.get('model', 'default-model')
-    L.DEBUG(f"Requested model: {requested_model}")
+    logger.debug(f"Requested model: {requested_model}")
     stream = body.get('stream')
     token_limit = body.get('max_tokens') or body.get('num_predict')
 
     # Check if the most recent message contains an image_url
     recent_message = messages[-1]
     if recent_message.get('role') == 'user' and is_vision_request(recent_message.get('content')):
-        L.DEBUG("Processing as a vision request")
+        logger.debug("Processing as a vision request")
         model = "llava"
-        L.DEBUG(f"Using model: {model}")
+        logger.debug(f"Using model: {model}")
         return StreamingResponse(stream_messages_with_vision(recent_message, model, token_limit), media_type="application/json")
     else:
-        L.DEBUG("Processing as a standard request")
+        logger.debug("Processing as a standard request")
         model = requested_model
-        L.DEBUG(f"Using model: {model}")
+        logger.debug(f"Using model: {model}")
         if stream:
             return StreamingResponse(stream_messages(messages, model, token_limit), media_type="application/json")
         else:
@@ -279,17 +279,17 @@ async def generate_messages(messages: list, model: str = "llama3"):
 def is_model_available(model_name):
     model_data = OllamaList()
     available_models = [model['name'] for model in model_data['models']]
-    L.DEBUG(f"Available models: {available_models}")  # Log using the configured LOGGER
+    logger.debug(f"Available models: {available_models}")  # Log using the configured LOGGER
 
     matching_models = [model for model in available_models if model.startswith(model_name + ':') or model == model_name]
     if len(matching_models) == 1:
-        L.DEBUG(f"Unique match found: {matching_models[0]}")
+        logger.debug(f"Unique match found: {matching_models[0]}")
         return True
     elif len(matching_models) > 1:
-        L.ERR(f"Ambiguous match found, models: {matching_models}")
+        logger.error(f"Ambiguous match found, models: {matching_models}")
         return True
     else:
-        L.ERR(f"No match found for model: {model_name}")
+        logger.error(f"No match found for model: {model_name}")
     return False
 
 
@@ -412,12 +412,12 @@ def query_gpt4(llmPrompt: List = [], system_msg: str = "", user_msg: str = "", m
         if hasattr(first_choice, "message") and hasattr(first_choice.message, "content"):
             return first_choice.message.content
         else:
-            L.DEBUG("No content attribute in the first choice's message")
-            L.DEBUG(f"No content found in message string: {response.choices}")
-            L.DEBUG("Trying again!")
+            logger.debug("No content attribute in the first choice's message")
+            logger.debug(f"No content found in message string: {response.choices}")
+            logger.debug("Trying again!")
             query_gpt4(messages, max_tokens)
     else:
-        L.DEBUG(f"No content found in message string: {response}")
+        logger.debug(f"No content found in message string: {response}")
         return ""
 
 def llava(image_base64, prompt):
@@ -427,7 +427,7 @@ def llava(image_base64, prompt):
         prompt = f"This is a chat between a user and an assistant. The assistant is helping the user to describe an image. {prompt}",
         images = [image_base64]
     )
-    L.DEBUG(response)
+    logger.debug(response)
     return "" if "pass" in response["response"].lower() else response["response"] 
 
 def gpt4v(image_base64, prompt_sys: str, prompt_usr: str, max_tokens: int = 150):
@@ -458,7 +458,7 @@ def gpt4v(image_base64, prompt_sys: str, prompt_usr: str, max_tokens: int = 150)
                 comment_content = first_choice.message.content
                 if "PASS" in comment_content:
                     return ""
-                L.DEBUG(f"Generated comment: {comment_content}")
+                logger.debug(f"Generated comment: {comment_content}")
 
                 response_2 = VISION_LLM.chat.completions.create(
                     model="gpt-4-vision-preview",
@@ -496,15 +496,15 @@ def gpt4v(image_base64, prompt_sys: str, prompt_usr: str, max_tokens: int = 150)
                         first_choice = response_2.choices[0]
                         if first_choice.message and first_choice.message.content:
                             final_content = first_choice.message.content
-                            L.DEBUG(f"Generated comment: {final_content}")
+                            logger.debug(f"Generated comment: {final_content}")
                             if "PASS" in final_content:
                                 return ""
                             else:
                                 return final_content
 
 
-    L.DEBUG("Vision response did not contain expected data.")
-    L.DEBUG(f"Vision response: {response_1}")
+    logger.debug("Vision response did not contain expected data.")
+    logger.debug(f"Vision response: {response_1}")
     asyncio.sleep(15)
 
     try_again = gpt4v(image_base64, prompt_sys, prompt_usr, max_tokens)
@@ -562,7 +562,7 @@ async def summarize_tts_endpoint(
         )
 
     except Exception as e:
-        L.ERR(f"Error in summarize_tts_endpoint: {str(e)}")
+        logger.error(f"Error in summarize_tts_endpoint: {str(e)}")
         return JSONResponse(
             status_code=400,
             content={"error": str(e)}
@@ -589,7 +589,7 @@ async def summarize_tts(
     bg_tasks = BackgroundTasks()
     model = await tts.get_model(voice)
     final_output_path = await tts.generate_speech(bg_tasks, summarized_text, voice, model=model, speed=speed, podcast=podcast, title=filename)
-    L.DEBUG(f"summary_tts completed with final_output_path: {final_output_path}")
+    logger.debug(f"summary_tts completed with final_output_path: {final_output_path}")
     return final_output_path
     
 
@@ -605,10 +605,10 @@ def split_text_into_chunks(text: str) -> List[str]:
     sentences = re.split(r'(?<=[.!?])\s+', text)
     words = text.split()
     total_words = len(words)
-    L.DEBUG(f"Total words: {total_words}. SUMMARY_CHUNK_SIZE: {SUMMARY_CHUNK_SIZE}. SUMMARY_TPW: {SUMMARY_TPW}.")
+    logger.debug(f"Total words: {total_words}. SUMMARY_CHUNK_SIZE: {SUMMARY_CHUNK_SIZE}. SUMMARY_TPW: {SUMMARY_TPW}.")
     
     max_words_per_chunk = int(SUMMARY_CHUNK_SIZE / SUMMARY_TPW)
-    L.DEBUG(f"Maximum words per chunk: {max_words_per_chunk}")
+    logger.debug(f"Maximum words per chunk: {max_words_per_chunk}")
 
     chunks = []
     current_chunk = []
@@ -628,7 +628,7 @@ def split_text_into_chunks(text: str) -> List[str]:
     if current_chunk:
         chunks.append(' '.join(current_chunk))
 
-    L.DEBUG(f"Split text into {len(chunks)} chunks.")
+    logger.debug(f"Split text into {len(chunks)} chunks.")
     return chunks
 
 
@@ -640,11 +640,11 @@ def calculate_max_tokens(text: str) -> int:
 
 
 async def extract_text(file: Union[UploadFile, bytes, bytearray, str, Path], bg_tasks: BackgroundTasks = None) -> str:
-    L.INFO(f"Attempting to extract text from file: {file}")
+    logger.info(f"Attempting to extract text from file: {file}")
 
     try:
         if isinstance(file, UploadFile):
-            L.INFO("File is an UploadFile object")
+            logger.info("File is an UploadFile object")
             file_extension = os.path.splitext(file.filename)[1]
             temp_file_path = tempfile.mktemp(suffix=file_extension)
             with open(temp_file_path, 'wb') as buffer:
@@ -663,7 +663,7 @@ async def extract_text(file: Union[UploadFile, bytes, bytearray, str, Path], bg_
 
         _, file_ext = os.path.splitext(file_path)
         file_ext = file_ext.lower()
-        L.INFO(f"File extension: {file_ext}")
+        logger.info(f"File extension: {file_ext}")
 
         if file_ext == '.pdf':
             text_content = await extract_text_from_pdf(file_path)
@@ -690,7 +690,7 @@ async def extract_text(file: Union[UploadFile, bytes, bytearray, str, Path], bg_
         return text_content
 
     except Exception as e:
-        L.ERR(f"Error extracting text: {str(e)}")
+        logger.error(f"Error extracting text: {str(e)}")
         raise ValueError(f"Error extracting text: {str(e)}")
 
 
@@ -699,17 +699,17 @@ async def summarize_text(text: str, instruction: str = SUMMARY_INSTRUCT, length_
 
     chunked_text = split_text_into_chunks(text)
     total_parts = len(chunked_text)
-    L.DEBUG(f"Total parts: {total_parts}. Length of chunked text: {len(chunked_text)}")
+    logger.debug(f"Total parts: {total_parts}. Length of chunked text: {len(chunked_text)}")
 
     total_words_count = sum(len(chunk.split()) for chunk in chunked_text)
-    L.DEBUG(f"Total words count: {total_words_count}")
+    logger.debug(f"Total words count: {total_words_count}")
     total_tokens_count = max(1, int(total_words_count * SUMMARY_TPW))
-    L.DEBUG(f"Total tokens count: {total_tokens_count}")
+    logger.debug(f"Total tokens count: {total_tokens_count}")
 
     total_summary_length = length_override if length_override else total_tokens_count // length_quotient
-    L.DEBUG(f"Total summary length: {total_summary_length}")
+    logger.debug(f"Total summary length: {total_summary_length}")
     corrected_total_summary_length = min(total_summary_length, SUMMARY_TOKEN_LIMIT)
-    L.DEBUG(f"Corrected total summary length: {corrected_total_summary_length}")
+    logger.debug(f"Corrected total summary length: {corrected_total_summary_length}")
 
     summaries = await asyncio.gather(*[
         process_chunk(instruction, chunk, i+1, total_parts, LLM=LLM)
@@ -720,21 +720,21 @@ async def summarize_text(text: str, instruction: str = SUMMARY_INSTRUCT, length_
         summaries = [f"\n\n\nPART {i+1} of {total_parts}:\n\n{summary}" for i, summary in enumerate(summaries)]
 
     concatenated_summary = ' '.join(summaries)
-    L.DEBUG(f"Concatenated summary: {concatenated_summary}")
-    L.DEBUG(f"Concatenated summary length: {len(concatenated_summary.split())}")
+    logger.debug(f"Concatenated summary: {concatenated_summary}")
+    logger.debug(f"Concatenated summary length: {len(concatenated_summary.split())}")
 
     if total_parts > 1:
-        L.DEBUG(f"Processing the concatenated_summary to smooth the edges...")
+        logger.debug(f"Processing the concatenated_summary to smooth the edges...")
         concatenated_instruct = f"The following text consists of the concatenated {total_parts} summaries of {total_parts} parts of a single document that had to be split for processing. Reword it for clarity and flow as a single cohesive summary, understanding that it all relates to a single document, but that document likely consists of multiple parts potentially from multiple authors. Do not shorten it and do not omit content, simply smooth out the edges between the parts."
         final_summary = await process_chunk(concatenated_instruct, concatenated_summary, 1, 1, length_ratio=1, LLM=LLM)
-        L.DEBUG(f"Final summary length: {len(final_summary.split())}")
+        logger.debug(f"Final summary length: {len(final_summary.split())}")
         return final_summary
     else:
         return concatenated_summary
 
 
 async def process_chunk(instruction: str, text: str, part: int, total_parts: int, length_ratio: float = None, LLM: Ollama = None) -> str:
-    # L.DEBUG(f"Processing chunk: {text}")
+    # logger.debug(f"Processing chunk: {text}")
     LLM = LLM if LLM else Ollama()
 
     words_count = len(text.split())
@@ -744,14 +744,14 @@ async def process_chunk(instruction: str, text: str, part: int, total_parts: int
     max_tokens = min(tokens_count // summary_length_ratio, SUMMARY_CHUNK_SIZE)
     max_tokens = max(max_tokens, SUMMARY_MIN_LENGTH)
     
-    L.DEBUG(f"Processing part {part} of {total_parts}: Words: {words_count}, Estimated tokens: {tokens_count}, Max output tokens: {max_tokens}")
+    logger.debug(f"Processing part {part} of {total_parts}: Words: {words_count}, Estimated tokens: {tokens_count}, Max output tokens: {max_tokens}")
     
     if part and total_parts > 1:
         prompt = f"{instruction}. Part {part} of {total_parts}:\n{text}"
     else:
         prompt = f"{instruction}:\n\n{text}"
     
-    L.DEBUG(f"Starting LLM.generate for part {part} of {total_parts}")
+    logger.debug(f"Starting LLM.generate for part {part} of {total_parts}")
     response = await LLM.generate(
         model=SUMMARY_MODEL, 
         prompt=prompt,
@@ -760,8 +760,8 @@ async def process_chunk(instruction: str, text: str, part: int, total_parts: int
     )
     
     text_response = response['response']
-    L.DEBUG(f"Completed LLM.generate for part {part} of {total_parts}")
-    L.DEBUG(f"Result: {text_response}")
+    logger.debug(f"Completed LLM.generate for part {part} of {total_parts}")
+    logger.debug(f"Result: {text_response}")
     return text_response
 
 async def title_and_summary(extracted_text: str):

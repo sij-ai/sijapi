@@ -28,14 +28,9 @@ from traceback import format_exc
 from sijapi import L, TIMING_API_KEY, TIMING_API_URL
 from sijapi.routers import loc
 
-### INITIALIZATIONS ###
+
 time = APIRouter(tags=["private"])
-
-
-########################
-#### INITIALIZATION ####
-########################
-
+logger = L.get_module_logger("time")
 script_directory = os.path.dirname(os.path.abspath(__file__))
 
 # Configuration constants
@@ -63,17 +58,17 @@ async def post_time_entry_to_timing(entry: Dict):
         'Accept': 'application/json',
         'X-Time-Zone': 'America/Los_Angeles'
     }
-    L.DEBUG(f"Received entry: {entry}")
+    logger.debug(f"Received entry: {entry}")
     response = None  # Initialize response
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(url, headers=headers, json=entry)
             response.raise_for_status()  # This will only raise for 4xx and 5xx responses
     except httpx.HTTPStatusError as exc:
-        L.DEBUG(f"HTTPStatusError caught: Status code: {exc.response.status_code}, Detail: {exc.response.text}")
+        logger.debug(f"HTTPStatusError caught: Status code: {exc.response.status_code}, Detail: {exc.response.text}")
         raise HTTPException(status_code=exc.response.status_code, detail=str(exc.response.text))
     except Exception as exc:
-        L.DEBUG(f"General exception caught: {exc}")
+        logger.debug(f"General exception caught: {exc}")
         raise HTTPException(status_code=500, detail="An unexpected error occurred")
 
     if response:

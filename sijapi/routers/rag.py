@@ -4,8 +4,10 @@ NOTES: Haven't yet decided if this should depend on the Obsidian and Chat module
 '''
 
 from fastapi import APIRouter
+from sijapi import L
 
 rag = APIRouter()
+logger = L.get_module_logger("rag")
 
 rag.get("/rag/search")
 async def rag_search_endpoint(query: str, scope: str):

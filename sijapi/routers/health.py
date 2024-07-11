@@ -11,6 +11,7 @@ from tailscale import Tailscale
 from sijapi import L, API, TS_ID, SUBNET_BROADCAST
 
 health = APIRouter(tags=["public", "trusted", "private"])
+logger = L.get_module_logger("health")
 
 @health.get("/health")
 def get_health():
@@ -48,7 +49,7 @@ async def get_wan_ip():
             wan_info = response.json()
             return wan_info.get('ip', 'Unavailable')
         except Exception as e:
-            L.ERR(f"Error fetching WAN IP: {e}")
+            logger.error(f"Error fetching WAN IP: {e}")
             return "Unavailable"
 
 @health.get("/ts_ip")

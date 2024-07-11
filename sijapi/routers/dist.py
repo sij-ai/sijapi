@@ -5,10 +5,10 @@ from fastapi import APIRouter, HTTPException
 import asyncio
 import logging
 from sijapi.utilities import run_ssh_command
-from sijapi import REBOOT_SCRIPT_PATH, HOST_CONFIG, API_CONFIG
+from sijapi import L, REBOOT_SCRIPT_PATH, HOST_CONFIG, API_CONFIG
 
 dist = APIRouter()
-logger = logging.getLogger(__name__)
+logger = L.get_module_logger("dist")
 
 @dist.get("/update-restart-others")
 async def update_and_restart_others():

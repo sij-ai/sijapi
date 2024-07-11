@@ -2,9 +2,12 @@
 Signal Bot example, repeats received messages.
 """
 import os
-
+from fastapi import APIRouter
 from semaphore import Bot, ChatContext
+from sijapi import L
 
+signal = APIRouter()
+logger = L.get_module_logger("signal")
 
 async def echo(ctx: ChatContext) -> None:
     if not ctx.message.empty():

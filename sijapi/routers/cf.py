@@ -12,6 +12,7 @@ from asyncio import sleep
 import os
 
 cf = APIRouter()
+logger = L.get_module_logger("cal")
 
 class DNSRecordRequest(BaseModel):
     full_domain: str
@@ -69,7 +70,7 @@ async def retry_request(url, headers, max_retries=5, backoff_factor=1):
             response.raise_for_status()
             return response
         except (httpx.HTTPError, httpx.ConnectTimeout) as e:
-            L.ERR(f"Request failed: {e}. Retrying {retry + 1}/{max_retries}...")
+            logger.error(f"Request failed: {e}. Retrying {retry + 1}/{max_retries}...")
             await sleep(backoff_factor * (2 ** retry))
     raise HTTPException(status_code=500, detail="Max retries exceeded for Cloudflare API request")
 

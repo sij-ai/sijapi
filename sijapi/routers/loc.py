@@ -18,7 +18,7 @@ from sijapi.classes import Location
 from sijapi.utilities import haversine
 
 loc = APIRouter()
-
+logger = L.get_module_logger("loc")
 
 async def dt(
     date_time: Union[str, int, datetime],
@@ -28,11 +28,11 @@ async def dt(
         # Convert integer (epoch time) to UTC datetime
         if isinstance(date_time, int):
             date_time = datetime.utcfromtimestamp(date_time).replace(tzinfo=timezone.utc)
-            L.DEBUG(f"Converted epoch time {date_time} to UTC datetime object.")
+            logger.debug(f"Converted epoch time {date_time} to UTC datetime object.")
         # Convert string to datetime if necessary
         elif isinstance(date_time, str):
             date_time = dateutil_parse(date_time)
-            L.DEBUG(f"Converted string '{date_time}' to datetime object.")
+            logger.debug(f"Converted string '{date_time}' to datetime object.")
         
         if not isinstance(date_time, datetime):
             raise ValueError(f"Input must be a string, integer (epoch time), or datetime object. What we received: {date_time}, type {type(date_time)}")
@@ -40,7 +40,7 @@ async def dt(
         # Ensure the datetime is timezone-aware (UTC if not specified)
         if date_time.tzinfo is None:
             date_time = date_time.replace(tzinfo=timezone.utc)
-            L.DEBUG("Added UTC timezone to naive datetime.")
+            logger.debug("Added UTC timezone to naive datetime.")
 
         # Handle provided timezone
         if tz is not None:
@@ -48,12 +48,12 @@ async def dt(
                 if tz == "local":
                     last_loc = await get_timezone_without_timezone(date_time)
                     tz = await GEO.tz_at(last_loc.latitude, last_loc.longitude)
-                    L.DEBUG(f"Using local timezone: {tz}")
+                    logger.debug(f"Using local timezone: {tz}")
                 else:
                     try:
                         tz = ZoneInfo(tz)
                     except Exception as e:
-                        L.ERR(f"Invalid timezone string '{tz}'. Error: {e}")
+                        logger.error(f"Invalid timezone string '{tz}'. Error: {e}")
                         raise ValueError(f"Invalid timezone string: {tz}")
             elif isinstance(tz, ZoneInfo):
                 pass  # tz is already a ZoneInfo object
@@ -62,14 +62,14 @@ async def dt(
             
             # Convert to the provided or determined timezone
             date_time = date_time.astimezone(tz)
-            L.DEBUG(f"Converted datetime to timezone: {tz}")
+            logger.debug(f"Converted datetime to timezone: {tz}")
         
         return date_time
     except ValueError as e:
-        L.ERR(f"Error in dt: {e}")
+        logger.error(f"Error in dt: {e}")
         raise
     except Exception as e:
-        L.ERR(f"Unexpected error in dt: {e}")
+        logger.error(f"Unexpected error in dt: {e}")
         raise ValueError(f"Failed to process datetime: {e}")
 
 
@@ -93,12 +93,12 @@ async def get_timezone_without_timezone(date_time):
 
 async def get_last_location() -> Optional[Location]:
     query_datetime = datetime.now(TZ)
-    L.DEBUG(f"Query_datetime: {query_datetime}")
+    logger.debug(f"Query_datetime: {query_datetime}")
 
     this_location = await fetch_last_location_before(query_datetime)
 
     if this_location:
-        L.DEBUG(f"location: {this_location}")
+        logger.debug(f"location: {this_location}")
         return this_location
     
     return None
@@ -114,7 +114,7 @@ async def fetch_locations(start: datetime, end: datetime = None) -> List[Locatio
     if start_datetime.time() == datetime.min.time() and end_datetime.time() == datetime.min.time():
         end_datetime = end_datetime.replace(hour=23, minute=59, second=59)
 
-    L.DEBUG(f"Fetching locations between {start_datetime} and {end_datetime}")
+    logger.debug(f"Fetching locations between {start_datetime} and {end_datetime}")
 
     async with DB.get_connection() as conn:
         locations = []
@@ -131,7 +131,7 @@ async def fetch_locations(start: datetime, end: datetime = None) -> List[Locatio
             ORDER BY datetime DESC
             ''', start_datetime.replace(tzinfo=None), end_datetime.replace(tzinfo=None))
         
-        L.DEBUG(f"Range locations query returned: {range_locations}")
+        logger.debug(f"Range locations query returned: {range_locations}")
         locations.extend(range_locations)
 
         if not locations and (end is None or start_datetime.date() == end_datetime.date()):
@@ -148,11 +148,11 @@ async def fetch_locations(start: datetime, end: datetime = None) -> List[Locatio
                 LIMIT 1
                 ''', start_datetime.replace(tzinfo=None))
             
-            L.DEBUG(f"Fallback query returned: {location_data}")
+            logger.debug(f"Fallback query returned: {location_data}")
             if location_data:
                 locations.append(location_data)
 
-    L.DEBUG(f"Locations found: {locations}")
+    logger.debug(f"Locations found: {locations}")
 
     # Sort location_data based on the datetime field in descending order
     sorted_locations = sorted(locations, key=lambda x: x['datetime'], reverse=True)
@@ -184,7 +184,7 @@ async def fetch_locations(start: datetime, end: datetime = None) -> List[Locatio
 async def fetch_last_location_before(datetime: datetime) -> Optional[Location]:
     datetime = await dt(datetime)
     
-    L.DEBUG(f"Fetching last location before {datetime}")
+    logger.debug(f"Fetching last location before {datetime}")
 
     async with DB.get_connection() as conn:
 
@@ -204,10 +204,10 @@ async def fetch_last_location_before(datetime: datetime) -> Optional[Location]:
         await conn.close()
 
         if location_data:
-            L.DEBUG(f"Last location found: {location_data}")
+            logger.debug(f"Last location found: {location_data}")
             return Location(**location_data)
         else:
-            L.DEBUG("No location found before the specified datetime")
+            logger.debug("No location found before the specified datetime")
             return None
 
 @loc.get("/map/start_date={start_date_str}&end_date={end_date_str}", response_class=HTMLResponse)
@@ -262,9 +262,9 @@ async def generate_map(start_date: datetime, end_date: datetime):
 
 async def post_location(location: Location):
     if not location.datetime:
-        L.DEBUG(f"location appears to be missing datetime: {location}")
+        logger.debug(f"location appears to be missing datetime: {location}")
     else:
-        L.DEBUG(f"post_location called with {location.datetime}")
+        logger.debug(f"post_location called with {location.datetime}")
 
     async with DB.get_connection() as conn:
         try:
@@ -293,7 +293,7 @@ async def post_location(location: Location):
                     location.suburb, location.county, location.country_code, location.country)
                 
             await conn.close()
-            L.INFO(f"Successfully posted location: {location.latitude}, {location.longitude}, {location.elevation} on {localized_datetime}")
+            logger.info(f"Successfully posted location: {location.latitude}, {location.longitude}, {location.elevation} on {localized_datetime}")
             return {
                 'datetime': localized_datetime,
                 'latitude': location.latitude,
@@ -323,8 +323,8 @@ async def post_location(location: Location):
                 'country': location.country
             }
         except Exception as e:
-            L.ERR(f"Error posting location {e}")
-            L.ERR(traceback.format_exc())
+            logger.error(f"Error posting location {e}")
+            logger.error(traceback.format_exc())
             return None
 
 
@@ -347,26 +347,26 @@ async def post_locate_endpoint(locations: Union[Location, List[Location]]):
                 "device_name": "Unknown",
                 "device_os": "Unknown"
             }
-        L.DEBUG(f"Location received for processing: {lcn}")
+        logger.debug(f"Location received for processing: {lcn}")
 
     geocoded_locations = await GEO.code(locations)
 
     responses = []
     if isinstance(geocoded_locations, List):
         for location in geocoded_locations:
-            L.DEBUG(f"Final location to be submitted to database: {location}")
+            logger.debug(f"Final location to be submitted to database: {location}")
             location_entry = await post_location(location)
             if location_entry:
                 responses.append({"location_data": location_entry})
             else:
-                L.WARN(f"Posting location to database appears to have failed.")
+                logger.warn(f"Posting location to database appears to have failed.")
     else:
-        L.DEBUG(f"Final location to be submitted to database: {geocoded_locations}")
+        logger.debug(f"Final location to be submitted to database: {geocoded_locations}")
         location_entry = await post_location(geocoded_locations)
         if location_entry:
             responses.append({"location_data": location_entry})
         else:
-            L.WARN(f"Posting location to database appears to have failed.")
+            logger.warn(f"Posting location to database appears to have failed.")
 
     return {"message": "Locations and weather updated", "results": responses}
 
@@ -387,7 +387,7 @@ async def get_locate(datetime_str: str, all: bool = False):
     try:
         date_time = await dt(datetime_str)
     except ValueError as e:
-        L.ERR(f"Invalid datetime string provided: {datetime_str}")
+        logger.error(f"Invalid datetime string provided: {datetime_str}")
         return ["ERROR: INVALID DATETIME PROVIDED. USE YYYYMMDDHHmmss or YYYYMMDD format."]
     
     locations = await fetch_locations(date_time)
