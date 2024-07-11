@@ -128,7 +128,7 @@ tags:
                     obsidian_link = f"![[{audio_path.name}]]"
                     body += f"{obsidian_link}\n\n"
                 else:
-                    logger.warn(f"Unexpected audio_path type: {type(audio_path)}. Value: {audio_path}")
+                    logger.warning(f"Unexpected audio_path type: {type(audio_path)}. Value: {audio_path}")
             except Exception as e:
                 logger.error(f"Failed to generate TTS for {audio_filename}. Error: {str(e)}")
                 logger.error(f"TTS error details - voice: {voice}, model: eleven_turbo_v2, podcast: True")
@@ -246,7 +246,7 @@ async def clip_get(
 async def note_add_endpoint(file: Optional[UploadFile] = File(None), text: Optional[str] = Form(None), source: Optional[str] = Form(None), bg_tasks: BackgroundTasks = None):
     logger.debug(f"Received request on /note/add...")
     if not file and not text:
-        logger.warn(f"... without any file or text!")
+        logger.warning(f"... without any file or text!")
         raise HTTPException(status_code=400, detail="Either text or a file must be provided")
     else:
         result = await process_for_daily_note(file, text, source, bg_tasks)
@@ -688,7 +688,7 @@ async def process_archive(
         logger.debug(f"Successfully saved to {markdown_path}")
         return markdown_path
     except Exception as e:
-        logger.warn(f"Failed to write markdown file: {str(e)}")
+        logger.warning(f"Failed to write markdown file: {str(e)}")
         return None
 
 def download_file(url, folder):
