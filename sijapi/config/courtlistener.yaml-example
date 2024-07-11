@@ -1,0 +1,6 @@
+url:
+  base: 'https://www.courtlistener.com'
+  dockets: '{{ url.base }}/api/rest/v3/dockets/'
+API_KEY: '{{ SECRET.COURTLISTENER_API_KEY }}'
+DOCKETS: '{{ DIR.DATA }}/cl/dockets'
+SEARCHES: '{{ DIR.DATA }}/cl/searches'

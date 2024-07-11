@@ -1,0 +1,11 @@
+DIR: '{{ DIR.HOME }}/whisper.cpp'
+MODELS:
+  - small
+  - base
+  - base-en
+  - tiny
+  - medium
+  - medium-en
+  - large
+  - large-v2
+  - large-v3 

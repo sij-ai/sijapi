@@ -1,6 +1,0 @@
-HOME: ~
-BASE: '{{ HOME }}/sijapi'
-SIJAPI: '{{ BASE }}/sijapi'
-CONFIG: '{{ SIJAPI }}/config'
-DATA: '{{ SIJAPI }}/data'
-LOGS: '{{ SIJAPI }}/logs'

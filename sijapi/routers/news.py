@@ -26,8 +26,6 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from pathlib import Path
-
-from sijapi.classes import Configuration
 from sijapi import API, L, Dir, News, OBSIDIAN_VAULT_DIR, OBSIDIAN_RESOURCES_DIR, OBSIDIAN_BANNER_SCENE, DEFAULT_11L_VOICE, DEFAULT_VOICE, GEO
 from sijapi.utilities import sanitize_filename, assemble_journal_path, assemble_archive_path
 from sijapi.routers import llm, tts, asr, loc
