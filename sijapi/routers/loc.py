@@ -359,14 +359,14 @@ async def post_locate_endpoint(locations: Union[Location, List[Location]]):
             if location_entry:
                 responses.append({"location_data": location_entry})
             else:
-                logger.warn(f"Posting location to database appears to have failed.")
+                logger.warning(f"Posting location to database appears to have failed.")
     else:
         logger.debug(f"Final location to be submitted to database: {geocoded_locations}")
         location_entry = await post_location(geocoded_locations)
         if location_entry:
             responses.append({"location_data": location_entry})
         else:
-            logger.warn(f"Posting location to database appears to have failed.")
+            logger.warning(f"Posting location to database appears to have failed.")
 
     return {"message": "Locations and weather updated", "results": responses}
 

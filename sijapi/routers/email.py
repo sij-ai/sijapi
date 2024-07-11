@@ -186,7 +186,7 @@ async def process_account_archival(account: EmailAccount):
                             await save_processed_uid(summarized_log, account.name, uid_str)
                             logger.info(f"Summarized email: {uid_str}")
                         else:
-                            logger.warn(f"Failed to summarize {this_email.subject}")
+                            logger.warning(f"Failed to summarize {this_email.subject}")
                     else:
                         logger.debug(f"Skipping {uid_str} because it was already processed.")
         except Exception as e:
@@ -311,12 +311,12 @@ async def autorespond_single_email(message, uid_str: str, account: EmailAccount,
             jpg_path = await img.workflow(profile.image_prompt, earlyout=False, downscale_to_fit=True) if profile.image_prompt else None
             success = await send_response(this_email.sender, subject, response_body, profile, jpg_path)
             if success:
-                logger.warn(f"Auto-responded to email: {this_email.subject}")
+                logger.warning(f"Auto-responded to email: {this_email.subject}")
                 await save_processed_uid(log_file, account.name, uid_str)
             else:
-                logger.warn(f"Failed to send auto-response to {this_email.subject}")
+                logger.warning(f"Failed to send auto-response to {this_email.subject}")
         else:
-            logger.warn(f"Unable to generate auto-response for {this_email.subject}")
+            logger.warning(f"Unable to generate auto-response for {this_email.subject}")
 
 async def generate_response(this_email: IncomingEmail, profile: AutoResponder, account: EmailAccount) -> Optional[str]:
     logger.info(f"Generating auto-response to {this_email.subject} with profile: {profile.name}")

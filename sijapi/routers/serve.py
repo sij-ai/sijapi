@@ -79,7 +79,7 @@ async def get_file_endpoint(file_path: str):
             absolute_path = Path(absolute_path.with_suffix(".md"))
 
     if not absolute_path.is_file():
-        logger.warn(f"{absolute_path} is not a valid file it seems.")
+        logger.warning(f"{absolute_path} is not a valid file it seems.")
     elif absolute_path.suffix == '.md':
         try:
             with open(absolute_path, 'r', encoding='utf-8') as file:

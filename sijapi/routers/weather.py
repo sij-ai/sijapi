@@ -49,7 +49,7 @@ async def get_refreshed_weather(
 
 async def get_weather(date_time: dt_datetime, latitude: float, longitude: float, force_refresh: bool = False):
     logger.debug(f"Called get_weather with lat: {latitude}, lon: {longitude}, date_time: {date_time}")
-    logger.warn(f"Using {date_time} as our datetime in get_weather.")
+    logger.warning(f"Using {date_time} as our datetime in get_weather.")
     fetch_new_data = True
     if force_refresh == False:
         daily_weather_data = await get_weather_from_db(date_time, latitude, longitude)
@@ -83,7 +83,7 @@ async def get_weather(date_time: dt_datetime, latitude: float, longitude: float,
     if fetch_new_data:
         logger.debug(f"We require new data!")
         request_date_str = date_time.strftime("%Y-%m-%d")
-        logger.warn(f"Using {date_time.strftime('%Y-%m-%d')} as our datetime for fetching new data.")
+        logger.warning(f"Using {date_time.strftime('%Y-%m-%d')} as our datetime for fetching new data.")
         url = f"https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/{latitude},{longitude}/{request_date_str}/{request_date_str}?unitGroup=us&key={VISUALCROSSING_API_KEY}"
         try:
             async with AsyncClient() as client:
@@ -116,7 +116,7 @@ async def get_weather(date_time: dt_datetime, latitude: float, longitude: float,
 
 
 async def store_weather_to_db(date_time: dt_datetime, weather_data: dict):
-    logger.warn(f"Using {date_time.strftime('%Y-%m-%d %H:%M:%S')} as our datetime in store_weather_to_db")
+    logger.warning(f"Using {date_time.strftime('%Y-%m-%d %H:%M:%S')} as our datetime in store_weather_to_db")
     async with DB.get_connection() as conn:
         try:
             day_data = weather_data.get('days')[0]
@@ -126,7 +126,7 @@ async def store_weather_to_db(date_time: dt_datetime, weather_data: dict):
             stations_array = day_data.get('stations', []) or []
 
             date_str = date_time.strftime("%Y-%m-%d")
-            logger.warn(f"Using {date_str} in our query in store_weather_to_db.")
+            logger.warning(f"Using {date_str} in our query in store_weather_to_db.")
 
             # Get location details from weather data if available
             longitude = weather_data.get('longitude')
@@ -135,11 +135,11 @@ async def store_weather_to_db(date_time: dt_datetime, weather_data: dict):
             elevation = await GEO.elevation(latitude, longitude)
             location_point = f"POINTZ({longitude} {latitude} {elevation})" if longitude and latitude and elevation else None
 
-            logger.warn(f"Uncorrected datetimes in store_weather_to_db: {day_data['datetime']}, sunrise: {day_data['sunrise']}, sunset: {day_data['sunset']}")
+            logger.warning(f"Uncorrected datetimes in store_weather_to_db: {day_data['datetime']}, sunrise: {day_data['sunrise']}, sunset: {day_data['sunset']}")
             day_data['datetime'] = await loc.dt(day_data.get('datetimeEpoch'))
             day_data['sunrise'] = await loc.dt(day_data.get('sunriseEpoch'))
             day_data['sunset'] = await loc.dt(day_data.get('sunsetEpoch'))
-            logger.warn(f"Corrected datetimes in store_weather_to_db: {day_data['datetime']}, sunrise: {day_data['sunrise']}, sunset: {day_data['sunset']}")
+            logger.warning(f"Corrected datetimes in store_weather_to_db: {day_data['datetime']}, sunrise: {day_data['sunrise']}, sunset: {day_data['sunset']}")
 
             daily_weather_params = (
                 day_data.get('sunrise'), day_data.get('sunriseEpoch'),
@@ -244,7 +244,7 @@ async def store_weather_to_db(date_time: dt_datetime, weather_data: dict):
 
 
 async def get_weather_from_db(date_time: dt_datetime, latitude: float, longitude: float):
-    logger.warn(f"Using {date_time.strftime('%Y-%m-%d %H:%M:%S')} as our datetime in get_weather_from_db.")
+    logger.warning(f"Using {date_time.strftime('%Y-%m-%d %H:%M:%S')} as our datetime in get_weather_from_db.")
     async with DB.get_connection() as conn:
         query_date = date_time.date()
         try:
