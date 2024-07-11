@@ -1,0 +1,6 @@
+DAILY_NOTE:
+  YEAR: '%Y'
+  MONTH: '%Y-%m %B'
+  DAY: '%Y-%m-%d %A'
+  DAY_SHORT: '%Y-%m-%d'
+DIR: '{{ HOME_DIR }}/Nextcloud/notes' # you can specify the absolute path or use '{{ HOME_DIR }}' followed by a relative path

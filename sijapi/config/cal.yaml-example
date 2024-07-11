@@ -1,0 +1,19 @@
+MS365:
+  STATUS: OFF
+  AUTH:
+    TENANT: bad78048-a6e0-47b1-a24b-403c444aa349
+    CLIENT_ID: ce8cbd24-f146-4dc7-8ee7-51d9b69dec59
+    LOGIN: 'https://login.microsoftonline.com'
+    REDIRECT: 'https://api.sij.ai/MS365/oauth_redirect'
+    SCOPES: 
+      - basic
+      - calendar_all
+      - Calendars.Read
+      - Calendars.ReadWrite
+      - offline_access
+    SECRET: '{{ SECRET.MS365_SECRET }}'
+    TOKEN_FILE: '{{ DIR.CONFIG }}/ms365/oauth_token.txt'
+ICAL:
+  STATUS: ON
+  CALENDARS:
+    - ''

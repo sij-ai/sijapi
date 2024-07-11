@@ -36,7 +36,7 @@
 !{!{ YOUR SIJAPI SUBDOMAIN }!}! {
 	import cors
 	@public {
-		path /img/* /oauth /oauth/* /o365 /o365/* /ip /health /health* /health/* /id /identity
+		path /img/* /oauth /oauth/* /MS365 /MS365/* /ip /health /health* /health/* /id /identity
 	}
 	@apiKeyAuthHeader {
 		header Authorization "Bearer !{!{ YOUR GLOBAL_API_KEY }!}!"

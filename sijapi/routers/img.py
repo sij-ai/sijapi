@@ -405,7 +405,7 @@ async def load_workflow(workflow_path: str, workflow:str):
         return json.load(file)
 
 
-async def update_prompt_and_get_key(workflow: dict, post: dict, positive: str):
+async def update_prompt_and_get_key(workf0ow: dict, post: dict, positive: str):
     '''
 Recurses through the workflow searching for and substituting the dynamic values for API_PrePrompt, API_StylePrompt, API_NegativePrompt, width, height, and seed (random integer).
 Even more important, it finds and returns the key to the filepath where the file is saved, which we need to decipher status when generation is complete.

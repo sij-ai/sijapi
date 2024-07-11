@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 from dateutil.parser import parse as dateutil_parse
 from typing import Optional, List, Union
 from datetime import datetime
-from sijapi import L, DB, TZ, NAMED_LOCATIONS, GEO
+from sijapi import L, DB, TZ, GEO
 from sijapi.classes import Location
 from sijapi.utilities import haversine
 

@@ -131,10 +131,8 @@ async def add_config(record: DNSRecordRequest):
         raise HTTPException(status_code=400, detail=f"Failed to create A record: {error_message} (Code: {error_code})")
 
     # Update Caddyfile
-    await update_caddyfile(full_domain, caddy_ip, port)
-    
+    await update_caddyfile(full_domain, caddy_ip, port)    
     return {"message": "Configuration added successfully"}
-
 
 
 @cf.get("/cf/list_zones")
