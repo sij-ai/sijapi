@@ -29,6 +29,7 @@ from fastapi import Depends, HTTPException, Request, UploadFile
 from fastapi.security.api_key import APIKeyHeader
 
 from sijapi import L, API, YEAR_FMT, MONTH_FMT, DAY_FMT, DAY_SHORT_FMT, OBSIDIAN_VAULT_DIR, ALLOWED_FILENAME_CHARS, MAX_PATH_LENGTH, ARCHIVE_DIR
+logger = L.get_module_logger('utilities')
 
 api_key_header = APIKeyHeader(name="Authorization", auto_error=False)
 
@@ -117,7 +118,7 @@ def assemble_journal_path(date_time: datetime, subdir: str = None, filename: str
             relative_path = relative_path / filename
         
         else:
-            L.DEBUG(f"This only happens, theoretically, when no filename nor subdirectory are provided, but an extension is. Which is kinda silly.")
+            logger.debug(f"This only happens, theoretically, when no filename nor subdirectory are provided, but an extension is. Which is kinda silly.")
             return None, None
     
     absolute_path = OBSIDIAN_VAULT_DIR / relative_path 
@@ -166,14 +167,14 @@ def get_extension(file):
         return file_extension
     
     except Exception as e:
-        L.ERR(f"Unable to get extension of {file}")
+        logger.error(f"Unable to get extension of {file}")
         raise e
 
 
 
 def sanitize_filename(text, extension: str = None, max_length: int = MAX_PATH_LENGTH):
     """Sanitize a string to be used as a safe filename while protecting the file extension."""
-    L.DEBUG(f"Filename before sanitization: {text}")
+    logger.debug(f"Filename before sanitization: {text}")
 
     text = re.sub(r'\s+', ' ', text)
     sanitized = re.sub(ALLOWED_FILENAME_CHARS, '', text)
@@ -185,7 +186,7 @@ def sanitize_filename(text, extension: str = None, max_length: int = MAX_PATH_LE
         base_name = base_name[:max_base_length - 5].rstrip()
     final_filename = base_name + extension
 
-    L.DEBUG(f"Filename after sanitization: {final_filename}")
+    logger.debug(f"Filename after sanitization: {final_filename}")
     return final_filename
 
 
@@ -195,16 +196,16 @@ def check_file_name(file_name, max_length=255):
     needs_sanitization = False
 
     if len(file_name) > max_length:
-        L.DEBUG(f"Filename exceeds maximum length of {max_length}: {file_name}")
+        logger.debug(f"Filename exceeds maximum length of {max_length}: {file_name}")
         needs_sanitization = True
     if re.search(ALLOWED_FILENAME_CHARS, file_name):
-        L.DEBUG(f"Filename contains non-word characters (except space, dot, and hyphen): {file_name}")
+        logger.debug(f"Filename contains non-word characters (except space, dot, and hyphen): {file_name}")
         needs_sanitization = True
     if re.search(r'\s{2,}', file_name):
-        L.DEBUG(f"Filename contains multiple consecutive spaces: {file_name}")
+        logger.debug(f"Filename contains multiple consecutive spaces: {file_name}")
         needs_sanitization = True
     if file_name != file_name.strip():
-        L.DEBUG(f"Filename has leading or trailing spaces: {file_name}")
+        logger.debug(f"Filename has leading or trailing spaces: {file_name}")
         needs_sanitization = True
 
     return needs_sanitization
@@ -247,13 +248,13 @@ async def ocr_pdf(file_path: str) -> str:
         texts = await asyncio.gather(*(asyncio.to_thread(pytesseract.image_to_string, image) for image in images))
         return ' '.join(texts)
     except Exception as e:
-        L.ERR(f"Error during OCR: {str(e)}")
+        logger.error(f"Error during OCR: {str(e)}")
         return ""
 
 
 async def extract_text_from_pdf(file_path: str) -> str:
     if not await is_valid_pdf(file_path):
-        L.ERR(f"Invalid PDF file: {file_path}")
+        logger.error(f"Invalid PDF file: {file_path}")
         return ""
 
     text = ''
@@ -271,7 +272,7 @@ async def extract_text_from_pdf(file_path: str) -> str:
         if text and not should_use_ocr(text, num_pages):
             return clean_text(text)
     except Exception as e:
-        L.ERR(f"Error extracting text with PyPDF2: {str(e)}")
+        logger.error(f"Error extracting text with PyPDF2: {str(e)}")
 
     # If PyPDF2 extraction fails or is insufficient, fall back to pdfminer.six
     try:
@@ -279,10 +280,10 @@ async def extract_text_from_pdf(file_path: str) -> str:
         if text_pdfminer and not should_use_ocr(text_pdfminer, num_pages):
             return clean_text(text_pdfminer)
     except Exception as e:
-        L.ERR(f"Error extracting text with pdfminer.six: {e}")
+        logger.error(f"Error extracting text with pdfminer.six: {e}")
 
     # If both methods fail or are deemed insufficient, use OCR as the last resort
-    L.DEBUG("Falling back to OCR for text extraction...")
+    logger.debug("Falling back to OCR for text extraction...")
     return await ocr_pdf(file_path)
 
 async def is_valid_pdf(file_path: str) -> bool:
@@ -291,12 +292,12 @@ async def is_valid_pdf(file_path: str) -> bool:
         kind = filetype.guess(file_path)
         return kind.mime == 'application/pdf'
     except Exception as e:
-        L.ERR(f"Error checking file type: {e}")
+        logger.error(f"Error checking file type: {e}")
         return False
 
 async def extract_text_from_pdf(file_path: str) -> str:
     if not await is_valid_pdf(file_path):
-        L.ERR(f"Invalid PDF file: {file_path}")
+        logger.error(f"Invalid PDF file: {file_path}")
         return ""
 
     text = ''
@@ -308,23 +309,23 @@ async def extract_text_from_pdf(file_path: str) -> str:
         if text.strip():  # Successfully extracted text
             return clean_text(text)
     except Exception as e:
-        L.ERR(f"Error extracting text with PyPDF2: {str(e)}")
+        logger.error(f"Error extracting text with PyPDF2: {str(e)}")
 
     try:
         text_pdfminer = await asyncio.to_thread(pdfminer_extract_text, file_path)
         if text_pdfminer.strip():  # Successfully extracted text
             return clean_text(text_pdfminer)
     except Exception as e:
-        L.ERR(f"Error extracting text with pdfminer.six: {str(e)}")
+        logger.error(f"Error extracting text with pdfminer.six: {str(e)}")
 
     # Fall back to OCR
-    L.DEBUG("Falling back to OCR for text extraction...")
+    logger.debug("Falling back to OCR for text extraction...")
     try:
         images = convert_from_path(file_path)
         ocr_texts = await asyncio.gather(*(asyncio.to_thread(pytesseract.image_to_string, img) for img in images))
         return ' '.join(ocr_texts).strip()
     except Exception as e:
-        L.ERR(f"OCR failed: {str(e)}")
+        logger.error(f"OCR failed: {str(e)}")
         return ""
 
 async def extract_text_from_docx(file_path: str) -> str:
@@ -427,7 +428,7 @@ def encode_image_to_base64(image_path):
             base64_str = base64.b64encode(byte_data).decode('utf-8')
         return base64_str
     else:   
-        L.DEBUG(f"Error: File does not exist at {image_path}")
+        logger.debug(f"Error: File does not exist at {image_path}")
 
 def resize_and_convert_image(image_path, max_size=2160, quality=80):
     with Image.open(image_path) as img:
@@ -471,5 +472,5 @@ async def run_ssh_command(server, command):
         ssh.close()
         return output, error
     except Exception as e:
-        L.ERR(f"SSH command failed for server {server.id}: {str(e)}")
+        logger.error(f"SSH command failed for server {server.id}: {str(e)}")
         raise

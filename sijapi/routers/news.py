@@ -34,9 +34,8 @@ from sijapi.routers import llm, tts, asr, loc
 
 from newspaper import Article
 
-
-
 news = APIRouter()
+logger = L.get_module_logger("news")
 
 async def download_and_save_article(article, site_name, earliest_date, bg_tasks: BackgroundTasks, tts_mode: str = "summary", voice: str = DEFAULT_11L_VOICE):
     try:
@@ -60,7 +59,7 @@ async def download_and_save_article(article, site_name, earliest_date, bg_tasks:
         try:
             article.publish_date = await loc.dt(article.publish_date, "UTC")
         except:
-            L.DEBUG(f"Failed to localize {article.publish_date}")
+            logger.debug(f"Failed to localize {article.publish_date}")
             article.publish_date = await loc.dt(dt_datetime.now(), "UTC")
         article.meta_description = traf.description if traf and traf.description else article.meta_description
         article.text = trafilatura.extract(source, output_format="markdown", include_comments=False) if source else article.text
@@ -95,7 +94,7 @@ async def download_and_save_article(article, site_name, earliest_date, bg_tasks:
                 if banner_image:
                     banner_markdown = f"![[{OBSIDIAN_RESOURCES_DIR}/{banner_image}]]"
         except Exception as e:
-            L.ERR(f"No image found in article")
+            logger.error(f"No image found in article")
 
         
         authors = ', '.join(['[[{}]]'.format(author.strip()) for author in article.authors if author.strip()])
@@ -131,11 +130,11 @@ tags:
                     obsidian_link = f"![[{audio_path.name}]]"
                     body += f"{obsidian_link}\n\n"
                 else:
-                    L.WARN(f"Unexpected audio_path type: {type(audio_path)}. Value: {audio_path}")
+                    logger.warn(f"Unexpected audio_path type: {type(audio_path)}. Value: {audio_path}")
             except Exception as e:
-                L.ERR(f"Failed to generate TTS for {audio_filename}. Error: {str(e)}")
-                L.ERR(f"TTS error details - voice: {voice}, model: eleven_turbo_v2, podcast: True")
-                L.ERR(f"Output directory: {Path(OBSIDIAN_VAULT_DIR) / OBSIDIAN_RESOURCES_DIR}")
+                logger.error(f"Failed to generate TTS for {audio_filename}. Error: {str(e)}")
+                logger.error(f"TTS error details - voice: {voice}, model: eleven_turbo_v2, podcast: True")
+                logger.error(f"Output directory: {Path(OBSIDIAN_VAULT_DIR) / OBSIDIAN_RESOURCES_DIR}")
 
         body += f"by {authors} in {article.source_url}\n\n"
         body += f"> [!summary]+\n"
@@ -147,14 +146,14 @@ tags:
         with open(markdown_filename, 'w') as md_file:
             md_file.write(markdown_content)
 
-        L.INFO(f"Successfully saved to {markdown_filename}")
+        logger.info(f"Successfully saved to {markdown_filename}")
         add_to_daily_note(relative_path)
         print(f"Saved article: {relative_path}")
         return True
 
 
     except Exception as e:
-        L.ERR(f"Error processing article from {article.url}: {str(e)}")
+        logger.error(f"Error processing article from {article.url}: {str(e)}")
         return False
 
 # You'll need to update your is_article_within_date_range function:
@@ -242,18 +241,18 @@ async def clip_get(
     voice: str = Query(DEFAULT_VOICE)
 ):
     parsed_content = await parse_article(url)
-    markdown_filename = await process_article(bg_tasks, parsed_content, tts, voice)
+    markdown_filename = await process_article2(bg_tasks, parsed_content, tts, voice)
     return {"message": "Clip saved successfully", "markdown_filename": markdown_filename}
 
 @news.post("/note/add")
 async def note_add_endpoint(file: Optional[UploadFile] = File(None), text: Optional[str] = Form(None), source: Optional[str] = Form(None), bg_tasks: BackgroundTasks = None):
-    L.DEBUG(f"Received request on /note/add...")
+    logger.debug(f"Received request on /note/add...")
     if not file and not text:
-        L.WARN(f"... without any file or text!")
+        logger.warn(f"... without any file or text!")
         raise HTTPException(status_code=400, detail="Either text or a file must be provided")
     else:
         result = await process_for_daily_note(file, text, source, bg_tasks)
-        L.INFO(f"Result on /note/add: {result}")
+        logger.info(f"Result on /note/add: {result}")
         return JSONResponse(result, status_code=204)
 
 async def process_for_daily_note(file: Optional[UploadFile] = File(None), text: Optional[str] = None, source: Optional[str] = None, bg_tasks: BackgroundTasks = None):
@@ -261,7 +260,7 @@ async def process_for_daily_note(file: Optional[UploadFile] = File(None), text: 
     transcription_entry = ""
     file_entry = ""
     if file:
-        L.DEBUG("File received...")
+        logger.debug("File received...")
         file_content = await file.read()
         audio_io = BytesIO(file_content)
         
@@ -269,18 +268,18 @@ async def process_for_daily_note(file: Optional[UploadFile] = File(None), text: 
         guessed_type = mimetypes.guess_type(file.filename)
         file_type = guessed_type[0] if guessed_type[0] else "application/octet-stream"
         
-        L.DEBUG(f"Processing as {file_type}...")
+        logger.debug(f"Processing as {file_type}...")
         
         # Extract the main type (e.g., 'audio', 'image', 'video')
         main_type = file_type.split('/')[0]
         subdir = main_type.title() if main_type else "Documents"
         
         absolute_path, relative_path = assemble_journal_path(now, subdir=subdir, filename=file.filename)
-        L.DEBUG(f"Destination path: {absolute_path}")
+        logger.debug(f"Destination path: {absolute_path}")
         
         with open(absolute_path, 'wb') as f:
             f.write(file_content)
-        L.DEBUG(f"Processing {f.name}...")
+        logger.debug(f"Processing {f.name}...")
         
         if main_type == 'audio':
             transcription = await asr.transcribe_audio(file_path=absolute_path, params=asr.TranscribeParams(model="small-en", language="en", threads=6))
@@ -291,7 +290,7 @@ async def process_for_daily_note(file: Optional[UploadFile] = File(None), text: 
             file_entry = f"[Source]({relative_path})"
     
     text_entry = text if text else ""
-    L.DEBUG(f"transcription: {transcription_entry}\nfile_entry: {file_entry}\ntext_entry: {text_entry}")
+    logger.debug(f"transcription: {transcription_entry}\nfile_entry: {file_entry}\ntext_entry: {text_entry}")
     return await add_to_daily_note(transcription_entry, file_entry, text_entry, now)
 
 async def add_to_daily_note(transcription: str = None, file_link: str = None, additional_text: str = None, date_time: dt_datetime = None):
@@ -383,7 +382,7 @@ added: {timestamp}
                 obsidian_link = f"![[{OBSIDIAN_RESOURCES_DIR}/{audio_filename}{audio_ext}]]"
                 body += f"{obsidian_link}\n\n"
             except Exception as e:
-                L.ERR(f"Failed in the TTS portion of clipping: {e}")
+                logger.error(f"Failed in the TTS portion of clipping: {e}")
 
         body += f"> [!summary]+\n"
         body += f"> {summary}\n\n"
@@ -396,17 +395,17 @@ added: {timestamp}
         with open(markdown_filename, 'w', encoding=encoding) as md_file:
             md_file.write(markdown_content)
 
-        L.INFO(f"Successfully saved to {markdown_filename}")
+        logger.info(f"Successfully saved to {markdown_filename}")
 
         return markdown_filename
 
     except Exception as e:
-        L.ERR(f"Failed to clip: {str(e)}")
+        logger.error(f"Failed to clip: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 
-async def process_article(
+async def process_article2(
     bg_tasks: BackgroundTasks,
     parsed_content: Article,
     tts_mode: str = "summary", 
@@ -437,7 +436,7 @@ async def process_article(
                     banner_markdown = f"![[{OBSIDIAN_RESOURCES_DIR}/{banner_image}]]"
                 
         except Exception as e:
-            L.ERR(f"No image found in article")
+            logger.error(f"No image found in article")
 
         authors = ', '.join('[[{}]]'.format(author) for author in parsed_content.authors)
         published_date = parsed_content.publish_date
@@ -463,7 +462,7 @@ tags:
                 obsidian_link = f"![[{OBSIDIAN_RESOURCES_DIR}/{audio_filename}{audio_ext}]]"
                 body += f"{obsidian_link}\n\n"
             except Exception as e:
-                L.ERR(f"Failed to generate TTS for np3k. {e}")
+                logger.error(f"Failed to generate TTS for np3k. {e}")
 
         try:
             body += f"by {authors} in {parsed_content.canonical_link}" # update with method for getting the newspaper name
@@ -473,26 +472,26 @@ tags:
             markdown_content = frontmatter + body
 
         except Exception as e:
-            L.ERR(f"Failed to combine elements of article markdown.")
+            logger.error(f"Failed to combine elements of article markdown.")
 
         try:
             with open(markdown_filename, 'w') as md_file:
                 md_file.write(markdown_content)
 
-            L.INFO(f"Successfully saved to {markdown_filename}")
+            logger.info(f"Successfully saved to {markdown_filename}")
             add_to_daily_note
             return markdown_filename
         
         except Exception as e:
-            L.ERR(f"Failed to write markdown file")
+            logger.error(f"Failed to write markdown file")
             raise HTTPException(status_code=500, detail=str(e))
         
     except Exception as e:
-        L.ERR(f"Failed to clip: {str(e)}")
+        logger.error(f"Failed to clip: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
-async def process_article2(
+async def process_article(
     bg_tasks: BackgroundTasks,
     url: str,
     title: Optional[str] = None,
@@ -531,7 +530,7 @@ async def process_article2(
                     banner_markdown = f"![[{OBSIDIAN_RESOURCES_DIR}/{banner_image}]]"
                 
         except Exception as e:
-            L.ERR(f"No image found in article")
+            logger.error(f"No image found in article")
 
         authors = ', '.join('[[{}]]'.format(author) for author in parsed_content.get('authors', ['Unknown']))
 
@@ -560,7 +559,7 @@ tags:
                 obsidian_link = f"![[{OBSIDIAN_RESOURCES_DIR}/{audio_filename}{audio_ext}]]"
                 body += f"{obsidian_link}\n\n"
             except Exception as e:
-                L.ERR(f"Failed to generate TTS for np3k. {e}")
+                logger.error(f"Failed to generate TTS for np3k. {e}")
 
         try:
             body += f"by {authors} in [{parsed_content.get('domain', urlparse(url).netloc.replace('www.', ''))}]({url}).\n\n"
@@ -570,22 +569,22 @@ tags:
             markdown_content = frontmatter + body
 
         except Exception as e:
-            L.ERR(f"Failed to combine elements of article markdown.")
+            logger.error(f"Failed to combine elements of article markdown.")
 
         try:
             with open(markdown_filename, 'w', encoding=encoding) as md_file:
                 md_file.write(markdown_content)
 
-            L.INFO(f"Successfully saved to {markdown_filename}")
+            logger.info(f"Successfully saved to {markdown_filename}")
             add_to_daily_note
             return markdown_filename
         
         except Exception as e:
-            L.ERR(f"Failed to write markdown file")
+            logger.error(f"Failed to write markdown file")
             raise HTTPException(status_code=500, detail=str(e))
         
     except Exception as e:
-        L.ERR(f"Failed to clip {url}: {str(e)}")
+        logger.error(f"Failed to clip {url}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -599,7 +598,7 @@ async def parse_article(url: str, source: Optional[str] = None) -> Article:
     article.set_html(source)
     article.parse()
 
-    L.INFO(f"Parsed {article.title}")
+    logger.info(f"Parsed {article.title}")
 
     # Update or set properties based on trafilatura and additional processing
     article.title = article.title or traf.title or url
@@ -609,7 +608,7 @@ async def parse_article(url: str, source: Optional[str] = None) -> Article:
     try:
         article.publish_date = await loc.dt(article.publish_date, "UTC")
     except:
-        L.DEBUG(f"Failed to localize {article.publish_date}")
+        logger.debug(f"Failed to localize {article.publish_date}")
         article.publish_date = await loc.dt(dt_datetime.now(), "UTC")
 
     article.meta_description = article.meta_description or traf.description
@@ -639,7 +638,7 @@ async def html_to_markdown(url: str = None, source: str = None) -> Optional[str]
             async with session.get(url) as response:
                 html_content = await response.text()
     else:
-        L.ERR(f"Unable to convert nothing to markdown.")
+        logger.error(f"Unable to convert nothing to markdown.")
         return None
 
     # Use readability to extract the main content
@@ -688,10 +687,10 @@ async def process_archive(
         markdown_path.parent.mkdir(parents=True, exist_ok=True)
         with open(markdown_path, 'w', encoding=encoding) as md_file:
             md_file.write(markdown_content)
-        L.DEBUG(f"Successfully saved to {markdown_path}")
+        logger.debug(f"Successfully saved to {markdown_path}")
         return markdown_path
     except Exception as e:
-        L.WARN(f"Failed to write markdown file: {str(e)}")
+        logger.warn(f"Failed to write markdown file: {str(e)}")
         return None
 
 def download_file(url, folder):
@@ -715,13 +714,13 @@ def download_file(url, folder):
                 with open(filepath, 'wb') as f:
                     f.write(response.content)
             else:
-                L.ERR(f"Failed to download image: {url}, invalid content type: {response.headers.get('Content-Type')}")
+                logger.error(f"Failed to download image: {url}, invalid content type: {response.headers.get('Content-Type')}")
                 return None
         else:
-            L.ERR(f"Failed to download image: {url}, status code: {response.status_code}")
+            logger.error(f"Failed to download image: {url}, status code: {response.status_code}")
             return None
     except Exception as e:
-        L.ERR(f"Failed to download image: {url}, error: {str(e)}")
+        logger.error(f"Failed to download image: {url}, error: {str(e)}")
         return None
     return filename
 

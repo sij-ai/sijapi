@@ -23,7 +23,6 @@ from timezonefinder import TimezoneFinder
 T = TypeVar('T', bound='Configuration')
 
 
-
 import os
 from pathlib import Path
 from typing import Union, Optional, Any, Dict, List

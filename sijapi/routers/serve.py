@@ -37,6 +37,7 @@ from sijapi.routers import loc, note
 
 
 serve = APIRouter(tags=["public"])
+logger = L.get_module_logger("serve")
 
 @serve.get("/pgp")
 async def get_pgp():
@@ -72,13 +73,13 @@ async def get_file_endpoint(file_path: str):
         date_time = await loc.dt(file_path);
         absolute_path, local_path = assemble_journal_path(date_time, no_timestamp = True)
     except ValueError as e:
-        L.DEBUG(f"Unable to parse {file_path} as a date, now trying to use it as a local path")
+        logger.debug(f"Unable to parse {file_path} as a date, now trying to use it as a local path")
         absolute_path = OBSIDIAN_VAULT_DIR / file_path
         if not absolute_path.suffix:
             absolute_path = Path(absolute_path.with_suffix(".md"))
 
     if not absolute_path.is_file():
-        L.WARN(f"{absolute_path} is not a valid file it seems.")
+        logger.warn(f"{absolute_path} is not a valid file it seems.")
     elif absolute_path.suffix == '.md':
         try:
             with open(absolute_path, 'r', encoding='utf-8') as file:
@@ -138,7 +139,7 @@ async def hook_changedetection(webhook_data: dict):
 @serve.post("/cl/search")
 async def hook_cl_search(request: Request, bg_tasks: BackgroundTasks):
     client_ip = request.client.host
-    L.DEBUG(f"Received request from IP: {client_ip}")
+    logger.debug(f"Received request from IP: {client_ip}")
     data = await request.json()
     payload = data['payload']
     results = data['payload']['results']
@@ -156,7 +157,7 @@ async def hook_cl_search(request: Request, bg_tasks: BackgroundTasks):
 @serve.post("/cl/docket")
 async def hook_cl_docket(request: Request):
     client_ip = request.client.host
-    L.DEBUG(f"Received request from IP: {client_ip}")
+    logger.debug(f"Received request from IP: {client_ip}")
     data = await request.json()
     await cl_docket(data, client_ip)
 
@@ -313,14 +314,14 @@ async def cl_docket_process_result(result, session):
     async with aiohttp.ClientSession() as session:
         async with session.get(url, headers=headers) as response:           
             if response.status == 200:
-                L.DEBUG(f"Fetching CourtListener docket information for {docket}...")
+                logger.debug(f"Fetching CourtListener docket information for {docket}...")
                 data = await response.json()
                 court_docket = data['results'][0]['docket_number_core']
                 court_docket = f"{court_docket[:2]}-cv-{court_docket[2:]}"  # Formatting the docket number
                 case_name = data['results'][0]['case_name']
-                L.DEBUG(f"Obtained from CourtListener: docket {court_docket}, case name {case_name}.")
+                logger.debug(f"Obtained from CourtListener: docket {court_docket}, case name {case_name}.")
             else:
-                L.DEBUG("Failed to fetch data from CourtListener API.")
+                logger.debug("Failed to fetch data from CourtListener API.")
                 court_docket = 'NoCourtDocket'
                 case_name = 'NoCaseName'
 
@@ -330,12 +331,12 @@ async def cl_docket_process_result(result, session):
 
         if filepath_ia:
             file_url = filepath_ia
-            L.DEBUG(f"Found IA file at {file_url}.")
+            logger.debug(f"Found IA file at {file_url}.")
         elif filepath_local:
             file_url = f"{COURTLISTENER_BASE_URL}/{filepath_local}"
-            L.DEBUG(f"Found local file at {file_url}.")
+            logger.debug(f"Found local file at {file_url}.")
         else:
-            L.DEBUG(f"No file URL found in filepath_ia or filepath_local for one of the documents.")
+            logger.debug(f"No file URL found in filepath_ia or filepath_local for one of the documents.")
             continue
 
         document_number = document.get('document_number', 'NoDocumentNumber')
@@ -346,7 +347,7 @@ async def cl_docket_process_result(result, session):
         target_path = Path(COURTLISTENER_DOCKETS_DIR) / case_shortname / "Docket" / file_name
         target_path.parent.mkdir(parents=True, exist_ok=True)
         await cl_download_file(file_url, target_path, session)
-        L.DEBUG(f"Downloaded {file_name} to {target_path}")
+        logger.debug(f"Downloaded {file_name} to {target_path}")
 
 def cl_case_details(docket):
     case_info = CASETABLE.get(str(docket), {"code": "000", "shortname": "UNKNOWN"})
@@ -359,18 +360,18 @@ async def cl_download_file(url: str, path: Path, session: aiohttp.ClientSession 
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.82 Safari/537.36'
     }
     async with aiohttp.ClientSession() as session:
-        L.DEBUG(f"Attempting to download {url} to {path}.")
+        logger.debug(f"Attempting to download {url} to {path}.")
         try:
             async with session.get(url, headers=headers, allow_redirects=True) as response:
                 if response.status == 403:
-                    L.ERR(f"Access denied (403 Forbidden) for URL: {url}. Skipping download.")
+                    logger.error(f"Access denied (403 Forbidden) for URL: {url}. Skipping download.")
                     return
                 response.raise_for_status()
 
                 # Check if the response content type is a PDF
                 content_type = response.headers.get('Content-Type')
                 if content_type != 'application/pdf':
-                    L.ERR(f"Invalid content type: {content_type}. Skipping download.")
+                    logger.error(f"Invalid content type: {content_type}. Skipping download.")
                     return
 
                 # Create an in-memory buffer to store the downloaded content
@@ -385,7 +386,7 @@ async def cl_download_file(url: str, path: Path, session: aiohttp.ClientSession 
                 try:
                     PdfReader(buffer)
                 except Exception as e:
-                    L.ERR(f"Invalid PDF content: {str(e)}. Skipping download.")
+                    logger.error(f"Invalid PDF content: {str(e)}. Skipping download.")
                     return
 
                 # If the PDF is valid, write the content to the file on disk
@@ -394,7 +395,7 @@ async def cl_download_file(url: str, path: Path, session: aiohttp.ClientSession 
                     file.write(buffer.getvalue())
 
         except Exception as e:
-            L.ERR(f"Error downloading file: {str(e)}")
+            logger.error(f"Error downloading file: {str(e)}")
 
 
 async def cl_search_process_result(result):
@@ -403,7 +404,7 @@ async def cl_search_process_result(result):
         court_id = result.get('court_id')
         case_name_short = result.get('caseNameShort')
         case_name = result.get('caseName')
-        L.DEBUG(f"Received payload for case {case_name} ({court_id}) and download url {download_url}")
+        logger.debug(f"Received payload for case {case_name} ({court_id}) and download url {download_url}")
 
         court_folder = court_id
 
@@ -417,4 +418,4 @@ async def cl_search_process_result(result):
         target_path.parent.mkdir(parents=True, exist_ok=True)
 
         await cl_download_file(download_url, target_path, session)
-        L.DEBUG(f"Downloaded {file_name} to {target_path}")
+        logger.debug(f"Downloaded {file_name} to {target_path}")

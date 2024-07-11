@@ -33,7 +33,7 @@ from sijapi.routers.llm import query_ollama
 from sijapi import API, L, COMFYUI_URL, COMFYUI_OUTPUT_DIR, IMG_CONFIG_PATH, IMG_DIR, IMG_WORKFLOWS_DIR
 
 img = APIRouter()
-
+logger = L.get_module_logger("img")
 CLIENT_ID = str(uuid.uuid4())
 
 @img.post("/img")
@@ -79,12 +79,12 @@ async def workflow(prompt: str, scene: str = None, size: str = None, earlyout: s
 
     scene_workflow = random.choice(scene_data['workflows'])
     if size:
-        L.DEBUG(f"Specified size: {size}")
+        logger.debug(f"Specified size: {size}")
 
     size = size if size else scene_workflow.get('size', '1024x1024')
     
     width, height = map(int, size.split('x'))
-    L.DEBUG(f"Parsed width: {width}; parsed height: {height}")
+    logger.debug(f"Parsed width: {width}; parsed height: {height}")
 
     workflow_path = Path(IMG_WORKFLOWS_DIR) / scene_workflow['workflow']
     workflow_data = json.loads(workflow_path.read_text())
@@ -108,12 +108,12 @@ async def workflow(prompt: str, scene: str = None, size: str = None, earlyout: s
 
     if earlyout:
         asyncio.create_task(generate_and_save_image(prompt_id, saved_file_key, max_size, destination_path))
-        L.DEBUG(f"Returning {destination_path}")
+        logger.debug(f"Returning {destination_path}")
         return destination_path
     
     else:
         await generate_and_save_image(prompt_id, saved_file_key, max_size, destination_path)
-        L.DEBUG(f"Returning {destination_path}")
+        logger.debug(f"Returning {destination_path}")
         return destination_path
 
 
@@ -124,7 +124,7 @@ async def generate_and_save_image(prompt_id, saved_file_key, max_size, destinati
         jpg_file_path = await save_as_jpg(image_data, prompt_id, quality=90, max_size=max_size, destination_path=destination_path)
 
         if Path(jpg_file_path) != Path(destination_path):
-            L.ERR(f"Mismatch between jpg_file_path, {jpg_file_path}, and detination_path, {destination_path}")
+            logger.error(f"Mismatch between jpg_file_path, {jpg_file_path}, and detination_path, {destination_path}")
 
     except Exception as e:
         print(f"Error in generate_and_save_image: {e}")
@@ -216,11 +216,11 @@ def set_presets(workflow_data, preset_values):
             if 'inputs' in workflow_data.get(preset_node, {}):
                 workflow_data[preset_node]['inputs'][preset_key] = preset_value
             else:
-                L.DEBUG("Node not found in workflow_data")
+                logger.debug("Node not found in workflow_data")
         else:
-            L.DEBUG("Required data missing in preset_values")
+            logger.debug("Required data missing in preset_values")
     else:
-        L.DEBUG("No preset_values found")
+        logger.debug("No preset_values found")
 
 
 def get_return_path(destination_path):
@@ -235,7 +235,7 @@ def get_scene(scene):
         IMG_CONFIG = yaml.safe_load(IMG_CONFIG_file)
     for scene_data in IMG_CONFIG['scenes']:
         if scene_data['scene'] == scene:
-            L.DEBUG(f"Found scene for \"{scene}\".")
+            logger.debug(f"Found scene for \"{scene}\".")
             return scene_data
     return None
 
@@ -254,11 +254,11 @@ def get_matching_scene(prompt):
             max_count = count
             scene_data = sc
             if scene_data:
-                L.DEBUG(f"Found better-matching scene: the prompt contains {max_count} words that match triggers for {scene_data.get('name')}!")
+                logger.debug(f"Found better-matching scene: the prompt contains {max_count} words that match triggers for {scene_data.get('name')}!")
     if scene_data:
         return scene_data
     else:
-        L.DEBUG(f"No matching scenes found, falling back to default scene.")
+        logger.debug(f"No matching scenes found, falling back to default scene.")
         return IMG_CONFIG['scenes'][0]
 
 
@@ -326,10 +326,10 @@ async def ensure_comfy(retries: int = 4, timeout: float = 6.0):
  #           shareable_link = f"https://{PHOTOPRISM_URL}/p/{photo_uuid}"
  #           return shareable_link
  #       else:
- #           L.ERR("Could not find the uploaded photo details.")
+ #           logger.error("Could not find the uploaded photo details.")
  #           return None
  #   except Exception as e:
- #       L.ERR(f"Error in upload_and_get_shareable_link: {e}")
+ #       logger.error(f"Error in upload_and_get_shareable_link: {e}")
  #       return None
 
 
@@ -436,13 +436,13 @@ Even more important, it finds and returns the key to the filepath where the file
                     workflow[key] = random.randint(1000000000000, 9999999999999)
 
                 elif key in ["width", "max_width", "scaled_width", "height", "max_height", "scaled_height", "side_length", "size", "value", "dimension", "dimensions", "long", "long_side", "short", "short_side", "length"]:
-                    L.DEBUG(f"Got a hit for a dimension: {key} {value}")
+                    logger.debug(f"Got a hit for a dimension: {key} {value}")
                     if value == 1023:
                         workflow[key] = post.get("width", 1024)
-                        L.DEBUG(f"Set {key} to {workflow[key]}.")
+                        logger.debug(f"Set {key} to {workflow[key]}.")
                     elif value == 1025:
                         workflow[key] = post.get("height", 1024)
-                        L.DEBUG(f"Set {key} to {workflow[key]}.")
+                        logger.debug(f"Set {key} to {workflow[key]}.")
 
     update_recursive(workflow)
     return found_key[0]

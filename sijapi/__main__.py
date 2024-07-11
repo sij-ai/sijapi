@@ -19,23 +19,20 @@ from dotenv import load_dotenv
 from pathlib import Path
 from datetime import datetime
 import argparse
+from . import L, API, ROUTER_DIR
 
 parser = argparse.ArgumentParser(description='Personal API.')
-parser.add_argument('--debug', action='store_true', help='Set log level to L.INFO')
+parser.add_argument('--log', type=str, default='INFO', help='Set overall log level (e.g., DEBUG, INFO, WARNING)')
+parser.add_argument('--debug', nargs='+', default=[], help='Set DEBUG log level for specific modules')
 parser.add_argument('--test', type=str, help='Load only the specified module.')
 args = parser.parse_args()
 
-from . import L, API, ROUTER_DIR
 L.setup_from_args(args)
-
-from sijapi import ROUTER_DIR
-
-# Initialize a FastAPI application
-api = FastAPI()
+print(f"Debug modules after setup: {L.debug_modules}")  # Debug print
 
 
-# CORSMiddleware
-api.add_middleware(
+app = FastAPI()
+app.add_middleware(
     CORSMiddleware,
     allow_origins=['*'],
     allow_credentials=True,
@@ -67,31 +64,16 @@ class SimpleAPIKeyMiddleware(BaseHTTPMiddleware):
         return response
 
 # Add the middleware to your FastAPI app
-api.add_middleware(SimpleAPIKeyMiddleware)
+app.add_middleware(SimpleAPIKeyMiddleware)
 
-
-canceled_middleware = """
-@api.middleware("http")
-async def log_requests(request: Request, call_next):
-    L.DEBUG(f"Incoming request: {request.method} {request.url}")
-    L.DEBUG(f"Request headers: {request.headers}")
-    L.DEBUG(f"Request body: {await request.body()}")
-    response = await call_next(request)
-    return response
-
-async def log_outgoing_request(request):
-    L.INFO(f"Outgoing request: {request.method} {request.url}")
-    L.DEBUG(f"Request headers: {request.headers}")
-    L.DEBUG(f"Request body: {request.content}")
-"""
-
-@api.exception_handler(HTTPException)
+@app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
     L.ERR(f"HTTP Exception: {exc.status_code} - {exc.detail}")
     L.ERR(f"Request: {request.method} {request.url}")
     return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
 
-@api.middleware("http")
+
+@app.middleware("http")
 async def handle_exception_middleware(request: Request, call_next):
     try:
         response = await call_next(request)
@@ -104,37 +86,35 @@ async def handle_exception_middleware(request: Request, call_next):
     return response
 
 
-
-
 def load_router(router_name):
     router_file = ROUTER_DIR / f'{router_name}.py'
-    L.DEBUG(f"Attempting to load {router_name.capitalize()}...")
+    module_logger = L.get_module_logger(router_name)
+    module_logger.debug(f"Attempting to load {router_name.capitalize()}...")
     if router_file.exists():
         module_path = f'sijapi.routers.{router_name}'
         try:
             module = importlib.import_module(module_path)
             router = getattr(module, router_name)
-            api.include_router(router)
-            L.INFO(f"{router_name.capitalize()} router loaded.")
+            app.include_router(router)
+            # module_logger.info(f"{router_name.capitalize()} router loaded.")
         except (ImportError, AttributeError) as e:
-            L.CRIT(f"Failed to load router {router_name}: {e}")
+            module_logger.critical(f"Failed to load router {router_name}: {e}")
     else:
-        L.ERR(f"Router file for {router_name} does not exist.")
+        module_logger.error(f"Router file for {router_name} does not exist.")
 
 def main(argv):
     if args.test:
         load_router(args.test)
     else:
-        L.CRIT(f"sijapi launched")
-        L.CRIT(f"{args._get_args}")
+        L.logger.critical(f"sijapi launched")
+        L.logger.critical(f"Arguments: {args}")
         for module_name in API.MODULES.__fields__:
             if getattr(API.MODULES, module_name):
                 load_router(module_name)
     
-   
     config = HypercornConfig()
-    config.bind = [API.BIND]  # Use the resolved BIND value
-    asyncio.run(serve(api, config))
+    config.bind = [API.BIND]
+    asyncio.run(serve(app, config))
 
 if __name__ == "__main__":
     main(sys.argv[1:])
