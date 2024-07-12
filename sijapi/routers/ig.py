@@ -643,7 +643,7 @@ def handle_image_workflow(chosen_post=None):
     logger.debug(f"Workflow name: {workflow_name}")
 
     logger.debug(f"Generating image concept for {chosen_post} and {workflow_name} now.")
-    image_concept = query_ollama(llmPrompt = post['llmPrompt'], max_tokens = 180) if args.local or not args.openai else query_gpt4(llmPrompt = post['llmPrompt'], max_tokens = 180)
+    image_concept = llm.query_ollama(llmPrompt = post['llmPrompt'], max_tokens = 180) if args.local or not args.openai else query_gpt4(llmPrompt = post['llmPrompt'], max_tokens = 180)
     
     logger.debug(f"Image concept for {chosen_post}: {image_concept}")
 
