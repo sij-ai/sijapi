@@ -4,8 +4,6 @@ import uuid
 import asyncio
 import shutil
 import requests
-import mimetypes
-from io import BytesIO
 from bs4 import BeautifulSoup
 from zoneinfo import ZoneInfo
 from urllib.parse import urlparse
@@ -28,7 +26,7 @@ from pydantic import BaseModel
 from pathlib import Path
 from sijapi import API, L, Dir, News, OBSIDIAN_VAULT_DIR, OBSIDIAN_RESOURCES_DIR, OBSIDIAN_BANNER_SCENE, DEFAULT_11L_VOICE, DEFAULT_VOICE, GEO
 from sijapi.utilities import sanitize_filename, assemble_journal_path, assemble_archive_path
-from sijapi.routers import llm, tts, asr, loc
+from sijapi.routers import llm, tts, asr, loc, note
 
 from newspaper import Article
 
@@ -145,7 +143,7 @@ tags:
             md_file.write(markdown_content)
 
         logger.info(f"Successfully saved to {markdown_filename}")
-        add_to_daily_note(relative_path)
+        note.add_to_daily_note(relative_path)
         print(f"Saved article: {relative_path}")
         return True
 
@@ -242,164 +240,6 @@ async def clip_get(
     markdown_filename = await process_article2(bg_tasks, parsed_content, tts, voice)
     return {"message": "Clip saved successfully", "markdown_filename": markdown_filename}
 
-@news.post("/note/add")
-async def note_add_endpoint(file: Optional[UploadFile] = File(None), text: Optional[str] = Form(None), source: Optional[str] = Form(None), bg_tasks: BackgroundTasks = None):
-    logger.debug(f"Received request on /note/add...")
-    if not file and not text:
-        logger.warning(f"... without any file or text!")
-        raise HTTPException(status_code=400, detail="Either text or a file must be provided")
-    else:
-        result = await process_for_daily_note(file, text, source, bg_tasks)
-        logger.info(f"Result on /note/add: {result}")
-        return JSONResponse(result, status_code=204)
-
-async def process_for_daily_note(file: Optional[UploadFile] = File(None), text: Optional[str] = None, source: Optional[str] = None, bg_tasks: BackgroundTasks = None):
-    now = dt_datetime.now()
-    transcription_entry = ""
-    file_entry = ""
-    if file:
-        logger.debug("File received...")
-        file_content = await file.read()
-        audio_io = BytesIO(file_content)
-        
-        # Improve error handling for file type guessing
-        guessed_type = mimetypes.guess_type(file.filename)
-        file_type = guessed_type[0] if guessed_type[0] else "application/octet-stream"
-        
-        logger.debug(f"Processing as {file_type}...")
-        
-        # Extract the main type (e.g., 'audio', 'image', 'video')
-        main_type = file_type.split('/')[0]
-        subdir = main_type.title() if main_type else "Documents"
-        
-        absolute_path, relative_path = assemble_journal_path(now, subdir=subdir, filename=file.filename)
-        logger.debug(f"Destination path: {absolute_path}")
-        
-        with open(absolute_path, 'wb') as f:
-            f.write(file_content)
-        logger.debug(f"Processing {f.name}...")
-        
-        if main_type == 'audio':
-            transcription = await asr.transcribe_audio(file_path=absolute_path, params=asr.TranscribeParams(model="small-en", language="en", threads=6))
-            file_entry = f"![[{relative_path}]]"
-        elif main_type == 'image':
-            file_entry = f"![[{relative_path}]]"
-        else:
-            file_entry = f"[Source]({relative_path})"
-    
-    text_entry = text if text else ""
-    logger.debug(f"transcription: {transcription_entry}\nfile_entry: {file_entry}\ntext_entry: {text_entry}")
-    return await add_to_daily_note(transcription_entry, file_entry, text_entry, now)
-
-async def add_to_daily_note(transcription: str = None, file_link: str = None, additional_text: str = None, date_time: dt_datetime = None):
-    date_time = date_time or dt_datetime.now()
-    note_path, _ = assemble_journal_path(date_time, filename='Notes', extension=".md", no_timestamp = True)
-    time_str = date_time.strftime("%H:%M")
-    
-    entry_lines = []
-    if additional_text and additional_text.strip():
-        entry_lines.append(f"\t* {additional_text.strip()}") 
-    if transcription and transcription.strip():
-        entry_lines.append(f"\t* {transcription.strip()}") 
-    if file_link and file_link.strip():
-        entry_lines.append(f"\t\t {file_link.strip()}")
-
-    entry = f"\n* **{time_str}**\n" + "\n".join(entry_lines)
-
-    # Write the entry to the end of the file
-    if note_path.exists():
-        with open(note_path, 'a', encoding='utf-8') as note_file:
-            note_file.write(entry)
-    else: 
-        date_str = date_time.strftime("%Y-%m-%d")
-        frontmatter = f"""---
-date: {date_str}
-tags:
- - notes
----
-
-"""
-        content = frontmatter + entry
-        # If the file doesn't exist, create it and start with "Notes"
-        with open(note_path, 'w', encoding='utf-8') as note_file:
-            note_file.write(content)
-
-    return entry
-
-
-
-async def process_document(
-    bg_tasks: BackgroundTasks,
-    document: File,
-    title: Optional[str] = None,
-    tts_mode: str = "summary",
-    voice: str = DEFAULT_VOICE
-):
-    timestamp = dt_datetime.now().strftime('%b %d, %Y at %H:%M')
-
-    # Save the document to OBSIDIAN_RESOURCES_DIR
-    document_content = await document.read()
-    file_path = Path(OBSIDIAN_VAULT_DIR) / OBSIDIAN_RESOURCES_DIR / document.filename
-    with open(file_path, 'wb') as f:
-        f.write(document_content)
-
-    parsed_content = await llm.extract_text(file_path)  # Ensure extract_text is awaited
-
-    llm_title, summary = await llm.title_and_summary(parsed_content)
-    try:
-        readable_title = sanitize_filename(title if title else document.filename)
-
-        if tts_mode == "full" or tts_mode == "content" or tts_mode == "body":
-            tts_text = parsed_content
-        elif tts_mode == "summary" or tts_mode == "excerpt":
-            tts_text = summary
-        else:
-            tts_text = None
-
-        frontmatter = f"""---
-title: {readable_title}
-added: {timestamp}
----
-"""
-        body = f"# {readable_title}\n\n"
-
-        if tts_text:
-            try:
-                datetime_str = dt_datetime.now().strftime("%Y%m%d%H%M%S")
-                audio_filename = f"{datetime_str} {readable_title}"
-                audio_path = await tts.generate_speech(
-                    bg_tasks=bg_tasks,
-                    text=tts_text,
-                    voice=voice,
-                    model="eleven_turbo_v2",
-                    podcast=True,
-                    title=audio_filename,
-                    output_dir=Path(OBSIDIAN_VAULT_DIR) / OBSIDIAN_RESOURCES_DIR
-                )
-                audio_ext = Path(audio_path).suffix
-                obsidian_link = f"![[{OBSIDIAN_RESOURCES_DIR}/{audio_filename}{audio_ext}]]"
-                body += f"{obsidian_link}\n\n"
-            except Exception as e:
-                logger.error(f"Failed in the TTS portion of clipping: {e}")
-
-        body += f"> [!summary]+\n"
-        body += f"> {summary}\n\n"
-        body += parsed_content
-        markdown_content = frontmatter + body
-
-        markdown_filename = f"{readable_title}.md"
-        encoding = 'utf-8'
-
-        with open(markdown_filename, 'w', encoding=encoding) as md_file:
-            md_file.write(markdown_content)
-
-        logger.info(f"Successfully saved to {markdown_filename}")
-
-        return markdown_filename
-
-    except Exception as e:
-        logger.error(f"Failed to clip: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 
@@ -477,7 +317,7 @@ tags:
                 md_file.write(markdown_content)
 
             logger.info(f"Successfully saved to {markdown_filename}")
-            add_to_daily_note
+            note.add_to_daily_note(relative_path)
             return markdown_filename
         
         except Exception as e:
@@ -574,7 +414,7 @@ tags:
                 md_file.write(markdown_content)
 
             logger.info(f"Successfully saved to {markdown_filename}")
-            add_to_daily_note
+            note.add_to_daily_note(relative_path)
             return markdown_filename
         
         except Exception as e:
