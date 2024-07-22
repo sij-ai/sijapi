@@ -17,24 +17,28 @@ from fastapi import HTTPException, status
 from pathlib import Path
 from fastapi import APIRouter, Query, HTTPException
 from sijapi import API, L, OBSIDIAN_VAULT_DIR, OBSIDIAN_RESOURCES_DIR, OBSIDIAN_BANNER_SCENE, DEFAULT_11L_VOICE, DEFAULT_VOICE, GEO
-from sijapi.routers import cal, img, loc, tts, llm, time, weather, asr
-from sijapi.utilities import assemble_journal_path, assemble_archive_path, convert_to_12_hour_format, sanitize_filename, convert_degrees_to_cardinal, check_file_name, HOURLY_COLUMNS_MAPPING
+from sijapi.routers import asr, cal, gis, img, llm, serve, time, tts, weather
+from sijapi.utilities import assemble_journal_path, convert_to_12_hour_format, sanitize_filename, convert_degrees_to_cardinal, check_file_name, HOURLY_COLUMNS_MAPPING
 from sijapi.classes import Location
 
 
 note = APIRouter()
 logger = L.get_module_logger("note")
-
+def debug(text: str): logger.debug(text)
+def info(text: str): logger.info(text)
+def warn(text: str): logger.warning(text)
+def err(text: str): logger.error(text)
+def crit(text: str): logger.critical(text)
 
 @note.post("/note/add")
 async def note_add_endpoint(file: Optional[UploadFile] = File(None), text: Optional[str] = Form(None), source: Optional[str] = Form(None), bg_tasks: BackgroundTasks = None):
-    logger.debug(f"Received request on /note/add...")
+    debug(f"Received request on /note/add...")
     if not file and not text:
-        logger.warning(f"... without any file or text!")
+        warn(f"... without any file or text!")
         raise HTTPException(status_code=400, detail="Either text or a file must be provided")
     else:
         result = await process_for_daily_note(file, text, source, bg_tasks)
-        logger.info(f"Result on /note/add: {result}")
+        info(f"Result on /note/add: {result}")
         return JSONResponse({"message": "Note added successfully", "entry": result}, status_code=201)
 
 
@@ -44,7 +48,7 @@ async def process_for_daily_note(file: Optional[UploadFile] = File(None), text: 
     transcription_entry = ""
     file_entry = ""
     if file:
-        logger.debug("File received...")
+        debug("File received...")
         file_content = await file.read()
         audio_io = BytesIO(file_content)
         
@@ -52,18 +56,18 @@ async def process_for_daily_note(file: Optional[UploadFile] = File(None), text: 
         guessed_type = mimetypes.guess_type(file.filename)
         file_type = guessed_type[0] if guessed_type[0] else "application/octet-stream"
         
-        logger.debug(f"Processing as {file_type}...")
+        debug(f"Processing as {file_type}...")
         
         # Extract the main type (e.g., 'audio', 'image', 'video')
         main_type = file_type.split('/')[0]
         subdir = main_type.title() if main_type else "Documents"
         
         absolute_path, relative_path = assemble_journal_path(now, subdir=subdir, filename=file.filename)
-        logger.debug(f"Destination path: {absolute_path}")
+        debug(f"Destination path: {absolute_path}")
         
         with open(absolute_path, 'wb') as f:
             f.write(file_content)
-        logger.debug(f"Processing {f.name}...")
+        debug(f"Processing {f.name}...")
         
         if main_type == 'audio':
             transcription = await asr.transcribe_audio(file_path=absolute_path, params=asr.TranscribeParams(model="small-en", language="en", threads=6))
@@ -74,7 +78,7 @@ async def process_for_daily_note(file: Optional[UploadFile] = File(None), text: 
             file_entry = f"[Source]({relative_path})"
     
     text_entry = text if text else ""
-    logger.debug(f"transcription: {transcription_entry}\nfile_entry: {file_entry}\ntext_entry: {text_entry}")
+    debug(f"transcription: {transcription_entry}\nfile_entry: {file_entry}\ntext_entry: {text_entry}")
     return await add_to_daily_note(transcription_entry, file_entry, text_entry, now)
 
 
@@ -169,7 +173,7 @@ added: {timestamp}
                 obsidian_link = f"![[{OBSIDIAN_RESOURCES_DIR}/{audio_filename}{audio_ext}]]"
                 body += f"{obsidian_link}\n\n"
             except Exception as e:
-                logger.error(f"Failed in the TTS portion of clipping: {e}")
+                err(f"Failed in the TTS portion of clipping: {e}")
 
         body += f"> [!summary]+\n"
         body += f"> {summary}\n\n"
@@ -182,12 +186,12 @@ added: {timestamp}
         with open(markdown_filename, 'w', encoding=encoding) as md_file:
             md_file.write(markdown_content)
 
-        logger.info(f"Successfully saved to {markdown_filename}")
+        info(f"Successfully saved to {markdown_filename}")
 
         return markdown_filename
 
     except Exception as e:
-        logger.error(f"Failed to clip: {str(e)}")
+        err(f"Failed to clip: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 def list_and_correct_impermissible_files(root_dir, rename: bool = False):
@@ -198,7 +202,7 @@ def list_and_correct_impermissible_files(root_dir, rename: bool = False):
             if check_file_name(filename):
                 file_path = Path(dirpath) / filename
                 impermissible_files.append(file_path)
-                logger.debug(f"Impermissible file found: {file_path}")
+                debug(f"Impermissible file found: {file_path}")
                 
                 # Sanitize the file name
                 new_filename = sanitize_filename(filename)
@@ -216,7 +220,7 @@ def list_and_correct_impermissible_files(root_dir, rename: bool = False):
                 # Rename the file
                 if rename:
                     os.rename(file_path, new_file_path)
-                    logger.debug(f"Renamed: {file_path} -> {new_file_path}")
+                    debug(f"Renamed: {file_path} -> {new_file_path}")
     
     return impermissible_files
 
@@ -233,12 +237,43 @@ async def build_daily_note_range_endpoint(dt_start: str, dt_end: str):
     results = []
     current_date = start_date
     while current_date <= end_date:
-        formatted_date = await loc.dt(current_date)
+        formatted_date = await gis.dt(current_date)
         result = await build_daily_note(formatted_date)
         results.append(result)
         current_date += timedelta(days=1)
     
     return {"urls": results}
+
+
+
+@note.get("/note/create")
+async def build_daily_note_getpoint():
+    try:
+        loc = await gis.get_last_location()
+        if not loc:
+            raise ValueError("Unable to retrieve last location")
+
+        tz = await GEO.tz_current(loc)
+        if not tz:
+            raise ValueError(f"Unable to determine timezone for location: {loc}")
+
+        date_time = dt_datetime.now(tz)
+        path = await build_daily_note(date_time, loc.latitude, loc.longitude)
+        path_str = str(path)
+        
+        info(f"Successfully created daily note at {path_str}")
+        return JSONResponse(content={"path": path_str}, status_code=200)
+
+    except ValueError as ve:
+        error_msg = f"Value Error in build_daily_note_getpoint: {str(ve)}"
+        err(error_msg)
+        raise HTTPException(status_code=400, detail=error_msg)
+
+    except Exception as e:
+        error_msg = f"Unexpected error in build_daily_note_getpoint: {str(e)}"
+        err(error_msg)
+        err(f"Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail="An unexpected error occurred")
 
 
 
@@ -258,10 +293,10 @@ async def build_daily_note_endpoint(
         else:
             raise ValueError("Location is not provided or invalid.")
     except (ValueError, AttributeError, TypeError) as e:
-        logger.warning(f"Falling back to localized datetime due to error: {e}")
+        warn(f"Falling back to localized datetime due to error: {e}")
         try:
-            date_time = await loc.dt(date_str)
-            places = await loc.fetch_locations(date_time)
+            date_time = await gis.dt(date_str)
+            places = await gis.fetch_locations(date_time)
             lat, lon = places[0].latitude, places[0].longitude
         except Exception as e:
             return JSONResponse(content={"error": str(e)}, status_code=400)
@@ -278,14 +313,14 @@ async def build_daily_note(date_time: dt_datetime, lat: float = None, lon: float
 Obsidian helper. Takes a datetime and creates a new daily note. Note: it uses the sijapi configuration file to place the daily note and does NOT presently interface with Obsidian's daily note or periodic notes extensions. It is your responsibility to ensure they match.
     '''
     absolute_path, _ = assemble_journal_path(date_time)
-    logger.warning(f"Using {date_time.strftime('%Y-%m-%d %H:%M:%S')} as our datetime in build_daily_note.")
+    warn(f"Using {date_time.strftime('%Y-%m-%d %H:%M:%S')} as our datetime in build_daily_note.")
     formatted_day = date_time.strftime("%A %B %d, %Y")  # Monday May 27, 2024 formatting
     day_before = (date_time - timedelta(days=1)).strftime("%Y-%m-%d %A")  # 2024-05-26 Sunday formatting
     day_after = (date_time + timedelta(days=1)).strftime("%Y-%m-%d %A")  # 2024-05-28 Tuesday formatting
     header = f"# [[{day_before}|← ]] {formatted_day} [[{day_after}| →]]\n\n"
     
     if not lat or not lon:
-        places = await loc.fetch_locations(date_time)
+        places = await gis.fetch_locations(date_time)
         lat, lon = places[0].latitude, places[0].longitude
 
     location = await GEO.code((lat, lon))
@@ -308,6 +343,10 @@ Obsidian helper. Takes a datetime and creates a new daily note. Note: it uses th
     _, note_path = assemble_journal_path(date_time, filename="Notes", extension=".md", no_timestamp = True)
     note_embed = f"![[{note_path}]]"
 
+    _, map_path = assemble_journal_path(date_time, filename="Map", extension=".png", no_timestamp = True)
+    map = await gis.generate_and_save_heatmap(date_time, output_path=map_path)
+    map_embed = f"![[{map_path}]]"
+
     _, banner_path = assemble_journal_path(date_time, filename="Banner", extension=".jpg", no_timestamp = True)
    
     body = f"""---
@@ -320,6 +359,7 @@ created: "{dt_datetime.now().strftime("%Y-%m-%d %H:%M:%S")}"
     
 {header}
 {weather_embed}
+{map_path}
 
 ## Events
 {event_embed}
@@ -369,7 +409,7 @@ async def update_frontmatter(date_time: dt_datetime, key: str, value: str):
 
     # Check if the file exists
     if not file_path.exists():
-        logger.critical(f"Markdown file not found at {file_path}")
+        crit(f"Markdown file not found at {file_path}")
         raise HTTPException(status_code=404, detail="Markdown file not found.")
 
     # Read the file
@@ -416,32 +456,29 @@ async def banner_endpoint(dt: str, location: str = None, forecast: str = None, m
     '''
         Endpoint (POST) that generates a new banner image for the Obsidian daily note for a specified date, taking into account optional additional information, then updates the frontmatter if necessary.
     '''
-    logger.debug(f"banner_endpoint requested with date: {dt} ({type(dt)})")
-    date_time = await loc.dt(dt)
-    logger.debug(f"date_time after localization: {date_time} ({type(date_time)})")
+    debug(f"banner_endpoint requested with date: {dt} ({type(dt)})")
+    date_time = await gis.dt(dt)
+    debug(f"date_time after localization: {date_time} ({type(date_time)})")
     context = await generate_context(dt, location, forecast, mood, other_context)
     jpg_path = await generate_banner(date_time, location, mood=mood, other_context=other_context)
     return jpg_path
 
 
 async def generate_banner(dt, location: Location = None, forecast: str = None, mood: str = None, other_context: str = None):
-    # logger.debug(f"Location: {location}, forecast: {forecast}, mood: {mood}, other_context: {other_context}")
-    date_time = await loc.dt(dt)
-    logger.debug(f"generate_banner called with date_time: {date_time}")
+    date_time = await gis.dt(dt)
     destination_path, local_path = assemble_journal_path(date_time, filename="Banner", extension=".jpg", no_timestamp = True)
-    logger.debug(f"destination path generated: {destination_path}")
     if not location or not isinstance(location, Location):
-        locations = await loc.fetch_locations(date_time)
+        locations = await gis.fetch_locations(date_time)
         if locations:
             location = locations[0]
     if not forecast:
         forecast = await update_dn_weather(date_time, False, location.latitude, location.longitude)
 
     prompt = await generate_context(date_time, location, forecast, mood, other_context)
-    logger.debug(f"Prompt: {prompt}")
+    debug(f"Prompt: {prompt}")
     final_path = await img.workflow(prompt, scene=OBSIDIAN_BANNER_SCENE, destination_path=destination_path)
     if not str(local_path) in str(final_path):
-        logger.info(f"Apparent mismatch between local path, {local_path}, and final_path, {final_path}")
+        info(f"Apparent mismatch between local path, {local_path}, and final_path, {final_path}")
     jpg_embed = f"\"![[{local_path}]]\""
     await update_frontmatter(date_time, "banner", jpg_embed)
     return local_path
@@ -469,7 +506,7 @@ async def generate_context(date_time, location: Location, forecast: str, mood: s
             if geocoded_location.display_name or geocoded_location.city or geocoded_location.country:
                 return await generate_context(date_time, geocoded_location, forecast, mood, other_context)
             else:
-                logger.warning(f"Failed to get a useable location for purposes of generating a banner, but we'll generate one anyway.")
+                warn(f"Failed to get a useable location for purposes of generating a banner, but we'll generate one anyway.")
     elif location and isinstance(location, str):
         display_name = f"Location: {location}\n"
     else:
@@ -507,7 +544,7 @@ async def generate_context(date_time, location: Location, forecast: str, mood: s
 
 
 async def get_note(date_time: dt_datetime):
-    date_time = await loc.dt(date_time);
+    date_time = await gis.dt(date_time);
     absolute_path, local_path = assemble_journal_path(date_time, filename = "Notes", extension = ".md", no_timestamp = True)
 
     if absolute_path.is_file():
@@ -536,9 +573,9 @@ async def note_weather_get(
 ):
     force_refresh_weather = refresh == "True"
     try:
-        date_time = dt_datetime.now() if date == "0" else await loc.dt(date)
-        logger.warning(f"Using {date_time.strftime('%Y-%m-%d %H:%M:%S')} as our dt_datetime in note_weather_get.")
-        logger.debug(f"date: {date} .. date_time: {date_time}")
+        date_time = dt_datetime.now() if date == "0" else await gis.dt(date)
+        warn(f"Using {date_time.strftime('%Y-%m-%d %H:%M:%S')} as our dt_datetime in note_weather_get.")
+        debug(f"date: {date} .. date_time: {date_time}")
         content = await update_dn_weather(date_time, force_refresh_weather) #, lat, lon)
         return JSONResponse(content={"forecast": content}, status_code=200)
     
@@ -546,14 +583,14 @@ async def note_weather_get(
         return JSONResponse(content={"detail": str(e.detail)}, status_code=e.status_code)
 
     except Exception as e:
-        logger.error(f"Error in note_weather_get: {str(e)}")
+        err(f"Error in note_weather_get: {str(e)}")
         raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
                     
 
 @note.post("/update/note/{date}")
 async def post_update_daily_weather_and_calendar_and_timeslips(date: str, refresh: str="False") -> PlainTextResponse:
-    date_time = await loc.dt(date)
-    logger.warning(f"Using {date_time.strftime('%Y-%m-%d %H:%M:%S')} as our dt_datetime in post_update_daily_weather_and_calendar_and_timeslips.")
+    date_time = await gis.dt(date)
+    warn(f"Using {date_time.strftime('%Y-%m-%d %H:%M:%S')} as our dt_datetime in post_update_daily_weather_and_calendar_and_timeslips.")
     force_refresh_weather = refresh == "True"
     await update_dn_weather(date_time, force_refresh_weather)
     await update_daily_note_events(date_time)
@@ -561,52 +598,52 @@ async def post_update_daily_weather_and_calendar_and_timeslips(date: str, refres
     return f"[Refresh]({API.URL}/update/note/{date_time.strftime('%Y-%m-%d')}"
 
 async def update_dn_weather(date_time: dt_datetime, force_refresh: bool = False, lat: float = None, lon: float = None):
-    logger.warning(f"Using {date_time.strftime('%Y-%m-%d %H:%M:%S')} as our datetime in update_dn_weather.")
+    warn(f"Using {date_time.strftime('%Y-%m-%d %H:%M:%S')} as our datetime in update_dn_weather.")
     try:
         if lat and lon:
             place = await GEO.code((lat, lon))
 
         else:
-            logger.debug(f"Updating weather for {date_time}")
-            places = await loc.fetch_locations(date_time)
+            debug(f"Updating weather for {date_time}")
+            places = await gis.fetch_locations(date_time)
             place = places[0]
             lat = place.latitude
             lon = place.longitude
         
-        logger.debug(f"lat: {lat}, lon: {lon}, place: {place}")
+        debug(f"lat: {lat}, lon: {lon}, place: {place}")
         city = GEO.find_override_location(lat, lon)
         if city:
-            logger.info(f"Using override location: {city}")
+            info(f"Using override location: {city}")
 
         else:
             if place.city and place.city != "":
                 city = place.city
-                logger.info(f"City in data: {city}")
+                info(f"City in data: {city}")
 
             else:
                 location = await GEO.code((lat, lon))
-                logger.debug(f"location: {location}")
+                debug(f"location: {location}")
                 city = location.name
                 city = city if city else location.city
                 city = city if city else location.house_number + ' ' + location.road
                 
-                logger.debug(f"City geocoded: {city}")
+                debug(f"City geocoded: {city}")
 
         # Assemble journal path
         absolute_path, relative_path = assemble_journal_path(date_time, filename="Weather", extension=".md", no_timestamp = True)
-        logger.debug(f"Journal path: absolute_path={absolute_path}, relative_path={relative_path}")
+        debug(f"Journal path: absolute_path={absolute_path}, relative_path={relative_path}")
 
         try:
-            logger.debug(f"passing date_time {date_time.strftime('%Y-%m-%d %H:%M:%S')}, {lat}/{lon} into get_weather")
+            debug(f"passing date_time {date_time.strftime('%Y-%m-%d %H:%M:%S')}, {lat}/{lon} into get_weather")
             day = await weather.get_weather(date_time, lat, lon, force_refresh)
-            logger.debug(f"day information obtained from get_weather: {day}")
+            debug(f"day information obtained from get_weather: {day}")
             if day:
                 DailyWeather = day.get('DailyWeather')
                 HourlyWeather = day.get('HourlyWeather')
                 if DailyWeather:
-                    # logger.debug(f"Day: {DailyWeather}")
+                    # debug(f"Day: {DailyWeather}")
                     icon = DailyWeather.get('icon')
-                    logger.debug(f"Icon: {icon}")
+                    debug(f"Icon: {icon}")
                     
                     weather_icon, admonition = get_icon_and_admonition(icon) if icon else (":LiSunMoon:", "ad-weather")
                     
@@ -675,38 +712,38 @@ async def update_dn_weather(date_time: dt_datetime, force_refresh: bool = False,
                         detailed_forecast += assemble_hourly_data_table(times, condition_symbols, temps, winds)
                         detailed_forecast += f"```\n\n"
                     
-                    logger.debug(f"Detailed forecast: {detailed_forecast}.")
+                    debug(f"Detailed forecast: {detailed_forecast}.")
 
                     with open(absolute_path, 'w', encoding='utf-8') as note_file:
                         note_file.write(detailed_forecast)
 
-                    logger.debug(f"Operation complete.")
+                    debug(f"Operation complete.")
 
                     return narrative
                 else:
-                    logger.error(f"Failed to get DailyWeather from day: {day}")
+                    err(f"Failed to get DailyWeather from day: {day}")
             else:
-                logger.error(f"Failed to get day")
+                err(f"Failed to get day")
                 raise HTTPException(status_code=500, detail="Failed to retrieve weather data")
             
         except HTTPException as e:
-            logger.error(f"HTTP error: {e}")
-            logger.error(traceback.format_exc())
+            err(f"HTTP error: {e}")
+            err(traceback.format_exc())
             raise e
         
         except Exception as e:
-            logger.error(f"Error: {e}")
-            logger.error(traceback.format_exc())
+            err(f"Error: {e}")
+            err(traceback.format_exc())
             raise HTTPException(status_code=999, detail=f"Error: {e}")
 
     except ValueError as ve:
-        logger.error(f"Value error in update_dn_weather: {str(ve)}")
-        logger.error(traceback.format_exc())
+        err(f"Value error in update_dn_weather: {str(ve)}")
+        err(traceback.format_exc())
         raise HTTPException(status_code=400, detail=f"Value error: {str(ve)}")
     
     except Exception as e:
-        logger.error(f"Error in update_dn_weather: {str(e)}")
-        logger.error(traceback.format_exc())
+        err(f"Error in update_dn_weather: {str(e)}")
+        err(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Error in update_dn_weather: {str(e)}")
 
 def format_hourly_time(hour):
@@ -714,8 +751,8 @@ def format_hourly_time(hour):
         hour_12 = convert_to_12_hour_format(hour.get("datetime"))
         return hour_12
     except Exception as e:
-        logger.error(f"Error in format_hourly_time: {str(e)}")
-        logger.error(traceback.format_exc())
+        err(f"Error in format_hourly_time: {str(e)}")
+        err(traceback.format_exc())
         return ""
     
 def format_hourly_icon(hour, sunrise, sunset):
@@ -725,7 +762,7 @@ def format_hourly_icon(hour, sunrise, sunset):
             
         precip = hour.get('precip', float(0.0))
         precip_prob = hour.get('precipprob', float(0.0))
-        logger.debug(f"precip: {precip}, prob: {precip_prob}")
+        debug(f"precip: {precip}, prob: {precip_prob}")
         
         sp_str = None
 
@@ -749,8 +786,8 @@ def format_hourly_icon(hour, sunrise, sunset):
         return formatted
     
     except Exception as e:
-        logger.error(f"Error in format_hourly_special: {str(e)}")
-        logger.error(traceback.format_exc())
+        err(f"Error in format_hourly_special: {str(e)}")
+        err(traceback.format_exc())
         return ""
 
 def format_hourly_temperature(hour):
@@ -758,8 +795,8 @@ def format_hourly_temperature(hour):
         temp_str = f"{hour.get('temp', '')}˚ F"
         return temp_str
     except Exception as e:
-        logger.error(f"Error in format_hourly_temperature: {str(e)}")
-        logger.error(traceback.format_exc())
+        err(f"Error in format_hourly_temperature: {str(e)}")
+        err(traceback.format_exc())
         return ""
     
 def format_hourly_wind(hour):
@@ -769,8 +806,8 @@ def format_hourly_wind(hour):
         wind_str = f"{str(windspeed)}:LiWind: {winddir}"
         return wind_str
     except Exception as e:
-        logger.error(f"Error in format_hourly_wind: {str(e)}")
-        logger.error(traceback.format_exc())
+        err(f"Error in format_hourly_wind: {str(e)}")
+        err(traceback.format_exc())
         return ""
 
 def assemble_hourly_data_table(times, condition_symbols, temps, winds):
@@ -783,7 +820,7 @@ def assemble_hourly_data_table(times, condition_symbols, temps, winds):
 
 
 def get_icon_and_admonition(icon_str) -> Tuple:
-    logger.debug(f"Received request for emoji {icon_str}")
+    debug(f"Received request for emoji {icon_str}")
     if icon_str.startswith(":") and icon_str.endswith(":"):
         return icon_str
     
@@ -884,7 +921,7 @@ async def format_events_as_markdown(event_data: Dict[str, Union[str, List[Dict[s
     total_events = len(event_data["events"])
     event_markdown = f"```ad-events"
     for event in event_data["events"]:
-        logger.debug(f"event busy status: {event['busy']}; all day status: {event['all_day']}")
+        debug(f"event busy status: {event['busy']}; all day status: {event['all_day']}")
         if not event['name'].startswith('TC '):
             url = f"hook://ical/eventID={event['uid']}calendarID=17"
             if event['url']:
@@ -957,23 +994,23 @@ async def format_events_as_markdown(event_data: Dict[str, Union[str, List[Dict[s
 @note.get("/note/events", response_class=PlainTextResponse)
 async def note_events_endpoint(date: str = Query(None)):
         
-    date_time = await loc.dt(date) if date else await loc.dt(dt_datetime.now())
+    date_time = await gis.dt(date) if date else await gis.dt(dt_datetime.now())
     response = await update_daily_note_events(date_time)
     return PlainTextResponse(content=response, status_code=200)
 
 async def update_daily_note_events(date_time: dt_datetime):
-    logger.debug(f"Looking up events on date: {date_time.strftime('%Y-%m-%d')}")
+    debug(f"Looking up events on date: {date_time.strftime('%Y-%m-%d')}")
     try:    
         events = await cal.get_events(date_time, date_time)
-        logger.debug(f"Raw events: {events}")
+        debug(f"Raw events: {events}")
         event_data = {
             "date": date_time.strftime('%Y-%m-%d'),
             "events": events
         }
         events_markdown = await format_events_as_markdown(event_data)
-        logger.debug(f"Markdown events: {events_markdown}")
+        debug(f"Markdown events: {events_markdown}")
         absolute_path, _ = assemble_journal_path(date_time, filename="Events", extension=".md", no_timestamp = True)
-        logger.debug(f"Writing events to file: {absolute_path}")
+        debug(f"Writing events to file: {absolute_path}")
 
         with open(absolute_path, 'w', encoding='utf-8') as note_file:
             note_file.write(events_markdown)
@@ -981,7 +1018,7 @@ async def update_daily_note_events(date_time: dt_datetime):
         return events_markdown
 
     except Exception as e:
-        logger.error(f"Error processing events: {e}")
+        err(f"Error processing events: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

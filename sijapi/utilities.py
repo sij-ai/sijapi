@@ -30,17 +30,22 @@ from fastapi.security.api_key import APIKeyHeader
 
 from sijapi import L, API, YEAR_FMT, MONTH_FMT, DAY_FMT, DAY_SHORT_FMT, OBSIDIAN_VAULT_DIR, ALLOWED_FILENAME_CHARS, MAX_PATH_LENGTH, ARCHIVE_DIR
 logger = L.get_module_logger('utilities')
+def debug(text: str): logger.debug(text)
+def info(text: str): logger.info(text)
+def warn(text: str): logger.warning(text)
+def err(text: str): logger.error(text)
+def crit(text: str): logger.critical(text)
 
 api_key_header = APIKeyHeader(name="Authorization", auto_error=False)
 
 def validate_api_key(request: Request, api_key: str = Depends(api_key_header)):
     if request.url.path in API.PUBLIC:
-        return 
+        return
 
     client_ip = ipaddress.ip_address(request.client.host)
     trusted_subnets = [ipaddress.ip_network(subnet) for subnet in API.TRUSTED_SUBNETS]
     if any(client_ip in subnet for subnet in trusted_subnets):
-        return 
+        return
 
     # Check header-based API key
     if api_key:
@@ -63,18 +68,18 @@ def assemble_archive_path(filename: str, extension: str = ".md", date_time: date
     day = date_time.strftime(DAY_FMT)
     day_short = date_time.strftime(DAY_SHORT_FMT)
     timestamp = date_time.strftime("%H%M%S")
-    
+
     # Ensure the extension is preserved
     base_name, ext = os.path.splitext(filename)
     extension = ext if ext else extension
-    
+
     # Initial sanitization
     sanitized_base = sanitize_filename(base_name, '')
     filename = f"{day_short} {timestamp} {sanitized_base}{extension}"
-    
+
     relative_path = Path(year) / month / day / filename
     absolute_path = ARCHIVE_DIR / relative_path
-    
+
     # Ensure the total path length doesn't exceed MAX_PATH_LENGTH
     while len(str(absolute_path)) > MAX_PATH_LENGTH:
         # Truncate the sanitized_base, not the full filename
@@ -82,7 +87,7 @@ def assemble_archive_path(filename: str, extension: str = ".md", date_time: date
         filename = f"{day_short} {timestamp} {sanitized_base}{extension}"
         relative_path = Path(year) / month / day / filename
         absolute_path = ARCHIVE_DIR / relative_path
-    
+
     return absolute_path, relative_path
 
 
@@ -111,17 +116,17 @@ def assemble_journal_path(date_time: datetime, subdir: str = None, filename: str
                 extension = extension if extension.startswith(".") else f".{extension}"
             else:
                 extension = validate_extension(filename, [".md", ".m4a", ".wav", ".aiff", ".flac", ".mp3", ".mp4", ".pdf", ".js", ".json", ".yaml", ".py"]) or ".md"
-               
+
             filename = sanitize_filename(filename)
             filename = f"{day_short} {filename}" if no_timestamp else f"{day_short} {timestamp} {filename}"
             filename = f"{filename}{extension}" if not filename.endswith(extension) else filename
             relative_path = relative_path / filename
-        
+
         else:
-            logger.debug(f"This only happens, theoretically, when no filename nor subdirectory are provided, but an extension is. Which is kinda silly.")
+            debug(f"This only happens, theoretically, when no filename nor subdirectory are provided, but an extension is. Which is kinda silly.")
             return None, None
-    
-    absolute_path = OBSIDIAN_VAULT_DIR / relative_path 
+
+    absolute_path = OBSIDIAN_VAULT_DIR / relative_path
     os.makedirs(absolute_path.parent, exist_ok=True)
     return absolute_path, relative_path
 
@@ -142,8 +147,8 @@ def f(file):
     if hasattr(file, 'read') and callable(file.read):
         return file
     if isinstance(file, (bytes, bytearray)):
-        return file  
-    
+        return file
+
     if isinstance(file, Path):
         file_path = file
     elif isinstance(file, str):
@@ -165,16 +170,16 @@ def get_extension(file):
             file_path = Path(file.filename)
         file_extension = file_path.suffix
         return file_extension
-    
+
     except Exception as e:
-        logger.error(f"Unable to get extension of {file}")
+        err(f"Unable to get extension of {file}")
         raise e
 
 
 
 def sanitize_filename(text, extension: str = None, max_length: int = MAX_PATH_LENGTH):
     """Sanitize a string to be used as a safe filename while protecting the file extension."""
-    logger.debug(f"Filename before sanitization: {text}")
+    debug(f"Filename before sanitization: {text}")
 
     text = re.sub(r'\s+', ' ', text)
     sanitized = re.sub(ALLOWED_FILENAME_CHARS, '', text)
@@ -186,7 +191,7 @@ def sanitize_filename(text, extension: str = None, max_length: int = MAX_PATH_LE
         base_name = base_name[:max_base_length - 5].rstrip()
     final_filename = base_name + extension
 
-    logger.debug(f"Filename after sanitization: {final_filename}")
+    debug(f"Filename after sanitization: {final_filename}")
     return final_filename
 
 
@@ -196,16 +201,16 @@ def check_file_name(file_name, max_length=255):
     needs_sanitization = False
 
     if len(file_name) > max_length:
-        logger.debug(f"Filename exceeds maximum length of {max_length}: {file_name}")
+        debug(f"Filename exceeds maximum length of {max_length}: {file_name}")
         needs_sanitization = True
     if re.search(ALLOWED_FILENAME_CHARS, file_name):
-        logger.debug(f"Filename contains non-word characters (except space, dot, and hyphen): {file_name}")
+        debug(f"Filename contains non-word characters (except space, dot, and hyphen): {file_name}")
         needs_sanitization = True
     if re.search(r'\s{2,}', file_name):
-        logger.debug(f"Filename contains multiple consecutive spaces: {file_name}")
+        debug(f"Filename contains multiple consecutive spaces: {file_name}")
         needs_sanitization = True
     if file_name != file_name.strip():
-        logger.debug(f"Filename has leading or trailing spaces: {file_name}")
+        debug(f"Filename has leading or trailing spaces: {file_name}")
         needs_sanitization = True
 
     return needs_sanitization
@@ -230,7 +235,7 @@ async def extract_text(file_path: str) -> str:
     """Extract text from file."""
     if file_path.endswith('.pdf'):
         return await extract_text_from_pdf(file_path)
-    
+
     elif file_path.endswith('.docx'):
         return await extract_text_from_docx(file_path)
 
@@ -248,13 +253,13 @@ async def ocr_pdf(file_path: str) -> str:
         texts = await asyncio.gather(*(asyncio.to_thread(pytesseract.image_to_string, image) for image in images))
         return ' '.join(texts)
     except Exception as e:
-        logger.error(f"Error during OCR: {str(e)}")
+        err(f"Error during OCR: {str(e)}")
         return ""
 
 
 async def extract_text_from_pdf(file_path: str) -> str:
     if not await is_valid_pdf(file_path):
-        logger.error(f"Invalid PDF file: {file_path}")
+        err(f"Invalid PDF file: {file_path}")
         return ""
 
     text = ''
@@ -267,12 +272,12 @@ async def extract_text_from_pdf(file_path: str) -> str:
             text_content = page.extract_text() + ' ' if page.extract_text() else ''
             text += text_content
         num_pages = len(reader.pages)
-        
+
         # If text was extracted successfully and it's deemed sufficient, return it
         if text and not should_use_ocr(text, num_pages):
             return clean_text(text)
     except Exception as e:
-        logger.error(f"Error extracting text with PyPDF2: {str(e)}")
+        err(f"Error extracting text with PyPDF2: {str(e)}")
 
     # If PyPDF2 extraction fails or is insufficient, fall back to pdfminer.six
     try:
@@ -280,10 +285,10 @@ async def extract_text_from_pdf(file_path: str) -> str:
         if text_pdfminer and not should_use_ocr(text_pdfminer, num_pages):
             return clean_text(text_pdfminer)
     except Exception as e:
-        logger.error(f"Error extracting text with pdfminer.six: {e}")
+        err(f"Error extracting text with pdfminer.six: {e}")
 
     # If both methods fail or are deemed insufficient, use OCR as the last resort
-    logger.debug("Falling back to OCR for text extraction...")
+    debug("Falling back to OCR for text extraction...")
     return await ocr_pdf(file_path)
 
 async def is_valid_pdf(file_path: str) -> bool:
@@ -292,12 +297,12 @@ async def is_valid_pdf(file_path: str) -> bool:
         kind = filetype.guess(file_path)
         return kind.mime == 'application/pdf'
     except Exception as e:
-        logger.error(f"Error checking file type: {e}")
+        err(f"Error checking file type: {e}")
         return False
 
 async def extract_text_from_pdf(file_path: str) -> str:
     if not await is_valid_pdf(file_path):
-        logger.error(f"Invalid PDF file: {file_path}")
+        err(f"Invalid PDF file: {file_path}")
         return ""
 
     text = ''
@@ -309,23 +314,23 @@ async def extract_text_from_pdf(file_path: str) -> str:
         if text.strip():  # Successfully extracted text
             return clean_text(text)
     except Exception as e:
-        logger.error(f"Error extracting text with PyPDF2: {str(e)}")
+        err(f"Error extracting text with PyPDF2: {str(e)}")
 
     try:
         text_pdfminer = await asyncio.to_thread(pdfminer_extract_text, file_path)
         if text_pdfminer.strip():  # Successfully extracted text
             return clean_text(text_pdfminer)
     except Exception as e:
-        logger.error(f"Error extracting text with pdfminer.six: {str(e)}")
+        err(f"Error extracting text with pdfminer.six: {str(e)}")
 
     # Fall back to OCR
-    logger.debug("Falling back to OCR for text extraction...")
+    debug("Falling back to OCR for text extraction...")
     try:
         images = convert_from_path(file_path)
         ocr_texts = await asyncio.gather(*(asyncio.to_thread(pytesseract.image_to_string, img) for img in images))
         return ' '.join(ocr_texts).strip()
     except Exception as e:
-        logger.error(f"OCR failed: {str(e)}")
+        err(f"OCR failed: {str(e)}")
         return ""
 
 async def extract_text_from_docx(file_path: str) -> str:
@@ -333,7 +338,7 @@ async def extract_text_from_docx(file_path: str) -> str:
         doc = Document(file_path)
         full_text = [paragraph.text for paragraph in doc.paragraphs]
         return '\n'.join(full_text)
-    
+
     return await asyncio.to_thread(read_docx, file_path)
 
 # Correcting read_text_file to be asynchronous
@@ -345,7 +350,7 @@ def _sync_read_text_file(file_path: str) -> str:
     # Actual synchronous file reading operation
     with open(file_path, 'r', encoding='utf-8') as file:
         return file.read()
-    
+
 def should_use_ocr(text, num_pages) -> bool:
     if not text:
         return True  # No text was extracted, use OCR
@@ -377,7 +382,7 @@ def convert_degrees_to_cardinal(d):
     """
     dirs = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"]
     ix = round(d / (360. / len(dirs)))
-    return dirs[ix % len(dirs)]  
+    return dirs[ix % len(dirs)]
 
 
 
@@ -409,7 +414,7 @@ def convert_to_12_hour_format(datetime_obj_or_str):
         datetime_obj_or_str = datetime_obj_or_str.strftime("%H:%M:%S")
     else:
         datetime_obj = datetime_obj_or_str
-    
+
     if isinstance(datetime_obj_or_str, str):
         time24 = datetime_obj_or_str
     else:
@@ -427,8 +432,8 @@ def encode_image_to_base64(image_path):
             byte_data = output_buffer.getvalue()
             base64_str = base64.b64encode(byte_data).decode('utf-8')
         return base64_str
-    else:   
-        logger.debug(f"Error: File does not exist at {image_path}")
+    else:
+        debug(f"Error: File does not exist at {image_path}")
 
 def resize_and_convert_image(image_path, max_size=2160, quality=80):
     with Image.open(image_path) as img:
@@ -458,7 +463,7 @@ def load_geonames_data(path: str):
         names=columns,
         low_memory=False
     )
-    
+
     return data
 
 async def run_ssh_command(server, command):
@@ -472,5 +477,5 @@ async def run_ssh_command(server, command):
         ssh.close()
         return output, error
     except Exception as e:
-        logger.error(f"SSH command failed for server {server.id}: {str(e)}")
+        err(f"SSH command failed for server {server.id}: {str(e)}")
         raise

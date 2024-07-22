@@ -28,8 +28,18 @@ parser.add_argument('--test', type=str, help='Load only the specified module.')
 args = parser.parse_args()
 
 L.setup_from_args(args)
-print(f"Debug modules after setup: {L.debug_modules}")  # Debug print
-
+print(f"Debug modules after setup: {L.debug_modules}")
+logger = L.get_module_logger("main")
+def debug(text: str): logger.debug(text)
+debug(f"Debug message.")
+def info(text: str): logger.info(text)
+info(f"Info message.")
+def warn(text: str): logger.warning(text)
+warn(f"Warning message.")
+def err(text: str): logger.error(text)
+err(f"Error message.")
+def crit(text: str): logger.critical(text)
+crit(f"Critical message.")
 
 app = FastAPI()
 app.add_middleware(
@@ -54,13 +64,13 @@ class SimpleAPIKeyMiddleware(BaseHTTPMiddleware):
                 if api_key_header:
                     api_key_header = api_key_header.lower().split("bearer ")[-1]
                 if api_key_header not in API.KEYS and api_key_query not in API.KEYS:
-                    L.ERR(f"Invalid API key provided by a requester.")
+                    err(f"Invalid API key provided by a requester.")
                     return JSONResponse(
                         status_code=401,
                         content={"detail": "Invalid or missing API key"}
                     )
         response = await call_next(request)
-        # L.DEBUG(f"Request from {client_ip} is complete")
+        # debug(f"Request from {client_ip} is complete")
         return response
 
 # Add the middleware to your FastAPI app
@@ -68,8 +78,8 @@ app.add_middleware(SimpleAPIKeyMiddleware)
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
-    L.ERR(f"HTTP Exception: {exc.status_code} - {exc.detail}")
-    L.ERR(f"Request: {request.method} {request.url}")
+    err(f"HTTP Exception: {exc.status_code} - {exc.detail}")
+    err(f"Request: {request.method} {request.url}")
     return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
 
 
@@ -106,8 +116,8 @@ def main(argv):
     if args.test:
         load_router(args.test)
     else:
-        L.logger.critical(f"sijapi launched")
-        L.logger.critical(f"Arguments: {args}")
+        crit(f"sijapi launched")
+        crit(f"Arguments: {args}")
         for module_name in API.MODULES.__fields__:
             if getattr(API.MODULES, module_name):
                 load_router(module_name)

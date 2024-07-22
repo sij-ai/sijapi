@@ -1,35 +1,26 @@
 # classes.py
 import asyncio
 import json
+import yaml
 import math
 import os
 import re
-from concurrent.futures import ThreadPoolExecutor
-from contextlib import asynccontextmanager
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union, TypeVar, Type
-from zoneinfo import ZoneInfo
 import aiofiles
 import aiohttp
 import asyncpg
 import reverse_geocoder as rg
-import yaml
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple, Union, TypeVar
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field, create_model
-from srtm import get_data
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
 from timezonefinder import TimezoneFinder
+from zoneinfo import ZoneInfo
+from srtm import get_data
 
 T = TypeVar('T', bound='Configuration')
-
-
-import os
-from pathlib import Path
-from typing import Union, Optional, Any, Dict, List
-import yaml
-import re
-from pydantic import BaseModel, create_model
-from dotenv import load_dotenv
 
 class Configuration(BaseModel):
     HOME: Path = Path.home()
@@ -40,37 +31,49 @@ class Configuration(BaseModel):
         yaml_path = cls._resolve_path(yaml_path, 'config')
         if secrets_path:
             secrets_path = cls._resolve_path(secrets_path, 'config')
-        
+
         try:
             with yaml_path.open('r') as file:
                 config_data = yaml.safe_load(file)
-            
+
             print(f"Loaded configuration data from {yaml_path}")
-            
+
             if secrets_path:
                 with secrets_path.open('r') as file:
                     secrets_data = yaml.safe_load(file)
                 print(f"Loaded secrets data from {secrets_path}")
-                config_data.update(secrets_data)
-            
+
+                # If config_data is a list, apply secrets to each item
+                if isinstance(config_data, list):
+                    for item in config_data:
+                        if isinstance(item, dict):
+                            item.update(secrets_data)
+                else:
+                    config_data.update(secrets_data)
+
+            # If config_data is a list, create a dict with a single key
+            if isinstance(config_data, list):
+                config_data = {"configurations": config_data}
+
             # Ensure HOME is set
             if config_data.get('HOME') is None:
                 config_data['HOME'] = str(Path.home())
                 print(f"HOME was None in config, set to default: {config_data['HOME']}")
-            
+
             load_dotenv()
-            
+
             instance = cls.create_dynamic_model(**config_data)
             instance._dir_config = dir_config or instance
-            
+
             resolved_data = instance.resolve_placeholders(config_data)
             instance = cls.create_dynamic_model(**resolved_data)
             instance._dir_config = dir_config or instance
-            
+
             return instance
         except Exception as e:
             print(f"Error loading configuration: {str(e)}")
             raise
+
 
     @classmethod
     def _resolve_path(cls, path: Union[str, Path], default_dir: str) -> Path:
@@ -92,27 +95,49 @@ class Configuration(BaseModel):
         else:
             return data
 
+    def resolve_placeholders(self, data: Any) -> Any:
+        if isinstance(data, dict):
+            resolved_data = {k: self.resolve_placeholders(v) for k, v in data.items()}
+
+            # Special handling for directory placeholders
+            home = Path(resolved_data.get('HOME', self.HOME)).expanduser()
+            sijapi = home / "workshop" / "sijapi"
+            data_dir = sijapi / "data"
+
+            resolved_data['HOME'] = str(home)
+            resolved_data['SIJAPI'] = str(sijapi)
+            resolved_data['DATA'] = str(data_dir)
+
+            return resolved_data
+        elif isinstance(data, list):
+            return [self.resolve_placeholders(v) for v in data]
+        elif isinstance(data, str):
+            return self.resolve_string_placeholders(data)
+        else:
+            return data
+
     def resolve_string_placeholders(self, value: str) -> Any:
         pattern = r'\{\{\s*([^}]+)\s*\}\}'
         matches = re.findall(pattern, value)
-        
+
         for match in matches:
             parts = match.split('.')
             if len(parts) == 1:  # Internal reference
-                replacement = getattr(self._dir_config, parts[0], str(Path.home() / parts[0].lower()))
+                replacement = getattr(self, parts[0], str(Path.home() / parts[0].lower()))
             elif len(parts) == 2 and parts[0] == 'Dir':
-                replacement = getattr(self._dir_config, parts[1], str(Path.home() / parts[1].lower()))
+                replacement = getattr(self, parts[1], str(Path.home() / parts[1].lower()))
             elif len(parts) == 2 and parts[0] == 'ENV':
                 replacement = os.getenv(parts[1], '')
             else:
                 replacement = value  # Keep original if not recognized
-            
+
             value = value.replace('{{' + match + '}}', str(replacement))
-        
+
         # Convert to Path if it looks like a file path
         if isinstance(value, str) and (value.startswith(('/', '~')) or (':' in value and value[1] == ':')):
             return Path(value).expanduser()
         return value
+
 
     @classmethod
     def create_dynamic_model(cls, **data):
@@ -121,7 +146,7 @@ class Configuration(BaseModel):
                 data[key] = cls.create_dynamic_model(**value)
             elif isinstance(value, list) and all(isinstance(item, dict) for item in value):
                 data[key] = [cls.create_dynamic_model(**item) for item in value]
-        
+
         DynamicModel = create_model(
             f'Dynamic{cls.__name__}',
             __base__=cls,
@@ -133,7 +158,11 @@ class Configuration(BaseModel):
         extra = "allow"
         arbitrary_types_allowed = True
 
-
+from pydantic import BaseModel, create_model
+from typing import Any, Dict, List, Union
+from pathlib import Path
+import yaml
+import re
 
 class APIConfig(BaseModel):
     HOST: str
@@ -143,8 +172,10 @@ class APIConfig(BaseModel):
     PUBLIC: List[str]
     TRUSTED_SUBNETS: List[str]
     MODULES: Any  # This will be replaced with a dynamic model
+    EXTENSIONS: Any  # This will be replaced with a dynamic model
     TZ: str
     KEYS: List[str]
+    GARBAGE: Dict[str, Any]
 
     @classmethod
     def load(cls, config_path: Union[str, Path], secrets_path: Union[str, Path]):
@@ -154,9 +185,9 @@ class APIConfig(BaseModel):
         # Load main configuration
         with open(config_path, 'r') as file:
             config_data = yaml.safe_load(file)
-        
+
         print(f"Loaded main config: {config_data}")  # Debug print
-        
+
         # Load secrets
         try:
             with open(secrets_path, 'r') as file:
@@ -168,12 +199,12 @@ class APIConfig(BaseModel):
         except yaml.YAMLError as e:
             print(f"Error parsing secrets YAML: {e}")
             secrets_data = {}
-        
+
         # Resolve internal placeholders
         config_data = cls.resolve_placeholders(config_data)
-        
+
         print(f"Resolved config: {config_data}")  # Debug print
-        
+
         # Handle KEYS placeholder
         if isinstance(config_data.get('KEYS'), list) and len(config_data['KEYS']) == 1:
             placeholder = config_data['KEYS'][0]
@@ -189,22 +220,28 @@ class APIConfig(BaseModel):
                         print(f"Secret key '{secret_key}' not found in secrets file")
                 else:
                     print(f"Invalid secret placeholder format: {placeholder}")
-        
+
         # Create dynamic ModulesConfig
-        modules_data = config_data.get('MODULES', {})
-        modules_fields = {}
-        for key, value in modules_data.items():
-            if isinstance(value, str):
-                modules_fields[key] = (bool, value.lower() == 'on')
-            elif isinstance(value, bool):
-                modules_fields[key] = (bool, value)
-            else:
-                raise ValueError(f"Invalid value for module {key}: {value}. Must be 'on', 'off', True, or False.")
-        
-        DynamicModulesConfig = create_model('DynamicModulesConfig', **modules_fields)
-        config_data['MODULES'] = DynamicModulesConfig(**modules_data)
-        
+        config_data['MODULES'] = cls._create_dynamic_config(config_data.get('MODULES', {}), 'DynamicModulesConfig')
+
+        # Create dynamic ExtensionsConfig
+        config_data['EXTENSIONS'] = cls._create_dynamic_config(config_data.get('EXTENSIONS', {}), 'DynamicExtensionsConfig')
+
         return cls(**config_data)
+
+    @classmethod
+    def _create_dynamic_config(cls, data: Dict[str, Any], model_name: str):
+        fields = {}
+        for key, value in data.items():
+            if isinstance(value, str):
+                fields[key] = (bool, value.lower() == 'on')
+            elif isinstance(value, bool):
+                fields[key] = (bool, value)
+            else:
+                raise ValueError(f"Invalid value for {key}: {value}. Must be 'on', 'off', True, or False.")
+
+        DynamicConfig = create_model(model_name, **fields)
+        return DynamicConfig(**data)
 
     @classmethod
     def _resolve_path(cls, path: Union[str, Path], default_dir: str) -> Path:
@@ -235,23 +272,26 @@ class APIConfig(BaseModel):
                 resolved_data[key] = [resolve_value(item) for item in value]
             else:
                 resolved_data[key] = resolve_value(value)
-        
+
         # Resolve BIND separately to ensure HOST and PORT are used
         if 'BIND' in resolved_data:
             resolved_data['BIND'] = resolved_data['BIND'].replace('{{ HOST }}', str(resolved_data['HOST']))
             resolved_data['BIND'] = resolved_data['BIND'].replace('{{ PORT }}', str(resolved_data['PORT']))
-        
+
         return resolved_data
 
     def __getattr__(self, name: str) -> Any:
-        if name == 'MODULES':
-            return self.__dict__['MODULES']
+        if name in ['MODULES', 'EXTENSIONS']:
+            return self.__dict__[name]
         return super().__getattr__(name)
 
     @property
     def active_modules(self) -> List[str]:
         return [module for module, is_active in self.MODULES.__dict__.items() if is_active]
 
+    @property
+    def active_extensions(self) -> List[str]:
+        return [extension for extension, is_active in self.EXTENSIONS.__dict__.items() if is_active]
 
 
 class Location(BaseModel):
@@ -265,7 +305,7 @@ class Location(BaseModel):
     city: Optional[str] = None
     state: Optional[str] = None
     country: Optional[str] = None
-    context: Optional[Dict[str, Any]] = None 
+    context: Optional[Dict[str, Any]] = None
     class_: Optional[str] = None
     type: Optional[str] = None
     name: Optional[str] = None
@@ -284,6 +324,8 @@ class Location(BaseModel):
         json_encoders = {
             datetime: lambda dt: dt.isoformat(),
         }
+
+
 
 
 class Geocoder:
@@ -319,20 +361,20 @@ class Geocoder:
     def find_override_location(self, lat: float, lon: float) -> Optional[str]:
         closest_location = None
         closest_distance = float('inf')
-        
+
         for location in self.override_locations:
             loc_name = location.get("name")
             loc_lat = location.get("latitude")
             loc_lon = location.get("longitude")
             loc_radius = location.get("radius")
-            
+
             distance = self.haversine(lat, lon, loc_lat, loc_lon)
-            
+
             if distance <= loc_radius:
                 if distance < closest_distance:
                     closest_distance = distance
                     closest_location = loc_name
-        
+
         return closest_location
 
     async def location(self, lat: float, lon: float):
@@ -346,7 +388,7 @@ class Geocoder:
     async def elevation(self, latitude: float, longitude: float, unit: str = "m") -> float:
         loop = asyncio.get_running_loop()
         elevation = await loop.run_in_executor(self.executor, self.srtm_data.get_elevation, latitude, longitude)
-        
+
         if unit == "m":
             return elevation
         elif unit == "km":
@@ -362,12 +404,12 @@ class Geocoder:
         return ZoneInfo(timezone_str) if timezone_str else None
 
 
-    
+
     async def lookup(self, lat: float, lon: float):
         city, state, country = (await self.location(lat, lon))[0]['name'], (await self.location(lat, lon))[0]['admin1'], (await self.location(lat, lon))[0]['cc']
         elevation = await self.elevation(lat, lon)
         timezone = await self.timezone(lat, lon)
-        
+
         return {
             "city": city,
             "state": state,
@@ -379,12 +421,12 @@ class Geocoder:
     async def code(self, locations: Union[Location, Tuple[float, float], List[Union[Location, Tuple[float, float]]]]) -> Union[Location, List[Location]]:
         if isinstance(locations, (Location, tuple)):
             locations = [locations]
-        
+
         processed_locations = []
         for loc in locations:
             if isinstance(loc, tuple):
                 processed_locations.append(Location(
-                    latitude=loc[0], 
+                    latitude=loc[0],
                     longitude=loc[1],
                     datetime=datetime.now(timezone.utc)
                 ))
@@ -396,12 +438,11 @@ class Geocoder:
                 raise ValueError(f"Unsupported location type: {type(loc)}")
 
         coordinates = [(location.latitude, location.longitude) for location in processed_locations]
-        
+
         geocode_results = await asyncio.gather(*[self.location(lat, lon) for lat, lon in coordinates])
         elevations = await asyncio.gather(*[self.elevation(lat, lon) for lat, lon in coordinates])
         timezone_results = await asyncio.gather(*[self.timezone(lat, lon) for lat, lon in coordinates])
 
-                
         def create_display_name(override_name, result):
             parts = []
             if override_name:
@@ -446,13 +487,13 @@ class Geocoder:
     async def geocode_osm(self, latitude: float, longitude: float, email: str):
         url = f"https://nominatim.openstreetmap.org/reverse?format=json&lat={latitude}&lon={longitude}"
         headers = {
-            'User-Agent': f'sijapi/1.0 ({email})',  # replace with your app name and email
+            'User-Agent': f'sijapi/1.0 ({email})',
         }
         async with aiohttp.ClientSession() as session:
             async with session.get(url, headers=headers) as response:
                 response.raise_for_status()
                 data = await response.json()
-        
+
         address = data.get("address", {})
         elevation = await self.elevation(latitude, longitude)
         return Location(
@@ -465,7 +506,7 @@ class Geocoder:
             city=address.get("city"),
             state=address.get("state"),
             country=address.get("country"),
-            context={}, 
+            context={},
             class_=data.get("class"),
             type=data.get("type"),
             name=data.get("name"),
@@ -480,7 +521,6 @@ class Geocoder:
             country_code=address.get("country_code"),
             timezone=await self.timezone(latitude, longitude)
         )
-
 
     def round_coords(self, lat: float, lon: float, decimal_places: int = 2) -> Tuple[float, float]:
         return (round(lat, decimal_places), round(lon, decimal_places))
@@ -501,17 +541,17 @@ class Geocoder:
             not self.last_update or
             current_time - self.last_update > timedelta(hours=1) or
             not self.coords_equal(rounded_location, self.round_coords(*self.last_location) if self.last_location else (None, None))):
-            
-            
+
+
             new_timezone = await self.timezone(lat, lon)
             self.last_timezone = new_timezone
             self.last_update = current_time
             self.last_location = (lat, lon)  # Store the original, non-rounded coordinates
             await self.tz_save()
-        
+
         return self.last_timezone
 
-    
+
     async def tz_save(self):
         cache_data = {
             'last_timezone': str(self.last_timezone) if self.last_timezone else None,
@@ -528,7 +568,7 @@ class Geocoder:
             self.last_timezone = ZoneInfo(cache_data['last_timezone']) if cache_data.get('last_timezone') else None
             self.last_update = datetime.fromisoformat(cache_data['last_update']) if cache_data.get('last_update') else None
             self.last_location = tuple(cache_data['last_location']) if cache_data.get('last_location') else None
-        
+
         except (FileNotFoundError, json.JSONDecodeError):
             # If file doesn't exist or is invalid, we'll start fresh
             self.last_timezone = None
@@ -546,7 +586,7 @@ class Geocoder:
     async def tz_at(self, lat: float, lon: float) -> Optional[ZoneInfo]:
         """
         Get the timezone at a specific latitude and longitude without affecting the cache.
-        
+
         :param lat: Latitude
         :param lon: Longitude
         :return: ZoneInfo object representing the timezone
@@ -555,7 +595,6 @@ class Geocoder:
 
     def __del__(self):
         self.executor.shutdown()
-
 
 class Database(BaseModel):
     host: str = Field(..., description="Database host")
@@ -596,7 +635,6 @@ class Database(BaseModel):
     def to_dict(self):
         return self.dict(exclude_none=True)
 
-
 class IMAPConfig(BaseModel):
     username: str
     password: str
@@ -621,7 +659,7 @@ class AutoResponder(BaseModel):
     image_prompt: Optional[str] = None
     image_scene:  Optional[str] = None
     smtp: SMTPConfig
-    
+
 class EmailAccount(BaseModel):
     name: str
     refresh: int
@@ -643,3 +681,12 @@ class IncomingEmail(BaseModel):
     subject: str
     body: str
     attachments: List[dict] = []
+
+class WidgetUpdate(BaseModel):
+    text: Optional[str] = None
+    progress: Optional[str] = None
+    icon: Optional[str] = None
+    color: Optional[str] = None
+    url: Optional[str] = None
+    shortcut: Optional[str] = None
+    graph: Optional[str] = None

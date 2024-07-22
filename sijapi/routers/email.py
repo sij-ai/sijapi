@@ -21,24 +21,23 @@ import yaml
 from typing import List, Dict, Optional, Set
 from datetime import datetime as dt_datetime
 from sijapi import L, PODCAST_DIR, DEFAULT_VOICE, EMAIL_CONFIG, EMAIL_LOGS
-from sijapi.routers import img, loc, tts, llm
+from sijapi.routers import gis, img, tts, llm
 from sijapi.utilities import clean_text, assemble_journal_path, extract_text, prefix_lines
 from sijapi.classes import EmailAccount, IMAPConfig, SMTPConfig, IncomingEmail, EmailContact, AutoResponder
 
 email = APIRouter()
 
 logger = L.get_module_logger("email")
-print(f"Email logger level: {logger.level}")  # Debug print
-
-logger.debug("This is a debug message from email module")
-logger.info("This is an info message from email module")
-
+def debug(text: str): logger.debug(text)
+def info(text: str): logger.info(text)
+def warn(text: str): logger.warning(text)
+def err(text: str): logger.error(text)
+def crit(text: str): logger.critical(text)
 
 def load_email_accounts(yaml_path: str) -> List[EmailAccount]:
     with open(yaml_path, 'r') as file:
         config = yaml.safe_load(file)
     return [EmailAccount(**account) for account in config['accounts']]
-
 
 def get_imap_connection(account: EmailAccount):
     return Imbox(account.imap.host,
@@ -59,34 +58,34 @@ def get_smtp_connection(autoresponder: AutoResponder):
     
     if smtp_config.encryption == 'SSL':
         try:
-            logger.debug(f"Attempting SSL connection to {smtp_config.host}:{smtp_config.port}")
+            debug(f"Attempting SSL connection to {smtp_config.host}:{smtp_config.port}")
             return SMTP_SSL(smtp_config.host, smtp_config.port, context=context)
         except ssl.SSLError as e:
-            logger.error(f"SSL connection failed: {str(e)}")
+            err(f"SSL connection failed: {str(e)}")
             # If SSL fails, try TLS
             try:
-                logger.debug(f"Attempting STARTTLS connection to {smtp_config.host}:{smtp_config.port}")
+                debug(f"Attempting STARTTLS connection to {smtp_config.host}:{smtp_config.port}")
                 smtp = SMTP(smtp_config.host, smtp_config.port)
                 smtp.starttls(context=context)
                 return smtp
             except Exception as e:
-                logger.error(f"STARTTLS connection failed: {str(e)}")
+                err(f"STARTTLS connection failed: {str(e)}")
                 raise
     elif smtp_config.encryption == 'STARTTLS':
         try:
-            logger.debug(f"Attempting STARTTLS connection to {smtp_config.host}:{smtp_config.port}")
+            debug(f"Attempting STARTTLS connection to {smtp_config.host}:{smtp_config.port}")
             smtp = SMTP(smtp_config.host, smtp_config.port)
             smtp.starttls(context=context)
             return smtp
         except Exception as e:
-            logger.error(f"STARTTLS connection failed: {str(e)}")
+            err(f"STARTTLS connection failed: {str(e)}")
             raise
     else:
         try:
-            logger.debug(f"Attempting unencrypted connection to {smtp_config.host}:{smtp_config.port}")
+            debug(f"Attempting unencrypted connection to {smtp_config.host}:{smtp_config.port}")
             return SMTP(smtp_config.host, smtp_config.port)
         except Exception as e:
-            logger.error(f"Unencrypted connection failed: {str(e)}")
+            err(f"Unencrypted connection failed: {str(e)}")
             raise
 
 async def send_response(to_email: str, subject: str, body: str, profile: AutoResponder, image_attachment: Path = None) -> bool:
@@ -103,20 +102,20 @@ async def send_response(to_email: str, subject: str, body: str, profile: AutoRes
                 img = MIMEImage(img_file.read(), name=os.path.basename(image_attachment))
                 message.attach(img)
 
-        logger.debug(f"Sending auto-response to {to_email} concerning {subject} from account {profile.name}...")
+        debug(f"Sending auto-response to {to_email} concerning {subject} from account {profile.name}...")
 
         server = get_smtp_connection(profile)
-        logger.debug(f"SMTP connection established: {type(server)}")
+        debug(f"SMTP connection established: {type(server)}")
         server.login(profile.smtp.username, profile.smtp.password)
         server.send_message(message)
 
-        logger.info(f"Auto-response sent to {to_email} concerning {subject} from account {profile.name}!")
+        info(f"Auto-response sent to {to_email} concerning {subject} from account {profile.name}!")
         return True
 
     except Exception as e:
-        logger.error(f"Error in preparing/sending auto-response from account {profile.name}: {str(e)}")
-        logger.error(f"SMTP details - Host: {profile.smtp.host}, Port: {profile.smtp.port}, Encryption: {profile.smtp.encryption}")
-        logger.error(traceback.format_exc())
+        err(f"Error in preparing/sending auto-response from account {profile.name}: {str(e)}")
+        err(f"SMTP details - Host: {profile.smtp.host}, Port: {profile.smtp.port}, Encryption: {profile.smtp.encryption}")
+        err(traceback.format_exc())
         return False
 
     finally:
@@ -124,7 +123,7 @@ async def send_response(to_email: str, subject: str, body: str, profile: AutoRes
             try:
                 server.quit()
             except Exception as e:
-                logger.error(f"Error closing SMTP connection: {str(e)}")
+                err(f"Error closing SMTP connection: {str(e)}")
 
 
 
@@ -161,15 +160,15 @@ async def process_account_archival(account: EmailAccount):
     while True:
         try:
             processed_uids = await load_processed_uids(summarized_log)
-            logger.debug(f"{len(processed_uids)} emails marked as already summarized are being ignored.")
+            debug(f"{len(processed_uids)} emails marked as already summarized are being ignored.")
             with get_imap_connection(account) as inbox:
                 unread_messages = inbox.messages(unread=True)
-                logger.debug(f"There are {len(unread_messages)} unread messages.")
+                debug(f"There are {len(unread_messages)} unread messages.")
                 for uid, message in unread_messages:
                     uid_str = uid.decode() if isinstance(uid, bytes) else str(uid)
                     if uid_str not in processed_uids:
                         recipients = [EmailContact(email=recipient['email'], name=recipient.get('name', '')) for recipient in message.sent_to]
-                        localized_datetime = await loc.dt(message.date)
+                        localized_datetime = await gis.dt(message.date)
                         this_email = IncomingEmail(
                             sender=message.sent_from[0]['email'],
                             datetime_received=localized_datetime,
@@ -184,13 +183,13 @@ async def process_account_archival(account: EmailAccount):
                         save_success = await save_email(md_path, md_content)
                         if save_success:
                             await save_processed_uid(summarized_log, account.name, uid_str)
-                            logger.info(f"Summarized email: {uid_str}")
+                            info(f"Summarized email: {uid_str}")
                         else:
-                            logger.warning(f"Failed to summarize {this_email.subject}")
+                            warn(f"Failed to summarize {this_email.subject}")
                     else:
-                        logger.debug(f"Skipping {uid_str} because it was already processed.")
+                        debug(f"Skipping {uid_str} because it was already processed.")
         except Exception as e:
-            logger.error(f"An error occurred during summarization for account {account.name}: {e}")
+            err(f"An error occurred during summarization for account {account.name}: {e}")
         
         await asyncio.sleep(account.refresh)
 
@@ -236,7 +235,7 @@ tags:
         return markdown_content
     
     except Exception as e:
-        logger.error(f"Exception: {e}")
+        err(f"Exception: {e}")
         return False
     
 async def save_email(md_path, md_content):
@@ -244,14 +243,14 @@ async def save_email(md_path, md_content):
         with open(md_path, 'w', encoding='utf-8') as md_file:
             md_file.write(md_content)
 
-        logger.debug(f"Saved markdown to {md_path}")
+        debug(f"Saved markdown to {md_path}")
         return True
     except Exception as e:
-        logger.error(f"Failed to save email: {e}")
+        err(f"Failed to save email: {e}")
         return False
 
 def get_matching_autoresponders(this_email: IncomingEmail, account: EmailAccount) -> List[AutoResponder]:
-    logger.debug(f"Called get_matching_autoresponders for email \"{this_email.subject},\" account name \"{account.name}\"")
+    debug(f"Called get_matching_autoresponders for email \"{this_email.subject},\" account name \"{account.name}\"")
     def matches_list(item: str, this_email: IncomingEmail) -> bool:
         if '@' in item:
             return item in this_email.sender
@@ -262,12 +261,12 @@ def get_matching_autoresponders(this_email: IncomingEmail, account: EmailAccount
         whitelist_match = not profile.whitelist or any(matches_list(item, this_email) for item in profile.whitelist)
         blacklist_match = any(matches_list(item, this_email) for item in profile.blacklist)
         if whitelist_match and not blacklist_match:
-            logger.debug(f"We have a match for {whitelist_match} and no blacklist matches.")
+            debug(f"We have a match for {whitelist_match} and no blacklist matches.")
             matching_profiles.append(profile)
         elif whitelist_match and blacklist_match:
-            logger.debug(f"Matched whitelist for {whitelist_match}, but also matched blacklist for {blacklist_match}")
+            debug(f"Matched whitelist for {whitelist_match}, but also matched blacklist for {blacklist_match}")
         else:
-            logger.debug(f"No whitelist or blacklist matches.")
+            debug(f"No whitelist or blacklist matches.")
     return matching_profiles
 
 
@@ -278,30 +277,30 @@ async def process_account_autoresponding(account: EmailAccount):
     while True:
         try:
             processed_uids = await load_processed_uids(EMAIL_AUTORESPONSE_LOG)
-            logger.debug(f"{len(processed_uids)} emails marked as already responded to are being ignored.")
+            debug(f"{len(processed_uids)} emails marked as already responded to are being ignored.")
 
             with get_imap_connection(account) as inbox:
                 unread_messages = inbox.messages(unread=True)
-                logger.debug(f"There are {len(unread_messages)} unread messages.")
+                debug(f"There are {len(unread_messages)} unread messages.")
 
                 for uid, message in unread_messages:
                     uid_str = uid.decode() if isinstance(uid, bytes) else str(uid)
                     if uid_str not in processed_uids:
                         await autorespond_single_email(message, uid_str, account, EMAIL_AUTORESPONSE_LOG)
                     else:
-                        logger.debug(f"Skipping {uid_str} because it was already processed.")
+                        debug(f"Skipping {uid_str} because it was already processed.")
 
         except Exception as e:
-            logger.error(f"An error occurred during auto-responding for account {account.name}: {e}")
+            err(f"An error occurred during auto-responding for account {account.name}: {e}")
         
         await asyncio.sleep(account.refresh)
 
 async def autorespond_single_email(message, uid_str: str, account: EmailAccount, log_file: Path):
     this_email = await create_incoming_email(message)
-    logger.debug(f"Evaluating {this_email.subject} for autoresponse-worthiness...")
+    debug(f"Evaluating {this_email.subject} for autoresponse-worthiness...")
     
     matching_profiles = get_matching_autoresponders(this_email, account)
-    logger.debug(f"Matching profiles: {matching_profiles}")
+    debug(f"Matching profiles: {matching_profiles}")
 
     for profile in matching_profiles:
         response_body = await generate_response(this_email, profile, account)
@@ -311,18 +310,18 @@ async def autorespond_single_email(message, uid_str: str, account: EmailAccount,
             jpg_path = await img.workflow(profile.image_prompt, earlyout=False, downscale_to_fit=True) if profile.image_prompt else None
             success = await send_response(this_email.sender, subject, response_body, profile, jpg_path)
             if success:
-                logger.warning(f"Auto-responded to email: {this_email.subject}")
+                warn(f"Auto-responded to email: {this_email.subject}")
                 await save_processed_uid(log_file, account.name, uid_str)
             else:
-                logger.warning(f"Failed to send auto-response to {this_email.subject}")
+                warn(f"Failed to send auto-response to {this_email.subject}")
         else:
-            logger.warning(f"Unable to generate auto-response for {this_email.subject}")
+            warn(f"Unable to generate auto-response for {this_email.subject}")
 
 async def generate_response(this_email: IncomingEmail, profile: AutoResponder, account: EmailAccount) -> Optional[str]:
-    logger.info(f"Generating auto-response to {this_email.subject} with profile: {profile.name}")
+    info(f"Generating auto-response to {this_email.subject} with profile: {profile.name}")
 
-    now = await loc.dt(dt_datetime.now())
-    then = await loc.dt(this_email.datetime_received)
+    now = await gis.dt(dt_datetime.now())
+    then = await gis.dt(this_email.datetime_received)
     age = now - then
     usr_prompt = f'''
 Generate a personalized auto-response to the following email:
@@ -337,7 +336,7 @@ Respond on behalf of {account.fullname}, who is unable to respond personally bec
     
     try:
         response = await llm.query_ollama(usr_prompt, sys_prompt, profile.ollama_model, 400)
-        logger.debug(f"query_ollama response: {response}")
+        debug(f"query_ollama response: {response}")
         
         if isinstance(response, dict) and "message" in response and "content" in response["message"]:
             response = response["message"]["content"]
@@ -345,14 +344,14 @@ Respond on behalf of {account.fullname}, who is unable to respond personally bec
         return response + "\n\n"
         
     except Exception as e:
-        logger.error(f"Error generating auto-response: {str(e)}")
+        err(f"Error generating auto-response: {str(e)}")
         return None
 
 
 
 async def create_incoming_email(message) -> IncomingEmail:
     recipients = [EmailContact(email=recipient['email'], name=recipient.get('name', '')) for recipient in message.sent_to]
-    localized_datetime = await loc.dt(message.date)
+    localized_datetime = await gis.dt(message.date)
     return IncomingEmail(
         sender=message.sent_from[0]['email'],
         datetime_received=localized_datetime,
@@ -371,7 +370,6 @@ async def load_processed_uids(filename: Path) -> Set[str]:
 async def save_processed_uid(filename: Path, account_name: str, uid: str):
     async with aiofiles.open(filename, 'a') as f:
         await f.write(f"{account_name}:{uid}\n")
-
 
 async def process_all_accounts():
     email_accounts = load_email_accounts(EMAIL_CONFIG)
