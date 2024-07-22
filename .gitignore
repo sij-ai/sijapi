@@ -8,6 +8,8 @@ sijapi/data/db/
 sijapi/data/img/workflows/private
 sijapi/data/*.pbf
 sijapi/data/geonames.txt
+sijapi/data/*.json
+sijapi/data/*.geojson
 sijapi/data/img/images/
 sijapi/config/*.yaml
 sijapi/config/MS365/
@@ -24,6 +26,7 @@ r2r/
 **/.DS_Store
 **/*.ics
 **/*.sqlite
+**/*.geojson
 **/private/
 **/*sync-conflict*.*
 **/*.db
