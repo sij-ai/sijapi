@@ -12,6 +12,11 @@ from sijapi import L, API, TS_ID, SUBNET_BROADCAST
 
 health = APIRouter(tags=["public", "trusted", "private"])
 logger = L.get_module_logger("health")
+def debug(text: str): logger.debug(text)
+def info(text: str): logger.info(text)
+def warn(text: str): logger.warning(text)
+def err(text: str): logger.error(text)
+def crit(text: str): logger.critical(text)
 
 @health.get("/health")
 def get_health():
@@ -49,7 +54,7 @@ async def get_wan_ip():
             wan_info = response.json()
             return wan_info.get('ip', 'Unavailable')
         except Exception as e:
-            logger.error(f"Error fetching WAN IP: {e}")
+            err(f"Error fetching WAN IP: {e}")
             return "Unavailable"
 
 @health.get("/ts_ip")

@@ -14,42 +14,46 @@ from dateutil.parser import isoparse as parse_iso
 import threading
 from typing import Dict, List, Any
 from datetime import datetime, timedelta
-from Foundation import NSDate, NSRunLoop
-import EventKit as EK
+
 from sijapi import L, ICAL_TOGGLE, ICALENDARS, MS365_TOGGLE, MS365_CLIENT_ID, MS365_SECRET, MS365_AUTHORITY_URL, MS365_SCOPE, MS365_REDIRECT_PATH, MS365_TOKEN_PATH
-from sijapi.routers import loc
+from sijapi.routers import gis
 
 cal = APIRouter()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/token")
 timeout = httpx.Timeout(12)
 logger = L.get_module_logger("cal")
+def debug(text: str): logger.debug(text)
+def info(text: str): logger.info(text)
+def warn(text: str): logger.warning(text)
+def err(text: str): logger.error(text)
+def crit(text: str): logger.critical(text)
 
 if MS365_TOGGLE is True:
-    logger.critical(f"Visit https://api.sij.ai/o365/login to obtain your Microsoft 365 authentication token.")
+    crit(f"Visit https://api.sij.ai/o365/login to obtain your Microsoft 365 authentication token.")
 
     @cal.get("/o365/login")
     async def login():
-        logger.debug(f"Received request to /o365/login")
-        logger.debug(f"SCOPE: {MS365_SCOPE}")
+        debug(f"Received request to /o365/login")
+        debug(f"SCOPE: {MS365_SCOPE}")
         if not MS365_SCOPE:
-            logger.error("No scopes defined for authorization.")
+            err("No scopes defined for authorization.")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="No scopes defined for authorization."
             )
         authorization_url = f"{MS365_AUTHORITY_URL}/oauth2/v2.0/authorize?client_id={MS365_CLIENT_ID}&response_type=code&redirect_uri={MS365_REDIRECT_PATH}&scope={'+'.join(MS365_SCOPE)}"
-        logger.info(f"Redirecting to authorization URL: {authorization_url}")
+        info(f"Redirecting to authorization URL: {authorization_url}")
         return RedirectResponse(authorization_url)
 
     @cal.get("/o365/oauth_redirect")
     async def oauth_redirect(code: str = None, error: str = None):
-        logger.debug(f"Received request to /o365/oauth_redirect")
+        debug(f"Received request to /o365/oauth_redirect")
         if error:
-            logger.error(f"OAuth2 Error: {error}")
+            err(f"OAuth2 Error: {error}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST, detail="OAuth2 Error"
             )
-        logger.info(f"Requesting token with authorization code: {code}")
+        info(f"Requesting token with authorization code: {code}")
         token_url = f"{MS365_AUTHORITY_URL}/oauth2/v2.0/token"
         data = {
             "client_id": MS365_CLIENT_ID,
@@ -60,15 +64,15 @@ if MS365_TOGGLE is True:
         }
         async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.post(token_url, data=data)
-        logger.debug(f"Token endpoint response status code: {response.status_code}")
-        logger.info(f"Token endpoint response text: {response.text}")
+        debug(f"Token endpoint response status code: {response.status_code}")
+        info(f"Token endpoint response text: {response.text}")
         result = response.json()
         if 'access_token' in result:
             await save_token(result)
-            logger.info("Access token obtained successfully")
+            info("Access token obtained successfully")
             return {"message": "Access token stored successfully"}
         else:
-            logger.critical(f"Failed to obtain access token. Response: {result}")
+            crit(f"Failed to obtain access token. Response: {result}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to obtain access token"
@@ -76,7 +80,7 @@ if MS365_TOGGLE is True:
 
     @cal.get("/o365/me")
     async def read_items():
-        logger.debug(f"Received request to /o365/me")
+        debug(f"Received request to /o365/me")
         token = await load_token()
         if not token:
             raise HTTPException(
@@ -89,10 +93,10 @@ if MS365_TOGGLE is True:
             response = await client.get(graph_url, headers=headers)
         if response.status_code == 200:
             user = response.json()
-            logger.info(f"User retrieved: {user}")
+            info(f"User retrieved: {user}")
             return user
         else:
-            logger.error("Invalid or expired token")
+            err("Invalid or expired token")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid or expired token",
@@ -100,14 +104,14 @@ if MS365_TOGGLE is True:
             )
         
     async def save_token(token):
-        logger.debug(f"Saving token: {token}")
+        debug(f"Saving token: {token}")
         try:
             token["expires_at"] = int(time.time()) + token["expires_in"]
             with open(MS365_TOKEN_PATH, "w") as file:
                 json.dump(token, file)
-                logger.debug(f"Saved token to {MS365_TOKEN_PATH}")
+                debug(f"Saved token to {MS365_TOKEN_PATH}")
         except Exception as e:
-            logger.error(f"Failed to save token: {e}")
+            err(f"Failed to save token: {e}")
 
     async def load_token():
         if os.path.exists(MS365_TOKEN_PATH):
@@ -115,21 +119,21 @@ if MS365_TOGGLE is True:
                 with open(MS365_TOKEN_PATH, "r") as file:
                     token = json.load(file)
             except FileNotFoundError:
-                logger.error("Token file not found.")
+                err("Token file not found.")
                 return None
             except json.JSONDecodeError:
-                logger.error("Failed to decode token JSON")
+                err("Failed to decode token JSON")
                 return None
             
             if token:
                 token["expires_at"] = int(time.time()) + token["expires_in"]
-                logger.debug(f"Loaded token: {token}")  # Add this line to log the loaded token
+                debug(f"Loaded token: {token}")  # Add this line to log the loaded token
                 return token
             else:
-                logger.debug("No token found.")
+                debug("No token found.")
                 return None
         else:
-            logger.error(f"No file found at {MS365_TOKEN_PATH}")
+            err(f"No file found at {MS365_TOKEN_PATH}")
             return None
 
 
@@ -159,64 +163,137 @@ if MS365_TOGGLE is True:
             response = await client.post(token_url, data=data)
         result = response.json()
         if "access_token" in result:
-            logger.info("Access token refreshed successfully")
+            info("Access token refreshed successfully")
             return result
         else:
-            logger.error("Failed to refresh access token")
+            err("Failed to refresh access token")
             return None
 
 
     async def refresh_token():
         token = await load_token()
         if not token:
-            logger.error("No token found in storage")
+            err("No token found in storage")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="No token found",
             )
 
         if 'refresh_token' not in token:
-            logger.error("Refresh token not found in the loaded token")
+            err("Refresh token not found in the loaded token")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Refresh token not found",
             )
 
         refresh_token = token['refresh_token']
-        logger.debug("Found refresh token, attempting to refresh access token")
+        debug("Found refresh token, attempting to refresh access token")
 
         new_token = await get_new_token_with_refresh_token(refresh_token)
         
         if new_token:
             await save_token(new_token)
-            logger.info("Token refreshed and saved successfully")
+            info("Token refreshed and saved successfully")
         else:
-            logger.error("Failed to refresh token")
+            err("Failed to refresh token")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to refresh token",
             )
 
+if ICAL_TOGGLE is True:
+    from Foundation import NSDate, NSRunLoop
+    import EventKit as EK
 
-def get_calendar_ids() -> Dict[str, str]:
-    event_store = EK.EKEventStore.alloc().init()
-    all_calendars = event_store.calendarsForEntityType_(0)  # 0 corresponds to EKEntityTypeEvent
+    # Helper to convert datetime to NSDate
+    def datetime_to_nsdate(dt: datetime) -> NSDate:
+        return NSDate.dateWithTimeIntervalSince1970_(dt.timestamp())
 
-    calendar_identifiers = {
-        calendar.title() : calendar.calendarIdentifier() for calendar in all_calendars
-    }
-    logger.debug(f"{calendar_identifiers}")
-    return calendar_identifiers
+    def get_calendar_ids() -> Dict[str, str]:
+        event_store = EK.EKEventStore.alloc().init()
+        all_calendars = event_store.calendarsForEntityType_(0)  # 0 corresponds to EKEntityTypeEvent
 
-# Helper to convert datetime to NSDate
-def datetime_to_nsdate(dt: datetime) -> NSDate:
-    return NSDate.dateWithTimeIntervalSince1970_(dt.timestamp())
+        calendar_identifiers = {
+            calendar.title() : calendar.calendarIdentifier() for calendar in all_calendars
+        }
+        debug(f"{calendar_identifiers}")
+        return calendar_identifiers
 
+    def get_macos_calendar_events(start_date: datetime, end_date: datetime, calendar_ids: List[str] = None) -> List[Dict]:
+        event_store = EK.EKEventStore.alloc().init()
+
+        # Request access to EventKit
+        def request_access() -> bool:
+            access_granted = []
+
+            def completion_handler(granted, error):
+                if error is not None:
+                    err(f"Error: {error}")
+                access_granted.append(granted)
+                with access_granted_condition:
+                    access_granted_condition.notify()
+
+            access_granted_condition = threading.Condition()
+            with access_granted_condition:
+                event_store.requestAccessToEntityType_completion_(0, completion_handler)  # 0 corresponds to EKEntityTypeEvent
+                access_granted_condition.wait(timeout=10)
+                if access_granted:
+                    return access_granted[0]
+                else:
+                    err("Request access timed out or failed")
+                    return False
+
+        if not request_access():
+            err("Access to calendar data was not granted")
+            return []
+
+        ns_start_date = datetime_to_nsdate(start_date)
+        ns_end_date = datetime_to_nsdate(end_date)
+
+        # Retrieve all calendars
+        all_calendars = event_store.calendarsForEntityType_(0)  # 0 corresponds to EKEntityTypeEvent
+        if calendar_ids:
+            selected_calendars = [cal for cal in all_calendars if cal.calendarIdentifier() in calendar_ids]
+        else:
+            selected_calendars = all_calendars
+
+        # Filtering events by selected calendars
+        predicate = event_store.predicateForEventsWithStartDate_endDate_calendars_(ns_start_date, ns_end_date, selected_calendars)
+        events = event_store.eventsMatchingPredicate_(predicate)
+
+        event_list = []
+        for event in events:
+            # Check if event.attendees() returns None
+            if event.attendees():
+                attendees = [{'name': att.name(), 'email': att.emailAddress()} for att in event.attendees() if att.emailAddress()]
+            else:
+                attendees = []
+
+            # Format the start and end dates properly
+            start_date_str = event.startDate().descriptionWithLocale_(None)
+            end_date_str = event.endDate().descriptionWithLocale_(None)
+
+            event_data = {
+                "subject": event.title(),
+                "id": event.eventIdentifier(),
+                "start": start_date_str,
+                "end": end_date_str,
+                "bodyPreview": event.notes() if event.notes() else '',
+                "attendees": attendees,
+                "location": event.location() if event.location() else '',
+                "onlineMeetingUrl": '',  # Defaulting to empty as macOS EventKit does not provide this
+                "showAs": 'busy',  # Default to 'busy'
+                "isAllDay": event.isAllDay()
+            }
+
+            event_list.append(event_data)
+
+        return event_list
 
 @cal.get("/events")
 async def get_events_endpoint(start_date: str, end_date: str):
-    start_dt = await loc.dt(start_date)
-    end_dt = await loc.dt(end_date)
+    start_dt = await gis.dt(start_date)
+    end_dt = await gis.dt(end_date)
     datetime.strptime(start_date, "%Y-%m-%d") or datetime.now()
     end_dt = datetime.strptime(end_date, "%Y-%m-%d") or datetime.now()
     response = await get_events(start_dt, end_dt)
@@ -236,80 +313,6 @@ async def get_events(start_dt: datetime, end_dt: datetime) -> List:
     parsed_events = await parse_calendar_for_day(start_dt, end_dt, combined_events)
     return parsed_events
 
-
-def get_macos_calendar_events(start_date: datetime, end_date: datetime, calendar_ids: List[str] = None) -> List[Dict]:
-    event_store = EK.EKEventStore.alloc().init()
-
-    # Request access to EventKit
-    def request_access() -> bool:
-        access_granted = []
-
-        def completion_handler(granted, error):
-            if error is not None:
-                logger.error(f"Error: {error}")
-            access_granted.append(granted)
-            # Notify the main thread that the completion handler has executed
-            with access_granted_condition:
-                access_granted_condition.notify()
-
-        access_granted_condition = threading.Condition()
-        with access_granted_condition:
-            event_store.requestAccessToEntityType_completion_(0, completion_handler)  # 0 corresponds to EKEntityTypeEvent
-            # Wait for the completion handler to be called
-            access_granted_condition.wait(timeout=10)
-            # Verify that the handler was called and access_granted is not empty
-            if access_granted:
-                return access_granted[0]
-            else:
-                logger.error("Request access timed out or failed")
-                return False
-
-    if not request_access():
-        logger.error("Access to calendar data was not granted")
-        return []
-
-    ns_start_date = datetime_to_nsdate(start_date)
-    ns_end_date = datetime_to_nsdate(end_date)
-
-    # Retrieve all calendars
-    all_calendars = event_store.calendarsForEntityType_(0)  # 0 corresponds to EKEntityTypeEvent
-    if calendar_ids:
-        selected_calendars = [cal for cal in all_calendars if cal.calendarIdentifier() in calendar_ids]
-    else:
-        selected_calendars = all_calendars
-
-    # Filtering events by selected calendars
-    predicate = event_store.predicateForEventsWithStartDate_endDate_calendars_(ns_start_date, ns_end_date, selected_calendars)
-    events = event_store.eventsMatchingPredicate_(predicate)
-
-    event_list = []
-    for event in events:
-        # Check if event.attendees() returns None
-        if event.attendees():
-            attendees = [{'name': att.name(), 'email': att.emailAddress()} for att in event.attendees() if att.emailAddress()]
-        else:
-            attendees = []
-
-        # Format the start and end dates properly
-        start_date_str = event.startDate().descriptionWithLocale_(None)
-        end_date_str = event.endDate().descriptionWithLocale_(None)
-
-        event_data = {
-            "subject": event.title(),
-            "id": event.eventIdentifier(),
-            "start": start_date_str,
-            "end": end_date_str,
-            "bodyPreview": event.notes() if event.notes() else '',
-            "attendees": attendees,
-            "location": event.location() if event.location() else '',
-            "onlineMeetingUrl": '',  # Defaulting to empty as macOS EventKit does not provide this
-            "showAs": 'busy',  # Default to 'busy'
-            "isAllDay": event.isAllDay()
-        }
-
-        event_list.append(event_data)
-
-    return event_list
 
 async def get_ms365_events(start_date: datetime, end_date: datetime):
     token = await load_token()
@@ -331,7 +334,7 @@ async def get_ms365_events(start_date: datetime, end_date: datetime):
         response = await client.get(graph_url, headers=headers)
 
     if response.status_code != 200:
-        logger.error("Failed to retrieve events from Microsoft 365")
+        err("Failed to retrieve events from Microsoft 365")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve events",
@@ -342,48 +345,48 @@ async def get_ms365_events(start_date: datetime, end_date: datetime):
 
 
 async def parse_calendar_for_day(range_start: datetime, range_end: datetime, events: List[Dict[str, Any]]):
-    range_start = await loc.dt(range_start)
-    range_end = await loc.dt(range_end)
+    range_start = await gis.dt(range_start)
+    range_end = await gis.dt(range_end)
     event_list = []
 
     for event in events:
-        logger.info(f"Event: {event}")
+        info(f"Event: {event}")
         start_str = event.get('start')
         end_str = event.get('end')
 
         if isinstance(start_str, dict):
             start_str = start_str.get('dateTime')
         else:
-            logger.info(f"Start date string not a dict")
+            info(f"Start date string not a dict")
 
         if isinstance(end_str, dict):
             end_str = end_str.get('dateTime')
         else:
-            logger.info(f"End date string not a dict")
+            info(f"End date string not a dict")
 
         try:
-            start_date = await loc.dt(start_str) if start_str else None
+            start_date = await gis.dt(start_str) if start_str else None
         except (ValueError, TypeError) as e:
-            logger.error(f"Invalid start date format: {start_str}, error: {e}")
+            err(f"Invalid start date format: {start_str}, error: {e}")
             continue
 
         try:
-            end_date = await loc.dt(end_str) if end_str else None
+            end_date = await gis.dt(end_str) if end_str else None
         except (ValueError, TypeError) as e:
-            logger.error(f"Invalid end date format: {end_str}, error: {e}")
+            err(f"Invalid end date format: {end_str}, error: {e}")
             continue
 
-        logger.debug(f"Comparing {start_date} with range {range_start} to {range_end}")
+        debug(f"Comparing {start_date} with range {range_start} to {range_end}")
 
         if start_date:
             # Ensure start_date is timezone-aware
-            start_date = await loc.dt(start_date)
+            start_date = await gis.dt(start_date)
             
             # If end_date is not provided, assume it's the same as start_date
             if not end_date:
                 end_date = start_date
             else:
-                end_date = await loc.dt(end_date)
+                end_date = await gis.dt(end_date)
             
             # Check if the event overlaps with the given range
             if (start_date < range_end) and (end_date > range_start):
@@ -405,11 +408,11 @@ async def parse_calendar_for_day(range_start: datetime, range_end: datetime, eve
                     "busy": event.get('showAs', '') in ['busy', 'tentative'],
                     "all_day": event.get('isAllDay', False)
                 }
-                logger.info(f"Event_data: {event_data}")
+                info(f"Event_data: {event_data}")
                 event_list.append(event_data)
             else:
-                logger.debug(f"Event outside of specified range: {start_date} to {end_date}")
+                debug(f"Event outside of specified range: {start_date} to {end_date}")
         else:
-            logger.error(f"Invalid or missing start date for event: {event.get('id', 'Unknown ID')}")
+            err(f"Invalid or missing start date for event: {event.get('id', 'Unknown ID')}")
 
     return event_list

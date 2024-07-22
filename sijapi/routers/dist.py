@@ -9,6 +9,11 @@ from sijapi import L, REBOOT_SCRIPT_PATH, HOST_CONFIG, API_CONFIG
 
 dist = APIRouter()
 logger = L.get_module_logger("dist")
+def debug(text: str): logger.debug(text)
+def info(text: str): logger.info(text)
+def warn(text: str): logger.warning(text)
+def err(text: str): logger.error(text)
+def crit(text: str): logger.critical(text)
 
 @dist.get("/update-restart-others")
 async def update_and_restart_others():
@@ -32,10 +37,10 @@ async def update_and_restart_self(safe: bool = True):
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
         )
         stdout, stderr = await process.communicate()
-        logger.info(f"Update and restart initiated for self. Stdout: {stdout.decode()}. Stderr: {stderr.decode()}")
+        info(f"Update and restart initiated for self. Stdout: {stdout.decode()}. Stderr: {stderr.decode()}")
         return {"message": "Update and restart process initiated for this server."}
     except Exception as e:
-        logger.error(f"Failed to initiate update and restart for self: {str(e)}")
+        err(f"Failed to initiate update and restart for self: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to initiate update and restart: {str(e)}")
 
 @dist.get("/update-and-restart-all")
@@ -56,5 +61,5 @@ async def ensure_redundancy():
                             redundancy = True
                             break
                 except aiohttp.ClientError:
-                    logger.warning(f"Failed to check health of server {server.id}")
+                    warn(f"Failed to check health of server {server.id}")
     return redundancy

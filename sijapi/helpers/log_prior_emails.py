@@ -43,7 +43,7 @@ async def process_all_emails(account: EmailAccount, summarized_log: Path, autore
             
             L.INFO(f"Processed {processed_count} non-unread emails for account {account.name}")
     except Exception as e:
-        L.ERR(f"An error occurred while processing emails for account {account.name}: {e}")
+        L.logger.error(f"An error occurred while processing emails for account {account.name}: {e}")
 
 async def main():
     email_accounts = email.load_email_accounts(EMAIL_CONFIG)

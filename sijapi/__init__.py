@@ -1,16 +1,12 @@
 # __init__.py
 import os
-import json
-import yaml
 from pathlib import Path
 import ipaddress
 import multiprocessing
 from dotenv import load_dotenv
 from dateutil import tz
 from pathlib import Path
-from pydantic import BaseModel
-from typing import List, Optional
-from .classes import AutoResponder, IMAPConfig, SMTPConfig, EmailAccount, EmailContact, IncomingEmail, Database, Geocoder, APIConfig, Configuration
+from .classes import Database, Geocoder, APIConfig, Configuration
 from .logs import Logger
 
 # INITIALization
@@ -25,15 +21,15 @@ L = Logger("Central", LOGS_DIR)
 # API essentials
 API = APIConfig.load('api', 'secrets')
 Dir = Configuration.load('dirs')
-HOST = f"{API.BIND}:{API.PORT}" 
+HOST = f"{API.BIND}:{API.PORT}"
 LOCAL_HOSTS = [ipaddress.ip_address(localhost.strip()) for localhost in os.getenv('LOCAL_HOSTS', '127.0.0.1').split(',')] + ['localhost']
 SUBNET_BROADCAST = os.getenv("SUBNET_BROADCAST", '10.255.255.255')
 MAX_CPU_CORES = min(int(os.getenv("MAX_CPU_CORES", int(multiprocessing.cpu_count()/2))), multiprocessing.cpu_count())
 
 DB = Database.from_env()
-
-News = Configuration.load('news', 'secrets')
 IMG = Configuration.load('img', 'secrets')
+News = Configuration.load('news', 'secrets')
+Scrape = Configuration.load('scrape', 'secrets', Dir)
 
 # Directories & general paths
 ROUTER_DIR = BASE_DIR / "routers"
@@ -98,7 +94,6 @@ SUMMARY_TOKEN_LIMIT = int(os.getenv("SUMMARY_TOKEN_LIMIT", 16384))
 SUMMARY_INSTRUCT = os.getenv('SUMMARY_INSTRUCT', "You are an AI assistant that provides accurate summaries of text -- nothing more and nothing less. You must not include ANY extraneous text other than the sumary. Do not include comments apart from the summary, do not preface the summary, and do not provide any form of postscript. Do not add paragraph breaks. Do not add any kind of formatting. Your response should begin with, consist of, and end with an accurate plaintext summary.")
 SUMMARY_INSTRUCT_TTS = os.getenv('SUMMARY_INSTRUCT_TTS', "You are an AI assistant that provides email summaries for Sanjay. Your response will undergo Text-To-Speech conversion and added to Sanjay's private podcast. Providing adequate context (Sanjay did not send this question to you, he will only hear your response) but aiming for conciseness and precision, and bearing in mind the Text-To-Speech conversion (avoiding acronyms and formalities), summarize the following email.")
 
-
 # Stable diffusion
 IMG_DIR = DATA_DIR / "img" / "images"
 os.makedirs(IMG_DIR, exist_ok=True)
@@ -129,7 +124,6 @@ os.makedirs(TTS_OUTPUT_DIR, exist_ok=True)
 TTS_SEGMENTS_DIR = TTS_DIR / 'segments'
 os.makedirs(TTS_SEGMENTS_DIR, exist_ok=True)
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
-
 
 # Calendar & email account
 MS365_TOGGLE = True if os.getenv("MS365_TOGGLE") == "True" else False
@@ -185,18 +179,16 @@ CADDY_API_KEY = os.getenv("CADDY_API_KEY")
 # Microsoft Graph
 MS365_CLIENT_ID = os.getenv('MS365_CLIENT_ID')
 MS365_SECRET = os.getenv('MS365_SECRET')
-MS365_TENANT_ID = os.getenv('MS365_TENANT_ID') 
+MS365_TENANT_ID = os.getenv('MS365_TENANT_ID')
 MS365_CERT_PATH = CONFIG_DIR / 'MS365' / '.cert.pem' # deprecated
-MS365_KEY_PATH = CONFIG_DIR / 'MS365' / '.cert.key' # deprecated  
+MS365_KEY_PATH = CONFIG_DIR / 'MS365' / '.cert.key' # deprecated
 MS365_KEY = MS365_KEY_PATH.read_text()
 MS365_TOKEN_PATH = CONFIG_DIR / 'MS365' / '.token.txt'
 MS365_THUMBPRINT = os.getenv('MS365_THUMBPRINT')
-
 MS365_LOGIN_URL = os.getenv("MS365_LOGIN_URL", "https://login.microsoftonline.com")
 MS365_AUTHORITY_URL = f"{MS365_LOGIN_URL}/{MS365_TENANT_ID}"
 MS365_REDIRECT_PATH = os.getenv("MS365_REDIRECT_PATH", "https://api.sij.ai/o365/oauth_redirect")
 MS365_SCOPE = os.getenv("MS365_SCOPE", 'Calendars.Read,Calendars.ReadWrite,offline_access').split(',')
-
 
 # Maintenance
 GARBAGE_COLLECTION_INTERVAL = 60 * 60  # Run cleanup every hour

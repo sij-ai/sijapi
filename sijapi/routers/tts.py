@@ -31,6 +31,12 @@ from sijapi.utilities import sanitize_filename
 ### INITIALIZATIONS ###
 tts = APIRouter(tags=["trusted", "private"])
 logger = L.get_module_logger("tts")
+def debug(text: str): logger.debug(text)
+def info(text: str): logger.info(text)
+def warn(text: str): logger.warning(text)
+def err(text: str): logger.error(text)
+def crit(text: str): logger.critical(text)
+
 DEVICE = torch.device('cpu')
 MODEL_NAME = "tts_models/multilingual/multi-dataset/xtts_v2"
 
@@ -47,7 +53,7 @@ async def list_11l_voices():
     async with httpx.AsyncClient() as client:
         try:
             response = await client.get(url, headers=headers)
-            logger.debug(f"Response: {response}")
+            debug(f"Response: {response}")
             if response.status_code == 200:
                 voices_data = response.json().get("voices", [])
                 formatted_list = ""
@@ -57,7 +63,7 @@ async def list_11l_voices():
                     formatted_list += f"{name}: `{id}`\n"
 
         except Exception as e:
-            logger.error(f"Error determining voice ID: {str(e)}")
+            err(f"Error determining voice ID: {str(e)}")
 
     return PlainTextResponse(formatted_list, status_code=200)   
      
@@ -67,18 +73,18 @@ async def select_voice(voice_name: str) -> str:
     try:
         # Case Insensitive comparison
         voice_name_lower = voice_name.lower()
-        logger.debug(f"Looking for {voice_name_lower}")
+        debug(f"Looking for {voice_name_lower}")
         for item in VOICE_DIR.iterdir():
-            logger.debug(f"Checking {item.name.lower()}")
+            debug(f"Checking {item.name.lower()}")
             if item.name.lower() == f"{voice_name_lower}.wav":
-                logger.debug(f"select_voice received query to use voice: {voice_name}. Found {item} inside {VOICE_DIR}.")
+                debug(f"select_voice received query to use voice: {voice_name}. Found {item} inside {VOICE_DIR}.")
                 return str(item)
 
-        logger.error(f"Voice file not found")
+        err(f"Voice file not found")
         raise HTTPException(status_code=404, detail="Voice file not found")
 
     except Exception as e:
-        logger.error(f"Voice file not found: {str(e)}")
+        err(f"Voice file not found: {str(e)}")
         return None
 
 
@@ -113,8 +119,8 @@ async def generate_speech_endpoint(
         else:
             return await generate_speech(bg_tasks, text_content, voice, voice_file, model, speed, podcast)
     except Exception as e:
-        logger.error(f"Error in TTS: {str(e)}")
-        logger.error(traceback.format_exc())
+        err(f"Error in TTS: {str(e)}")
+        err(traceback.format_exc())
         raise HTTPException(status_code=666, detail="error in TTS")
 
 async def generate_speech(
@@ -136,18 +142,20 @@ async def generate_speech(
         model = model if model else await get_model(voice, voice_file)
         title = title if title else "TTS audio"
         output_path = output_dir / f"{dt_datetime.now().strftime('%Y%m%d%H%M%S')} {title}.wav"
+        
         if model == "eleven_turbo_v2":
-            logger.info("Using ElevenLabs.")
+            info("Using ElevenLabs.")
             audio_file_path = await elevenlabs_tts(model, text, voice, title, output_dir)
-        else: # if model == "xtts":
-            logger.info("Using XTTS2")
+        else:  # if model == "xtts":
+            info("Using XTTS2")
             audio_file_path = await local_tts(text, speed, voice, voice_file, podcast, bg_tasks, title, output_path)
-        #else:
-        #    raise HTTPException(status_code=400, detail="Invalid model specified")
 
-        if podcast == True:
-            podcast_path = Path(PODCAST_DIR) / audio_file_path.name
-            logger.debug(f"Podcast path: {podcast_path}")
+        if not audio_file_path:
+            raise ValueError("TTS generation failed: audio_file_path is empty or None")
+
+        if podcast:
+            podcast_path = Path(PODCAST_DIR) / Path(audio_file_path).name
+            debug(f"Podcast path: {podcast_path}")
             shutil.copy(str(audio_file_path), str(podcast_path))
             bg_tasks.add_task(os.remove, str(audio_file_path))
             return str(podcast_path)
@@ -155,8 +163,9 @@ async def generate_speech(
         return str(audio_file_path)
 
     except Exception as e:
-        logger.error(f"Failed to generate speech: {str(e)}")
+        err(f"Failed to generate speech: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to generate speech: {str(e)}")
+
 
 
 
@@ -171,7 +180,7 @@ async def get_model(voice: str = None, voice_file: UploadFile = None):
         raise HTTPException(status_code=400, detail="No model or voice specified")
 
 async def determine_voice_id(voice_name: str) -> str:
-    logger.debug(f"Searching for voice id for {voice_name}")
+    debug(f"Searching for voice id for {voice_name}")
     
     hardcoded_voices = {
         "alloy": "E3A1KVbKoWSIKSZwSUsW",
@@ -188,23 +197,23 @@ async def determine_voice_id(voice_name: str) -> str:
 
     if voice_name in hardcoded_voices:
         voice_id = hardcoded_voices[voice_name]
-        logger.debug(f"Found voice ID - {voice_id}")
+        debug(f"Found voice ID - {voice_id}")
         return voice_id
 
-    logger.debug(f"Requested voice not among the hardcoded options.. checking with 11L next.")
+    debug(f"Requested voice not among the hardcoded options.. checking with 11L next.")
     url = "https://api.elevenlabs.io/v1/voices"
     headers = {"xi-api-key": ELEVENLABS_API_KEY}
     async with httpx.AsyncClient() as client:
         try:
             response = await client.get(url, headers=headers)
-            logger.debug(f"Response: {response}")
+            debug(f"Response: {response}")
             if response.status_code == 200:
                 voices_data = response.json().get("voices", [])
                 for voice in voices_data:
                     if voice_name == voice["voice_id"] or voice_name == voice["name"]:
                         return voice["voice_id"]
         except Exception as e:
-            logger.error(f"Error determining voice ID: {str(e)}")
+            err(f"Error determining voice ID: {str(e)}")
 
     # as a last fallback, rely on David Attenborough
     return "b42GBisbu9r5m5n6pHF7"
@@ -248,7 +257,7 @@ async def get_text_content(text: Optional[str], file: Optional[UploadFile]) -> s
 
 async def get_voice_file_path(voice: str = None, voice_file: UploadFile = None) -> str:
     if voice:
-        logger.debug(f"Looking for voice: {voice}")
+        debug(f"Looking for voice: {voice}")
         selected_voice = await select_voice(voice)
         return selected_voice
     elif voice_file and isinstance(voice_file, UploadFile):
@@ -277,7 +286,7 @@ async def get_voice_file_path(voice: str = None, voice_file: UploadFile = None) 
         return str(new_file)
     
     else:
-        logger.debug(f"{dt_datetime.now().strftime('%Y%m%d%H%M%S')}: No voice specified or file provided, using default voice: {DEFAULT_VOICE}")
+        debug(f"{dt_datetime.now().strftime('%Y%m%d%H%M%S')}: No voice specified or file provided, using default voice: {DEFAULT_VOICE}")
         selected_voice = await select_voice(DEFAULT_VOICE)
         return selected_voice
 
@@ -315,7 +324,7 @@ async def local_tts(
 
     for i, segment in enumerate(segments):
         segment_file_path = TTS_SEGMENTS_DIR / f"segment_{i}.wav"
-        logger.debug(f"Segment file path: {segment_file_path}")
+        debug(f"Segment file path: {segment_file_path}")
         
         # Run TTS in a separate thread
         await asyncio.to_thread(
@@ -326,7 +335,7 @@ async def local_tts(
             speaker_wav=[voice_file_path],
             language="en"
         )
-        logger.debug(f"Segment file generated: {segment_file_path}")
+        debug(f"Segment file generated: {segment_file_path}")
         
         # Load and combine audio in a separate thread
         segment_audio = await asyncio.to_thread(AudioSegment.from_wav, str(segment_file_path))
@@ -401,7 +410,7 @@ def split_text(text, target_length=35, max_length=50):
 
         if segment_length + len(sentence_words) > max_length:
             segments.append(' '.join(current_segment))
-            logger.debug(f"split_text - segment: {' '.join(current_segment)}, word count: {segment_length}")
+            debug(f"split_text - segment: {' '.join(current_segment)}, word count: {segment_length}")
 
             current_segment = [sentence]
         else:
@@ -409,7 +418,7 @@ def split_text(text, target_length=35, max_length=50):
 
     if current_segment:
         segments.append(' '.join(current_segment))
-        logger.debug(f"split_text - segment: {' '.join(current_segment)}, word count: {len(current_segment)}")
+        debug(f"split_text - segment: {' '.join(current_segment)}, word count: {len(current_segment)}")
 
     return segments
 
@@ -421,7 +430,7 @@ def clean_text_for_tts(text: str) -> str:
         text = re.sub(r'\s+', ' ', text).strip()
         return text
     else:
-        logger.debug(f"No text received.")
+        debug(f"No text received.")
 
 
 

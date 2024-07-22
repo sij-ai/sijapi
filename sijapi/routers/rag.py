@@ -8,6 +8,11 @@ from sijapi import L
 
 rag = APIRouter()
 logger = L.get_module_logger("rag")
+def debug(text: str): logger.debug(text)
+def info(text: str): logger.info(text)
+def warn(text: str): logger.warning(text)
+def err(text: str): logger.error(text)
+def crit(text: str): logger.critical(text)
 
 rag.get("/rag/search")
 async def rag_search_endpoint(query: str, scope: str):

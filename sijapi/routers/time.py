@@ -26,11 +26,18 @@ from collections import defaultdict
 from dotenv import load_dotenv
 from traceback import format_exc
 from sijapi import L, TIMING_API_KEY, TIMING_API_URL
-from sijapi.routers import loc
+from sijapi.routers import gis
 
 
 time = APIRouter(tags=["private"])
 logger = L.get_module_logger("time")
+def debug(text: str): logger.debug(text)
+def info(text: str): logger.info(text)
+def warn(text: str): logger.warning(text)
+def err(text: str): logger.error(text)
+def crit(text: str): logger.critical(text)
+
+
 script_directory = os.path.dirname(os.path.abspath(__file__))
 
 # Configuration constants
@@ -58,17 +65,17 @@ async def post_time_entry_to_timing(entry: Dict):
         'Accept': 'application/json',
         'X-Time-Zone': 'America/Los_Angeles'
     }
-    logger.debug(f"Received entry: {entry}")
+    debug(f"Received entry: {entry}")
     response = None  # Initialize response
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(url, headers=headers, json=entry)
             response.raise_for_status()  # This will only raise for 4xx and 5xx responses
     except httpx.HTTPStatusError as exc:
-        logger.debug(f"HTTPStatusError caught: Status code: {exc.response.status_code}, Detail: {exc.response.text}")
+        debug(f"HTTPStatusError caught: Status code: {exc.response.status_code}, Detail: {exc.response.text}")
         raise HTTPException(status_code=exc.response.status_code, detail=str(exc.response.text))
     except Exception as exc:
-        logger.debug(f"General exception caught: {exc}")
+        debug(f"General exception caught: {exc}")
         raise HTTPException(status_code=500, detail="An unexpected error occurred")
 
     if response:
@@ -97,8 +104,8 @@ def truncate_project_title(title):
 
 
 async def fetch_and_prepare_timing_data(start: datetime, end: Optional[datetime] = None) -> List[Dict]:
-    # start_date = await loc.dt(start)
-    # end_date = await loc.dt(end) if end else None
+    # start_date = await gis.dt(start)
+    # end_date = await gis.dt(end) if end else None
     # Adjust the start date to include the day before and format the end date
     start_date_adjusted = (start - timedelta(days=1)).strftime("%Y-%m-%dT00:00:00")
     end_date_formatted = f"{datetime.strftime(end, '%Y-%m-%d')}T23:59:59" if end else f"{datetime.strftime(start, '%Y-%m-%d')}T23:59:59"
@@ -312,8 +319,8 @@ async def get_timing_markdown3(
 ):
 
     # Fetch and process timing data
-    start = await loc.dt(start_date)
-    end = await loc.dt(end_date) if end_date else None
+    start = await gis.dt(start_date)
+    end = await gis.dt(end_date) if end_date else None
     timing_data = await fetch_and_prepare_timing_data(start, end)
 
     # Retain these for processing Markdown data with the correct timezone
@@ -372,8 +379,8 @@ async def get_timing_markdown(
     start: str = Query(..., regex=r"\d{4}-\d{2}-\d{2}"),
     end: Optional[str] = Query(None, regex=r"\d{4}-\d{2}-\d{2}")
 ):
-    start_date = await loc.dt(start)
-    end_date = await loc.dt(end)
+    start_date = await gis.dt(start)
+    end_date = await gis.dt(end)
     markdown_formatted_data = await process_timing_markdown(start_date, end_date)
 
     return Response(content=markdown_formatted_data, media_type="text/markdown")
@@ -441,8 +448,8 @@ async def get_timing_json(
 ):
 
     # Fetch and process timing data
-    start = await loc.dt(start_date)
-    end = await loc.dt(end_date)
+    start = await gis.dt(start_date)
+    end = await gis.dt(end_date)
     timing_data = await fetch_and_prepare_timing_data(start, end)
 
     # Convert processed data to the required JSON structure
