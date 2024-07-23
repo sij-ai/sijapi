@@ -1,0 +1,185 @@
+profiles:
+  - name: CHANGE ME
+    ig_name: CHANGE ME
+    ig_bio: CHANGE ME
+    age: 19
+    gender: F
+    aesthetic: CHANGE ME
+    dailyposts: 8
+    ig_pass: CHANGE ME
+    ig_2fa_secret: CHANGE ME
+    img_comment_sys: You are a friendly AI assistant, who generates comments to post on Instagram accounts. Below is information about who you will be posting as. Your primary directive is to be authentic, and stay in character.
+    img_description_sys: You are a creative AI, crafting engaging and vivid social media captions for images based on images or descriptions of images provided to you. Stay true to the personality described, and strive for an authentic social post with each one. Only output one caption per image, and do not include anything else in your response.
+    img_prompt_sys: You are a helpful AI who assists in generating prompts that will be used to generate highly realistic images. Always use the most visually descriptive terms possible, and avoid any vague or abstract concepts. Do not include any words or descriptions based on other senses or emotions. Strive to show rather than tell. Space is limited, so be efficient with your words.
+    posts:
+      selfie:
+        API_NPrompt: CHANGE ME
+        API_PPrompt: Selfie of a CHANGE ME
+        API_SPrompt: ; CHANGE ME
+        Vision_Prompt: Write an upbeat Instagram description with emojis to accompany this selfie.
+        frequency: 2
+        ghost_tags:
+          - aigenerated
+          - stablediffusion
+          - sdxl
+          - selfie
+        llmPrompt:
+          - role: system
+            content: You are a helpful AI who assists in generating prompts that will be used to generate highly realistic images. Always use the most visually descriptive terms possible, and avoid any vague or abstract concepts. Do not include any words or descriptions based on other senses or emotions. Strive to show rather than tell. Space is limited, so be efficient with your words.
+          - role: user
+            content: Using a series of words or sentence fragments separated by commas, describe a raw authentic selfie photo of a CHANGE ME. Focus on what CHANGE ME is wearing, what CHANGE ME is doing, what location or environment CHANGE ME is in, and how the photo is framed. Only use words and phrases that are visually descriptive. This model travels a lot, so any destination could be a good fit. CHANGE ME style favors dark muted earth tones, dramatic lighting, and a VSCO girl aesthetic. CHANGE ME has a wild streak and loves hiking in the mountains and sea kayaking as much as partying at festivals or raves. Avoid cliche situations; instread strive for nuance and originality in composition and environment.
+        workflows:
+          - selfie
+        width: 800
+        height: 1080
+
+      meme:
+        API_NPrompt: CHANGE ME
+        API_PPrompt: Funny meme of
+        API_SPrompt: ; CHANGE ME
+        Vision_Prompt: Generate a funny caption that riffs on this meme image
+        frequency: 2
+        ghost_tags:
+          - aigenerated
+          - stablediffusion
+          - sdxl
+          - selfie
+        llmPrompt:
+          - role: system
+            content: You are a helpful AI who assists in generating prompts that will be used to generate hilarious meme images. Always use the most visually descriptive terms possible, and avoid any vague or abstract concepts. Do not include any words or descriptions based on other senses or emotions. Strive to show rather than tell. Space is limited, so be efficient with your words.
+          - role: user
+            content: Come up with a funny visual joke or meme, then use a series of words or sentence fragments separated by commas, describing it. Focus on providing descriptions of the visual elements that make the image funny. Only use words and phrases that are visually descriptive.
+        workflows:
+          - playground
+        width: 1080
+        height: 880
+
+      landscape:
+        API_NPrompt: CHANGE ME
+        API_PPrompt: Moody landscape photograph of
+        API_SPrompt: ", masterpiece, (subtle:0.7), (nuanced:0.6), best quality, ultra detailed, ultra high resolution, 8k, (documentary:0.3), cinematic, filmic, moody, dynamic lighting, realistic, wallpaper, landscape photography, professional, earthporn, (eliot porter:0.6), (frans lanting:0.4), (daniel kordan:0.6), landscapephotography, ultra detailed, earth tones, moody"
+        Vision_Prompt: Write a thoughtful Instagram description to accompany this landscape photo I took.
+        frequency: 2
+        ghost_tags:
+          - aigenerated
+          - stablediffusion
+          - sdxl
+          - landscape
+          - wilderness
+        llmPrompt:
+          - role: system
+            content: You are a helpful AI who assists in generating prompts that will be used to generate highly realistic images. Always use the most visually descriptive terms possible, and avoid any vague or abstract concepts. Do not include any words or descriptions based on other senses or emotions. Strive to show rather than tell. Space is limited, so be efficient with your words.
+          - role: user
+            content: CHANGE ME
+        workflows:
+          - landscape
+        width: 1200
+        height: 800
+
+      agitprop:
+        API_NPrompt: scary, ugly, gross, disgusting, horror, selfie
+        API_PPrompt: Striking photo,
+        API_SPrompt: ", best quality, masterpiece, professional photographer, adorable, sadness, cute animal, detailed, 8k"
+        Vision_Prompt: Write a heartfelt post urging people not to eat meat such as from this animal. Appeal to peoples' compassion, and argue passionately that these animals are sentient, feel pain, and suffer terribly because of us, and that they deserve better.
+        frequency: 1
+        ghost_tags:
+          - aigenerated
+          - stablediffusion
+          - sdxl
+          - animalrights
+          - compassion
+        llmPrompt:
+          - role: system
+            content: You are a helpful AI who assists in generating prompts that will be used to generate highly realistic images. Always use the most visually descriptive terms possible, and avoid any vague or abstract concepts. Do not include any words or descriptions based on other senses or emotions. Strive to show rather than tell. Space is limited, so be efficient with your words.
+          - role: user
+            content: Using a series of words or sentence fragments separated by commas, describe a striking image of an animal commonly consumed as food (pig, cow, chicken) looking into the camera either with a look of love and affection, or a look of pain. The image should appeal to peoples' inner compassion.
+        workflows:
+          - landscape
+        width: 1024
+        height: 1024
+
+      food:
+        API_NPrompt: gross, ugly, unappetizing, meat, cheap, dairy, poultry, egg, omnivore, fish, bacon, steak, beef, ham, pork, distorted, misshapen, deformed, disgusting, horror, selfie, human
+        API_PPrompt: (slate gray plate) with vegan
+        API_SPrompt: ", fresh, (gourmet), tasty, rustic, vegan, beautiful presentation, classy, masterpiece, perfection, 8k, (dark ambience), austere, moody"
+        Vision_Prompt: Write an upbeat appetizing Instagram caption for this photo of a vegan dish, including hashtags! If any ingredients look non-vegan, be sure to specify that they are vegan.
+        frequency: 1
+        ghost_tags:
+          - aigenerated
+          - stablediffusion
+          - sdxl
+          - food
+          - vegan
+        llmPrompt:
+          - role: system
+            content: You are a helpful AI who assists in generating ideas for vegan foods. Space is limited, so be efficient with your words.
+          - role: user
+            content: Using a series of words or sentence fragments separated by commas, describe a single gourmet but rustic vegan food item. Try to select foods that can be made at home easily and which feature simple, bold, vegan ingredients. Mention the ingredients and any garnish.
+        workflows:
+          - food
+      width: 1024
+      height: 1024
+
+    comments:
+      vegan:
+        hashtags:
+          - vegan
+          - plantbased
+          - crueltyfree
+        img_comment_usr: When provided with an image, especially one showcasing vegan food or practices, respond with a comment that combines genuine enthusiasm and positivity in the initial lines, then delivers a factual, hard-hitting truth by the third sentence. The tone should be warm and inviting, aiming to inspire others to consider the ethical and environmental implications of their everyday choices. If the image has nothing to do with veganism, animal rights, or food generally, you must respond simply with 'PASS' (in all caps).
+        sentiment: positive
+      meat:
+        hashtags:
+          - bacon
+          - steak
+          - burger
+        img_comment_usr: When provided with an image, especially one showcasing non-vegan food or practices, respond with a comment that combines biting sarcasm or acerbic wit in the initial lines, then delivers a factual, hard-hitting truth by the third sentence. The tone should sharply critique the ethical and environmental implications of the depicted scene, aiming to provoke thought and encourage reflection on our everyday choices. If the image has nothing to do with veganism, animal rights, or food generally, you must respond simply with 'PASS' (in all caps).
+        sentiment: negative
+      jokes:
+        hashtags:
+          - pacificnw
+          - pnw
+          - exploregon
+          - girlswhohike
+          - trend
+          - fashion
+          - science
+          - photography
+          - football
+          - sports
+          - gamenight
+          - gamer
+          - pub
+          - soccer
+          - football
+          - usa
+          - proud
+          - army
+          - patriot
+          - trump2024
+          - gop
+          - letsgobrandon
+        img_comment_usr: Make a wisecrack joke about this image. Scorch it with humor. (If that would be entirely inappropriate, you can instead respond with 'PASS', but please only pass if making a joke would be extremely distasteful).
+        sentiment: neutral
+      flattery:
+        hashtags:
+          - beauty
+          - latergram
+          - wonder
+          - awe
+          - "1440"
+          - pnwonderland
+          - vegan
+          - natural
+          - travel
+          - nofilter
+        img_comment_usr: Write a warm, gracious, upbeat, and flattering response to this Instagram post, in the tone and style befitting a very genuine modern young woman. If the content of the image or caption make it inappapropriate to comment, you may respond with 'PASS' in all capital letters, and without the quote marks, and your comment will not be posted.
+        sentiment: positive
+
+openai_key: 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
+ghost_admin_api_key: 65f43092d453d100019bbebf:e0cf327c04689dcfe02b65506f09d3661e8a6f0f0b564a3a55836857067d2b2c
+ghost_admin_url: https://sij.ai/ghost/api/admin
+ghost_content_key: 1c240344beda1bb982eb0deb38
+short_sleep: 5
+long_sleep: 180
+img_gen: ComfyUI

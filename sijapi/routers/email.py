@@ -186,8 +186,8 @@ async def process_account_archival(account: EmailAccount):
                             info(f"Summarized email: {uid_str}")
                         else:
                             warn(f"Failed to summarize {this_email.subject}")
-                    else:
-                        debug(f"Skipping {uid_str} because it was already processed.")
+                    # else:
+                    #     debug(f"Skipping {uid_str} because it was already processed.")
         except Exception as e:
             err(f"An error occurred during summarization for account {account.name}: {e}")
         
