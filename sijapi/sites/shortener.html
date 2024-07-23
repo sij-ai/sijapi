@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>sij.ai URL Shortener</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f0f0f0;
+            color: #333;
+        }
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+        }
+        form {
+            display: flex;
+            flex-direction: column;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        input, button {
+            margin: 10px 0;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #2980b9;
+        }
+        .error {
+            color: #e74c3c;
+            background-color: #fadbd8;
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+        .success {
+            color: #27ae60;
+            background-color: #d4efdf;
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+        .success a {
+            color: #2980b9;
+            text-decoration: none;
+        }
+        .success a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <h1>sij.ai URL Shortener</h1>
+    <form action="/s" method="post">
+        <input type="url" name="long_url" placeholder="Enter your long URL" required>
+        <input type="text" name="custom_code" placeholder="Custom code (optional, 3 characters)">
+        <button type="submit">Shorten URL</button>
+    </form>
+    {% if error %}
+    <p class="error">{{ error }}</p>
+    {% endif %}
+    {% if short_url %}
+    <p class="success">Your shortened URL: <a href="{{ short_url }}" target="_blank">{{ short_url }}</a></p>
+    {% endif %}
+</body>
+</html>

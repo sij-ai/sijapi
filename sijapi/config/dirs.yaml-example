@@ -1,0 +1,5 @@
+HOME: ~
+SIJAPI: "{{ HOME }}/workshop/sijapi"
+DATA: "{{ SIJAPI }}/data"
+CONFIG: "{{ SIJAPI }}/config"
+LOGS: "{{ SIJAPI }}/logs"
