@@ -17,6 +17,7 @@ sijapi/local_only/
 sijapi/testbed/
 khoj/
 r2r/
+podcast/sideloads/*
 
 **/.env
 **/.config.yaml
