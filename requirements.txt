@@ -2,7 +2,6 @@ setuptools
 aiofiles
 aiohttp
 asyncpg
-backports.zoneinfo
 elevation
 pydantic
 python-dotenv
@@ -25,8 +24,6 @@ pytesseract
 python-docx
 scipy
 sshtunnel
-click
-aura_sr
 torch
 requests
 instagrapi
@@ -39,9 +36,6 @@ chromadb
 html2text
 markdown
 openai
-EventKit
-Foundation
-tailscale
 folium
 selenium
 webdriver_manager
