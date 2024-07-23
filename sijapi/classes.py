@@ -19,9 +19,18 @@ from datetime import datetime, timedelta, timezone
 from timezonefinder import TimezoneFinder
 from zoneinfo import ZoneInfo
 from srtm import get_data
+from .logs import Logger
+
+L = Logger("classes", "classes")
+logger = L.get_module_logger("classes")
+
+def debug(text: str): logger.debug(text)
+def info(text: str): logger.info(text)
+def warn(text: str): logger.warning(text)
+def err(text: str): logger.error(text)
+def crit(text: str): logger.critical(text)
 
 T = TypeVar('T', bound='Configuration')
-
 class Configuration(BaseModel):
     HOME: Path = Path.home()
     _dir_config: Optional['Configuration'] = None
@@ -158,11 +167,16 @@ class Configuration(BaseModel):
         extra = "allow"
         arbitrary_types_allowed = True
 
-from pydantic import BaseModel, create_model
-from typing import Any, Dict, List, Union
-from pathlib import Path
-import yaml
-import re
+
+class PoolConfig(BaseModel):
+    ts_ip: str
+    ts_id: str
+    wan_ip: str
+    app_port: int
+    db_port: int
+    db_name: str
+    db_user: str
+    db_pass: str
 
 class APIConfig(BaseModel):
     HOST: str
@@ -172,6 +186,7 @@ class APIConfig(BaseModel):
     PUBLIC: List[str]
     TRUSTED_SUBNETS: List[str]
     MODULES: Any  # This will be replaced with a dynamic model
+    POOL: List[Dict[str, Any]]  # This replaces the separate PoolConfig
     EXTENSIONS: Any  # This will be replaced with a dynamic model
     TZ: str
     KEYS: List[str]
@@ -284,6 +299,10 @@ class APIConfig(BaseModel):
         if name in ['MODULES', 'EXTENSIONS']:
             return self.__dict__[name]
         return super().__getattr__(name)
+    
+    @property
+    def local_db(self):
+        return self.POOL[0]
 
     @property
     def active_modules(self) -> List[str]:
@@ -292,6 +311,90 @@ class APIConfig(BaseModel):
     @property
     def active_extensions(self) -> List[str]:
         return [extension for extension, is_active in self.EXTENSIONS.__dict__.items() if is_active]
+    
+    @asynccontextmanager
+    async def get_connection(self, pool_entry: Dict[str, Any] = None):
+        if pool_entry is None:
+            pool_entry = self.local_db
+        
+        conn = await asyncpg.connect(
+            host=pool_entry['ts_ip'],
+            port=pool_entry['db_port'],
+            user=pool_entry['db_user'],
+            password=pool_entry['db_pass'],
+            database=pool_entry['db_name']
+        )
+        try:
+            yield conn
+        finally:
+            await conn.close()
+
+    async def push_changes(self, query: str, *args):
+        connections = []
+        try:
+            for pool_entry in self.POOL[1:]:  # Skip the first (local) database
+                conn = await self.get_connection(pool_entry).__aenter__()
+                connections.append(conn)
+
+            results = await asyncio.gather(
+                *[conn.execute(query, *args) for conn in connections],
+                return_exceptions=True
+            )
+
+            for pool_entry, result in zip(self.POOL[1:], results):
+                if isinstance(result, Exception):
+                    err(f"Failed to push to {pool_entry['ts_ip']}: {str(result)}")
+                else:
+                    err(f"Successfully pushed to {pool_entry['ts_ip']}")
+
+        finally:
+            for conn in connections:
+                await conn.__aexit__(None, None, None)
+
+    async def pull_changes(self, source_pool_entry: Dict[str, Any] = None):
+        if source_pool_entry is None:
+            source_pool_entry = self.POOL[1]  # Default to the second database in the pool
+        
+        logger = Logger("DatabaseReplication")
+        async with self.get_connection(source_pool_entry) as source_conn:
+            async with self.get_connection() as dest_conn:
+                # This is a simplistic approach. You might need a more sophisticated
+                # method to determine what data needs to be synced.
+                tables = await source_conn.fetch(
+                    "SELECT tablename FROM pg_tables WHERE schemaname = 'public'"
+                )
+                for table in tables:
+                    table_name = table['tablename']
+                    await dest_conn.execute(f"TRUNCATE TABLE {table_name}")
+                    rows = await source_conn.fetch(f"SELECT * FROM {table_name}")
+                    if rows:
+                        columns = rows[0].keys()
+                        await dest_conn.copy_records_to_table(
+                            table_name, records=rows, columns=columns
+                        )
+                info(f"Successfully pulled changes from {source_pool_entry['ts_ip']}")
+
+    async def sync_schema(self):
+        source_entry = self.POOL[0]  # Use the local database as the source
+        schema = await self.get_schema(source_entry)
+        for pool_entry in self.POOL[1:]:
+            await self.apply_schema(pool_entry, schema)
+            info(f"Synced schema to {pool_entry['ts_ip']}")
+
+    async def get_schema(self, pool_entry: Dict[str, Any]):
+        async with self.get_connection(pool_entry) as conn:
+            return await conn.fetch("SELECT * FROM information_schema.columns")
+
+    async def apply_schema(self, pool_entry: Dict[str, Any], schema):
+        async with self.get_connection(pool_entry) as conn:
+            # This is a simplified version. You'd need to handle creating/altering tables,
+            # adding/removing columns, changing data types, etc.
+            for table in schema:
+                await conn.execute(f"""
+                    CREATE TABLE IF NOT EXISTS {table['table_name']} (
+                        {table['column_name']} {table['data_type']}
+                    )
+                """)
 
 
 class Location(BaseModel):
