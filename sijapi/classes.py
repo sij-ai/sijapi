@@ -372,6 +372,7 @@ class APIConfig(BaseModel):
             await self.apply_schema_changes(pool_entry, source_schema, target_schema)
             info(f"Synced schema to {pool_entry['ts_ip']}")
 
+
     async def get_schema(self, pool_entry: Dict[str, Any]):
         async with self.get_connection(pool_entry) as conn:
             tables = await conn.fetch("""
@@ -403,64 +404,59 @@ class APIConfig(BaseModel):
 
     async def apply_schema_changes(self, pool_entry: Dict[str, Any], source_schema, target_schema):
         async with self.get_connection(pool_entry) as conn:
-            # Compare and update tables and columns
-            source_tables = {(t['table_name'], t['column_name']): t for t in source_schema['tables']}
-            target_tables = {(t['table_name'], t['column_name']): t for t in target_schema['tables']}
-            
-            for (table_name, column_name), source_column in source_tables.items():
-                if (table_name, column_name) not in target_tables:
-                    await conn.execute(f"""
-                        ALTER TABLE {table_name}
-                        ADD COLUMN {column_name} {source_column['data_type']}
-                        {'' if source_column['is_nullable'] == 'YES' else 'NOT NULL'}
-                        {f"DEFAULT {source_column['column_default']}" if source_column['column_default'] else ''}
-                    """)
+            source_tables = {t['table_name']: t for t in source_schema['tables']}
+            target_tables = {t['table_name']: t for t in target_schema['tables']}
+
+            for table_name, source_table in source_tables.items():
+                if table_name not in target_tables:
+                    columns = [f"\"{t['column_name']}\" {t['data_type']}" +
+                            (f"({t['character_maximum_length']})" if t['character_maximum_length'] else "") +
+                            (" NOT NULL" if t['is_nullable'] == 'NO' else "") +
+                            (f" DEFAULT {t['column_default']}" if t['column_default'] else "")
+                            for t in source_schema['tables'] if t['table_name'] == table_name]
+                    await conn.execute(f'CREATE TABLE "{table_name}" ({", ".join(columns)})')
                 else:
-                    target_column = target_tables[(table_name, column_name)]
-                    if source_column != target_column:
-                        await conn.execute(f"""
-                            ALTER TABLE {table_name}
-                            ALTER COLUMN {column_name} TYPE {source_column['data_type']},
-                            ALTER COLUMN {column_name} {'' if source_column['is_nullable'] == 'YES' else 'SET NOT NULL'},
-                            ALTER COLUMN {column_name} {f"SET DEFAULT {source_column['column_default']}" if source_column['column_default'] else 'DROP DEFAULT'}
-                        """)
-            
-            for (table_name, column_name) in target_tables.keys():
-                if (table_name, column_name) not in source_tables:
-                    await conn.execute(f"ALTER TABLE {table_name} DROP COLUMN {column_name}")
-            
-            # Compare and update indexes
+                    target_table = target_tables[table_name]
+                    source_columns = {t['column_name']: t for t in source_schema['tables'] if t['table_name'] == table_name}
+                    target_columns = {t['column_name']: t for t in target_schema['tables'] if t['table_name'] == table_name}
+
+                    for col_name, source_col in source_columns.items():
+                        if col_name not in target_columns:
+                            col_def = f"\"{col_name}\" {source_col['data_type']}" + \
+                                    (f"({source_col['character_maximum_length']})" if source_col['character_maximum_length'] else "") + \
+                                    (" NOT NULL" if source_col['is_nullable'] == 'NO' else "") + \
+                                    (f" DEFAULT {source_col['column_default']}" if source_col['column_default'] else "")
+                            await conn.execute(f'ALTER TABLE "{table_name}" ADD COLUMN {col_def}')
+                        else:
+                            target_col = target_columns[col_name]
+                            if source_col != target_col:
+                                await conn.execute(f'ALTER TABLE "{table_name}" ALTER COLUMN "{col_name}" TYPE {source_col["data_type"]}')
+                                if source_col['is_nullable'] != target_col['is_nullable']:
+                                    null_constraint = "DROP NOT NULL" if source_col['is_nullable'] == 'YES' else "SET NOT NULL"
+                                    await conn.execute(f'ALTER TABLE "{table_name}" ALTER COLUMN "{col_name}" {null_constraint}')
+                                if source_col['column_default'] != target_col['column_default']:
+                                    default_clause = f"SET DEFAULT {source_col['column_default']}" if source_col['column_default'] else "DROP DEFAULT"
+                                    await conn.execute(f'ALTER TABLE "{table_name}" ALTER COLUMN "{col_name}" {default_clause}')
+
             source_indexes = {idx['indexname']: idx['indexdef'] for idx in source_schema['indexes']}
             target_indexes = {idx['indexname']: idx['indexdef'] for idx in target_schema['indexes']}
-            
-            for index_name, index_def in source_indexes.items():
-                if index_name not in target_indexes:
-                    await conn.execute(index_def)
-                elif index_def != target_indexes[index_name]:
-                    await conn.execute(f"DROP INDEX {index_name}")
-                    await conn.execute(index_def)
-            
-            for index_name in target_indexes.keys():
-                if index_name not in source_indexes:
-                    await conn.execute(f"DROP INDEX {index_name}")
-            
-            # Compare and update constraints
+
+            for idx_name, idx_def in source_indexes.items():
+                if idx_name not in target_indexes:
+                    await conn.execute(idx_def)
+                elif idx_def != target_indexes[idx_name]:
+                    await conn.execute(f'DROP INDEX "{idx_name}"')
+                    await conn.execute(idx_def)
+
             source_constraints = {con['conname']: con for con in source_schema['constraints']}
             target_constraints = {con['conname']: con for con in target_schema['constraints']}
-            
+
             for con_name, source_con in source_constraints.items():
                 if con_name not in target_constraints:
-                    await conn.execute(f"ALTER TABLE {source_con['table_name']} ADD CONSTRAINT {con_name} {source_con['definition']}")
+                    await conn.execute(f'ALTER TABLE "{source_con["table_name"]}" ADD CONSTRAINT "{con_name}" {source_con["definition"]}')
                 elif source_con != target_constraints[con_name]:
-                    await conn.execute(f"ALTER TABLE {source_con['table_name']} DROP CONSTRAINT {con_name}")
-                    await conn.execute(f"ALTER TABLE {source_con['table_name']} ADD CONSTRAINT {con_name} {source_con['definition']}")
-            
-            for con_name, target_con in target_constraints.items():
-                if con_name not in source_constraints:
-                    await conn.execute(f"ALTER TABLE {target_con['table_name']} DROP CONSTRAINT {con_name}")
-
-
-
+                    await conn.execute(f'ALTER TABLE "{source_con["table_name"]}" DROP CONSTRAINT "{con_name}"')
+                    await conn.execute(f'ALTER TABLE "{source_con["table_name"]}" ADD CONSTRAINT "{con_name}" {source_con["definition"]}')
 
 class Location(BaseModel):
     latitude: float
