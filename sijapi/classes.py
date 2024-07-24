@@ -489,7 +489,10 @@ class Location(BaseModel):
             datetime: lambda dt: dt.isoformat(),
         }
 
-
+    def model_dump(self):
+            data = self.dict()
+            data["datetime"] = self.datetime.isoformat() if self.datetime else None
+            return data
 
 
 class Geocoder:
