@@ -14,7 +14,7 @@ from folium.plugins import Fullscreen, MiniMap, MousePosition, Geocoder, Draw, M
 from zoneinfo import ZoneInfo
 from dateutil.parser import parse as dateutil_parse
 from typing import Optional, List, Union
-from sijapi import L, DB, TZ, GEO
+from sijapi import L, API, TZ, GEO
 from sijapi.classes import Location
 from sijapi.utilities import haversine, assemble_journal_path
 
@@ -133,7 +133,7 @@ async def fetch_locations(start: Union[str, int, datetime], end: Union[str, int,
 
     debug(f"Fetching locations between {start_datetime} and {end_datetime}")
 
-    async with DB.get_connection() as conn:
+    async with API.get_connection() as conn:
         locations = []
         # Check for records within the specified datetime range
         range_locations = await conn.fetch('''
@@ -203,7 +203,7 @@ async def fetch_last_location_before(datetime: datetime) -> Optional[Location]:
     
     debug(f"Fetching last location before {datetime}")
 
-    async with DB.get_connection() as conn:
+    async with API.get_connection() as conn:
 
         location_data = await conn.fetchrow('''
             SELECT id, datetime,
@@ -247,7 +247,7 @@ async def generate_map_endpoint(
     return HTMLResponse(content=html_content)
 
 async def get_date_range():
-    async with DB.get_connection() as conn:
+    async with API.get_connection() as conn:
         query = "SELECT MIN(datetime) as min_date, MAX(datetime) as max_date FROM locations"
         row = await conn.fetchrow(query)
         if row and row['min_date'] and row['max_date']:
@@ -437,7 +437,7 @@ async def post_location(location: Location):
     #     info(f"location appears to be missing datetime: {location}")
     # else:
     #    debug(f"post_location called with {location.datetime}")
-    async with DB.get_connection() as conn:
+    async with API.get_connection() as conn:
         try:
             context = location.context or {}
             action = context.get('action', 'manual')
