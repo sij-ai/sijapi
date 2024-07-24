@@ -11,7 +11,7 @@ from typing import Dict
 from datetime import datetime as dt_datetime
 from shapely.wkb import loads
 from binascii import unhexlify
-from sijapi import L, VISUALCROSSING_API_KEY, TZ, DB, GEO
+from sijapi import L, VISUALCROSSING_API_KEY, TZ, API, GEO
 from sijapi.utilities import haversine
 from sijapi.routers import gis
 
@@ -116,7 +116,7 @@ async def get_weather(date_time: dt_datetime, latitude: float, longitude: float,
 
 async def store_weather_to_db(date_time: dt_datetime, weather_data: dict):
     warn(f"Using {date_time.strftime('%Y-%m-%d %H:%M:%S')} as our datetime in store_weather_to_db")
-    async with DB.get_connection() as conn:
+    async with API.get_connection() as conn:
         try:
             day_data = weather_data.get('days')[0]
             debug(f"RAW DAY_DATA: {day_data}")
@@ -244,7 +244,7 @@ async def store_weather_to_db(date_time: dt_datetime, weather_data: dict):
 
 async def get_weather_from_db(date_time: dt_datetime, latitude: float, longitude: float):
     warn(f"Using {date_time.strftime('%Y-%m-%d %H:%M:%S')} as our datetime in get_weather_from_db.")
-    async with DB.get_connection() as conn:
+    async with API.get_connection() as conn:
         query_date = date_time.date()
         try:
             # Query to get daily weather data

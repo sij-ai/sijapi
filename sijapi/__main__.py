@@ -1,5 +1,6 @@
 #!/Users/sij/miniforge3/envs/api/bin/python
 #__main__.py
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, HTTPException, Response
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,6 +10,8 @@ from starlette.requests import ClientDisconnect
 from hypercorn.asyncio import serve
 from hypercorn.config import Config as HypercornConfig
 import sys
+import os
+import traceback
 import asyncio 
 import httpx
 import argparse
@@ -41,7 +44,58 @@ err(f"Error message.")
 def crit(text: str): logger.critical(text)
 crit(f"Critical message.")
 
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    crit("sijapi launched")
+    crit(f"Arguments: {args}")
+
+    # Load routers
+    for module_name in API.MODULES.__fields__:
+        if getattr(API.MODULES, module_name):
+            load_router(module_name)
+
+    crit("Starting database synchronization...")
+    try:
+        # Log the current TS_ID
+        crit(f"Current TS_ID: {os.environ.get('TS_ID', 'Not set')}")
+        
+        # Log the local_db configuration
+        local_db = API.local_db
+        crit(f"Local DB configuration: {local_db}")
+        
+        # Test local connection
+        async with API.get_connection() as conn:
+            version = await conn.fetchval("SELECT version()")
+            crit(f"Successfully connected to local database. PostgreSQL version: {version}")
+        
+        # Sync schema across all databases
+        await API.sync_schema()
+        crit("Schema synchronization complete.")
+        
+        # Attempt to pull changes from another database
+        source = await API.get_default_source()
+        if source:
+            crit(f"Pulling changes from {source['ts_id']}...")
+            await API.pull_changes(source)
+            crit("Data pull complete.")
+        else:
+            crit("No available source for pulling changes. This might be the only active database.")
+
+    except Exception as e:
+        crit(f"Error during startup: {str(e)}")
+        crit(f"Traceback: {traceback.format_exc()}")
+
+    yield  # This is where the app runs
+
+    # Shutdown
+    crit("Shutting down...")
+    # Perform any cleanup operations here if needed
+
+
+app = FastAPI(lifespan=lifespan)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=['*'],

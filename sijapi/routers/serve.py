@@ -31,7 +31,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from sijapi import (
-    L, API, DB, LOGS_DIR, TS_ID, CASETABLE_PATH, COURTLISTENER_DOCKETS_URL, COURTLISTENER_API_KEY,
+    L, API, LOGS_DIR, TS_ID, CASETABLE_PATH, COURTLISTENER_DOCKETS_URL, COURTLISTENER_API_KEY,
     COURTLISTENER_BASE_URL, COURTLISTENER_DOCKETS_DIR, COURTLISTENER_SEARCH_DIR, ALERTS_DIR,
     MAC_UN, MAC_PW, MAC_ID, TS_TAILNET, IMG_DIR, PUBLIC_KEY, OBSIDIAN_VAULT_DIR
 )
@@ -435,7 +435,7 @@ async def shortener_form(request: Request):
 
 @serve.post("/s")
 async def create_short_url(request: Request, long_url: str = Form(...), custom_code: Optional[str] = Form(None)):
-    async with DB.get_connection() as conn:
+    async with API.get_connection() as conn:
         await create_tables(conn)
 
         if custom_code:
@@ -486,7 +486,7 @@ async def redirect_short_url(request: Request, short_code: str = PathParam(..., 
     if request.headers.get('host') != 'sij.ai':
         raise HTTPException(status_code=404, detail="Not Found")
     
-    async with DB.get_connection() as conn:
+    async with API.get_connection() as conn:
         result = await conn.fetchrow(
             'SELECT long_url FROM short_urls WHERE short_code = $1',
             short_code
@@ -503,7 +503,7 @@ async def redirect_short_url(request: Request, short_code: str = PathParam(..., 
 
 @serve.get("/analytics/{short_code}")
 async def get_analytics(short_code: str):
-    async with DB.get_connection() as conn:
+    async with API.get_connection() as conn:
         url_info = await conn.fetchrow(
             'SELECT long_url, created_at FROM short_urls WHERE short_code = $1',
             short_code

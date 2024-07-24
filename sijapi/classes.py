@@ -285,20 +285,26 @@ class APIConfig(BaseModel):
         if pool_entry is None:
             pool_entry = self.local_db
         
-        conn = await asyncpg.connect(
-            host=pool_entry['ts_ip'],
-            port=pool_entry['db_port'],
-            user=pool_entry['db_user'],
-            password=pool_entry['db_pass'],
-            database=pool_entry['db_name']
-        )
+        crit(f"Attempting to connect to database: {pool_entry}")
         try:
-            yield conn
-        finally:
-            await conn.close()
+            conn = await asyncpg.connect(
+                host=pool_entry['ts_ip'],
+                port=pool_entry['db_port'],
+                user=pool_entry['db_user'],
+                password=pool_entry['db_pass'],
+                database=pool_entry['db_name']
+            )
+            try:
+                yield conn
+            finally:
+                await conn.close()
+        except Exception as e:
+            crit(f"Failed to connect to database: {pool_entry['ts_ip']}:{pool_entry['db_port']}")
+            crit(f"Error: {str(e)}")
+            raise
+
 
     async def push_changes(self, query: str, *args):
-        logger = Logger("DatabaseReplication")
         connections = []
         try:
             for pool_entry in self.POOL[1:]:  # Skip the first (local) database
@@ -312,9 +318,9 @@ class APIConfig(BaseModel):
 
             for pool_entry, result in zip(self.POOL[1:], results):
                 if isinstance(result, Exception):
-                    logger.error(f"Failed to push to {pool_entry['ts_ip']}: {str(result)}")
+                    err(f"Failed to push to {pool_entry['ts_ip']}: {str(result)}")
                 else:
-                    logger.info(f"Successfully pushed to {pool_entry['ts_ip']}")
+                    info(f"Successfully pushed to {pool_entry['ts_ip']}")
 
         finally:
             for conn in connections:
@@ -336,10 +342,9 @@ class APIConfig(BaseModel):
             source_pool_entry = await self.get_default_source()
         
         if source_pool_entry is None:
-            logger.error("No available source for pulling changes")
+            err("No available source for pulling changes")
             return
         
-        logger = Logger("DatabaseReplication")
         async with self.get_connection(source_pool_entry) as source_conn:
             async with self.get_connection() as dest_conn:
                 # This is a simplistic approach. You might need a more sophisticated
@@ -356,17 +361,16 @@ class APIConfig(BaseModel):
                         await dest_conn.copy_records_to_table(
                             table_name, records=rows, columns=columns
                         )
-                logger.info(f"Successfully pulled changes from {source_pool_entry['ts_ip']}")
+                info(f"Successfully pulled changes from {source_pool_entry['ts_ip']}")
 
     async def sync_schema(self):
-        logger = Logger("SchemaSync")
         source_entry = self.POOL[0]  # Use the local database as the source
         source_schema = await self.get_schema(source_entry)
         
         for pool_entry in self.POOL[1:]:
             target_schema = await self.get_schema(pool_entry)
             await self.apply_schema_changes(pool_entry, source_schema, target_schema)
-            logger.info(f"Synced schema to {pool_entry['ts_ip']}")
+            info(f"Synced schema to {pool_entry['ts_ip']}")
 
     async def get_schema(self, pool_entry: Dict[str, Any]):
         async with self.get_connection(pool_entry) as conn:

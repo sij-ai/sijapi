@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 from dateutil.parser import parse as dateutil_parse
 from typing import Optional, List, Union
 from datetime import datetime
-from sijapi import L, DB, TZ, GEO
+from sijapi import L, API, TZ, GEO
 from sijapi.classes import Location
 from sijapi.utilities import haversine
 
@@ -116,7 +116,7 @@ async def fetch_locations(start: datetime, end: datetime = None) -> List[Locatio
 
     logger.debug(f"Fetching locations between {start_datetime} and {end_datetime}")
 
-    async with DB.get_connection() as conn:
+    async with API.get_connection() as conn:
         locations = []
         # Check for records within the specified datetime range
         range_locations = await conn.fetch('''
@@ -186,7 +186,7 @@ async def fetch_last_location_before(datetime: datetime) -> Optional[Location]:
     
     logger.debug(f"Fetching last location before {datetime}")
 
-    async with DB.get_connection() as conn:
+    async with API.get_connection() as conn:
 
         location_data = await conn.fetchrow('''
             SELECT id, datetime,
@@ -261,11 +261,7 @@ async def generate_map(start_date: datetime, end_date: datetime):
     return html_content
 
 async def post_location(location: Location):
-    # if not location.datetime:
-    #     logger.debug(f"location appears to be missing datetime: {location}")
-    # else:
-    #     logger.debug(f"post_location called with {location.datetime}")
-    async with DB.get_connection() as conn:
+    async with API.get_connection() as conn:
         try:
             context = location.context or {}
             action = context.get('action', 'manual')
