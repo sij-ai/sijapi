@@ -27,7 +27,6 @@ setup(
         'requests',
         'aiohttp',
         'paramiko',
-        'tailscale',
         'pandas',
         'pydub',
         'torch',
