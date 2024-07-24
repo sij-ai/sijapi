@@ -548,10 +548,10 @@ async def get_last_location_endpoint() -> JSONResponse:
 
     if this_location:
         location_dict = this_location.model_dump()
-        location_dict["datetime"] = this_location.datetime.isoformat()
         return JSONResponse(content=location_dict)
     else:
         raise HTTPException(status_code=404, detail="No location found before the specified datetime")
+
 
 @gis.get("/locate/{datetime_str}", response_model=List[Location])
 async def get_locate(datetime_str: str, all: bool = False):
