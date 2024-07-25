@@ -158,17 +158,6 @@ class Configuration(BaseModel):
         arbitrary_types_allowed = True
 
 
-from pydantic import BaseModel, Field
-from typing import Any, Dict, List, Union
-from pathlib import Path
-import yaml
-import re
-import os
-import asyncpg
-from contextlib import asynccontextmanager
-from sijapi import TS_ID
-import traceback
-
 class APIConfig(BaseModel):
     HOST: str
     PORT: int
