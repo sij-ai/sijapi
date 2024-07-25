@@ -49,7 +49,7 @@ class Configuration(BaseModel):
             if secrets_path:
                 with secrets_path.open('r') as file:
                     secrets_data = yaml.safe_load(file)
-                info(f"Loaded secrets data from {secrets_path}")
+                # info(f"Loaded secrets data from {secrets_path}")
                 if isinstance(config_data, list):
                     for item in config_data:
                         if isinstance(item, dict):
@@ -182,7 +182,7 @@ class APIConfig(BaseModel):
         try:
             with open(secrets_path, 'r') as file:
                 secrets_data = yaml.safe_load(file)
-            info(f"Loaded secrets: {secrets_data}")
+            # info(f"Loaded secrets: {secrets_data}")
         except FileNotFoundError:
             err(f"Secrets file not found: {secrets_path}")
             secrets_data = {}
