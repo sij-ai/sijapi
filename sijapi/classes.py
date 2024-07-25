@@ -45,11 +45,11 @@ class Configuration(BaseModel):
             with yaml_path.open('r') as file:
                 config_data = yaml.safe_load(file)
 
-            print(f"Loaded configuration data from {yaml_path}")
+            info(f"Loaded configuration data from {yaml_path}")
             if secrets_path:
                 with secrets_path.open('r') as file:
                     secrets_data = yaml.safe_load(file)
-                print(f"Loaded secrets data from {secrets_path}")
+                info(f"Loaded secrets data from {secrets_path}")
                 if isinstance(config_data, list):
                     for item in config_data:
                         if isinstance(item, dict):
@@ -60,7 +60,7 @@ class Configuration(BaseModel):
                 config_data = {"configurations": config_data}
             if config_data.get('HOME') is None:
                 config_data['HOME'] = str(Path.home())
-                print(f"HOME was None in config, set to default: {config_data['HOME']}")
+                warn(f"HOME was None in config, set to default: {config_data['HOME']}")
 
             load_dotenv()
             instance = cls.create_dynamic_model(**config_data)
@@ -71,7 +71,7 @@ class Configuration(BaseModel):
             return instance
         
         except Exception as e:
-            print(f"Error loading configuration: {str(e)}")
+            err(f"Error loading configuration: {str(e)}")
             raise
 
 
@@ -177,21 +177,21 @@ class APIConfig(BaseModel):
         with open(config_path, 'r') as file:
             config_data = yaml.safe_load(file)
 
-        print(f"Loaded main config: {config_data}")
+        info(f"Loaded main config: {config_data}")
 
         try:
             with open(secrets_path, 'r') as file:
                 secrets_data = yaml.safe_load(file)
-            print(f"Loaded secrets: {secrets_data}")
+            info(f"Loaded secrets: {secrets_data}")
         except FileNotFoundError:
-            print(f"Secrets file not found: {secrets_path}")
+            err(f"Secrets file not found: {secrets_path}")
             secrets_data = {}
         except yaml.YAMLError as e:
-            print(f"Error parsing secrets YAML: {e}")
+            err(f"Error parsing secrets YAML: {e}")
             secrets_data = {}
 
         config_data = cls.resolve_placeholders(config_data)
-        print(f"Resolved config: {config_data}")
+        debug(f"Resolved config: {config_data}")
         if isinstance(config_data.get('KEYS'), list) and len(config_data['KEYS']) == 1:
             placeholder = config_data['KEYS'][0]
             if placeholder.startswith('{{') and placeholder.endswith('}}'):
@@ -201,11 +201,11 @@ class APIConfig(BaseModel):
                     secret_key = parts[1]
                     if secret_key in secrets_data:
                         config_data['KEYS'] = secrets_data[secret_key]
-                        print(f"Replaced KEYS with secret: {config_data['KEYS']}")
+                        debug(f"Replaced KEYS with secret: {config_data['KEYS']}")
                     else:
-                        print(f"Secret key '{secret_key}' not found in secrets file")
+                        warn(f"Secret key '{secret_key}' not found in secrets file")
                 else:
-                    print(f"Invalid secret placeholder format: {placeholder}")
+                    err(f"Invalid secret placeholder format: {placeholder}")
 
         config_data['MODULES'] = cls._create_dynamic_config(config_data.get('MODULES', {}), 'DynamicModulesConfig')
         config_data['EXTENSIONS'] = cls._create_dynamic_config(config_data.get('EXTENSIONS', {}), 'DynamicExtensionsConfig')
@@ -476,7 +476,7 @@ async def pull_changes(self, source_pool_entry: Dict[str, Any] = None):
                                 columns.append(col_def)
                         
                         sql = f'CREATE TABLE "{table_name}" ({", ".join(columns)})'
-                        print(f"Executing SQL: {sql}")
+                        info(f"Executing SQL: {sql}")
                         await conn.execute(sql)
                     else:
                         target_table = target_tables[table_name]
@@ -491,27 +491,27 @@ async def pull_changes(self, source_pool_entry: Dict[str, Any] = None):
                                         (" NOT NULL" if source_col['is_nullable'] == 'NO' else "") + \
                                         (f" DEFAULT {source_col['column_default']}" if source_col['column_default'] else "")
                                 sql = f'ALTER TABLE "{table_name}" ADD COLUMN {col_def}'
-                                print(f"Executing SQL: {sql}")
+                                info(f"Executing SQL: {sql}")
                                 await conn.execute(sql)
                             else:
                                 target_col = target_columns[col_name]
                                 if source_col != target_col:
                                     col_type = get_column_type(source_col['data_type'])
                                     sql = f'ALTER TABLE "{table_name}" ALTER COLUMN "{col_name}" TYPE {col_type}'
-                                    print(f"Executing SQL: {sql}")
+                                    err(f"Executing SQL: {sql}")
                                     await conn.execute(sql)
                                     if source_col['is_nullable'] != target_col['is_nullable']:
                                         null_constraint = "DROP NOT NULL" if source_col['is_nullable'] == 'YES' else "SET NOT NULL"
                                         sql = f'ALTER TABLE "{table_name}" ALTER COLUMN "{col_name}" {null_constraint}'
-                                        print(f"Executing SQL: {sql}")
+                                        info(f"Executing SQL: {sql}")
                                         await conn.execute(sql)
                                     if source_col['column_default'] != target_col['column_default']:
                                         default_clause = f"SET DEFAULT {source_col['column_default']}" if source_col['column_default'] else "DROP DEFAULT"
                                         sql = f'ALTER TABLE "{table_name}" ALTER COLUMN "{col_name}" {default_clause}'
-                                        print(f"Executing SQL: {sql}")
+                                        info(f"Executing SQL: {sql}")
                                         await conn.execute(sql)
                 except Exception as e:
-                    print(f"Error processing table {table_name}: {str(e)}")
+                    err(f"Error processing table {table_name}: {str(e)}")
                     # Optionally, you might want to raise this exception if you want to stop the entire process
                     # raise
 
@@ -521,16 +521,16 @@ async def pull_changes(self, source_pool_entry: Dict[str, Any] = None):
 
                 for idx_name, idx_def in source_indexes.items():
                     if idx_name not in target_indexes:
-                        print(f"Executing SQL: {idx_def}")
+                        info(f"Executing SQL: {idx_def}")
                         await conn.execute(idx_def)
                     elif idx_def != target_indexes[idx_name]:
                         sql = f'DROP INDEX IF EXISTS "{idx_name}"'
-                        print(f"Executing SQL: {sql}")
+                        info(f"Executing SQL: {sql}")
                         await conn.execute(sql)
-                        print(f"Executing SQL: {idx_def}")
+                        info(f"Executing SQL: {idx_def}")
                         await conn.execute(idx_def)
             except Exception as e:
-                print(f"Error processing indexes: {str(e)}")
+                err(f"Error processing indexes: {str(e)}")
 
             try:
                 source_constraints = {con['conname']: con for con in source_schema['constraints']}
@@ -539,19 +539,19 @@ async def pull_changes(self, source_pool_entry: Dict[str, Any] = None):
                 for con_name, source_con in source_constraints.items():
                     if con_name not in target_constraints:
                         sql = f'ALTER TABLE "{source_con["table_name"]}" ADD CONSTRAINT "{con_name}" {source_con["definition"]}'
-                        print(f"Executing SQL: {sql}")
+                        info(f"Executing SQL: {sql}")
                         await conn.execute(sql)
                     elif source_con != target_constraints[con_name]:
                         sql = f'ALTER TABLE "{source_con["table_name"]}" DROP CONSTRAINT IF EXISTS "{con_name}"'
-                        print(f"Executing SQL: {sql}")
+                        info(f"Executing SQL: {sql}")
                         await conn.execute(sql)
                         sql = f'ALTER TABLE "{source_con["table_name"]}" ADD CONSTRAINT "{con_name}" {source_con["definition"]}'
-                        print(f"Executing SQL: {sql}")
+                        info(f"Executing SQL: {sql}")
                         await conn.execute(sql)
             except Exception as e:
-                print(f"Error processing constraints: {str(e)}")
+                err(f"Error processing constraints: {str(e)}")
 
-        print(f"Schema synchronization completed for {pool_entry['ts_ip']}")
+        info(f"Schema synchronization completed for {pool_entry['ts_ip']}")
 
 
 class Location(BaseModel):
