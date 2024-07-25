@@ -24,6 +24,9 @@ def warn(text: str): logger.warning(text)
 def err(text: str): logger.error(text)
 def crit(text: str): logger.critical(text)
 
+# Global dictionary to store transcription results
+transcription_results = {}
+
 class TranscribeParams(BaseModel):
     model: str = Field(default="small")
     output_srt: Optional[bool] = Field(default=False)
@@ -40,8 +43,6 @@ class TranscribeParams(BaseModel):
     dtw: Optional[str] = Field(None)
     threads: Optional[int] = Field(None)
 
-# Global dictionary to store transcription results
-transcription_results = {}
 
 @asr.post("/asr")
 @asr.post("/transcribe")
@@ -63,12 +64,11 @@ async def transcribe_endpoint(
         temp_file.write(await file.read())
         temp_file_path = temp_file.name
     
-    transcription_job = await transcribe_audio(file_path=temp_file_path, params=parameters)
-    job_id = transcription_job["job_id"]
+    job_id = await transcribe_audio(file_path=temp_file_path, params=parameters)
 
     # Poll for completion
-    max_wait_time = 600  # 10 minutes
-    poll_interval = 2  # 2 seconds
+    max_wait_time = 3600  # 60 minutes
+    poll_interval = 10  # 2 seconds
     elapsed_time = 0
 
     while elapsed_time < max_wait_time:
@@ -84,6 +84,7 @@ async def transcribe_endpoint(
 
     # If we've reached this point, the transcription has taken too long
     return JSONResponse(content={"status": "timeout", "message": "Transcription is taking longer than expected. Please check back later."}, status_code=202)
+
 
 async def transcribe_audio(file_path, params: TranscribeParams):
     debug(f"Transcribing audio file from {file_path}...")
@@ -136,8 +137,8 @@ async def transcribe_audio(file_path, params: TranscribeParams):
     # Start the transcription process immediately
     transcription_task = asyncio.create_task(process_transcription(command, file_path, job_id))
 
-    max_wait_time = 300  # 5 minutes
-    poll_interval = 1  # 1 second
+    max_wait_time = 3600  # 1 hour
+    poll_interval = 10  # 10 seconds
     start_time = asyncio.get_event_loop().time()
 
     debug(f"Starting to poll for job {job_id}")
@@ -147,7 +148,7 @@ async def transcribe_audio(file_path, params: TranscribeParams):
             debug(f"Current status for job {job_id}: {job_status['status']}")
             if job_status["status"] == "completed":
                 info(f"Transcription completed for job {job_id}")
-                return job_status["result"]
+                return job_id  # This is the only change
             elif job_status["status"] == "failed":
                 err(f"Transcription failed for job {job_id}: {job_status.get('error', 'Unknown error')}")
                 raise Exception(f"Transcription failed: {job_status.get('error', 'Unknown error')}")
@@ -161,6 +162,7 @@ async def transcribe_audio(file_path, params: TranscribeParams):
 
     # This line should never be reached, but just in case:
     raise Exception("Unexpected exit from transcription function")
+
 
 async def process_transcription(command, file_path, job_id):
     try:
