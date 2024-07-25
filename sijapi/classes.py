@@ -398,14 +398,20 @@ class APIConfig(BaseModel):
                     """, last_synced_version, source_pool_entry['ts_id'])
                     
                     for change in changes:
-                        columns = change.keys()
+                        # Convert change.keys() to a list
+                        columns = list(change.keys())
                         values = [change[col] for col in columns]
-                        await dest_conn.execute(f"""
+                        
+                        # Construct the SQL query
+                        insert_query = f"""
                             INSERT INTO "{table_name}" ({', '.join(columns)})
                             VALUES ({', '.join(f'${i+1}' for i in range(len(columns)))})
                             ON CONFLICT (id) DO UPDATE SET
                             {', '.join(f"{col} = EXCLUDED.{col}" for col in columns if col != 'id')}
-                        """, *values)
+                        """
+                        
+                        # Execute the query
+                        await dest_conn.execute(insert_query, *values)
                     
                     if changes:
                         await self.update_sync_status(table_name, source_pool_entry['ts_id'], changes[-1]['version'])
