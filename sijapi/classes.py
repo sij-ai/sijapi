@@ -31,9 +31,9 @@ def warn(text: str): logger.warning(text)
 def err(text: str): logger.error(text)
 def crit(text: str): logger.critical(text)
 
-TS_ID=os.getenv("TS_ID", "NULL")
 
 T = TypeVar('T', bound='Configuration')
+TS_ID = os.environ.get('TS_ID')
 class Configuration(BaseModel):
     HOME: Path = Path.home()
     _dir_config: Optional['Configuration'] = None
@@ -280,7 +280,10 @@ class APIConfig(BaseModel):
 
     @property
     def local_db(self):
-        return next((db for db in self.POOL if db['ts_id'] == TS_ID), None)
+        local_db = next((db for db in self.POOL if db['ts_id'] == TS_ID), None)
+        if local_db is None:
+            raise ValueError(f"No database configuration found for TS_ID: {TS_ID}")
+        return local_db
 
     @asynccontextmanager
     async def get_connection(self, pool_entry: Dict[str, Any] = None):
