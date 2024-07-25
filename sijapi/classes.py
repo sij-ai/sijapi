@@ -58,7 +58,7 @@ class Configuration(BaseModel):
             if secrets_path:
                 with secrets_path.open('r') as file:
                     secrets_data = yaml.safe_load(file)
-                # info(f"Loaded secrets data from {secrets_path}")
+                info(f"Loaded secrets data from {secrets_path}")
                 if isinstance(config_data, list):
                     for item in config_data:
                         if isinstance(item, dict):
@@ -187,13 +187,13 @@ class APIConfig(BaseModel):
         with open(config_path, 'r') as file:
             config_data = yaml.safe_load(file)
 
-        info(f"Loaded main config: {config_data}")
+        debug(f"Loaded main config: {config_data}")
 
         try:
             with open(secrets_path, 'r') as file:
                 secrets_data = yaml.safe_load(file)
         except FileNotFoundError:
-            err(f"Secrets file not found: {secrets_path}")
+            warn(f"Secrets file not found: {secrets_path}")
             secrets_data = {}
         except yaml.YAMLError as e:
             err(f"Error parsing secrets YAML: {e}")
@@ -214,7 +214,7 @@ class APIConfig(BaseModel):
                     else:
                         warn(f"Secret key '{secret_key}' not found in secrets file")
                 else:
-                    err(f"Invalid secret placeholder format: {placeholder}")
+                    warn(f"Invalid secret placeholder format: {placeholder}")
 
         config_data['MODULES'] = cls._create_dynamic_config(config_data.get('MODULES', {}), 'DynamicModulesConfig')
         config_data['EXTENSIONS'] = cls._create_dynamic_config(config_data.get('EXTENSIONS', {}), 'DynamicExtensionsConfig')
@@ -298,7 +298,7 @@ class APIConfig(BaseModel):
         if pool_entry is None:
             pool_entry = self.local_db
         
-        crit(f"Attempting to connect to database: {pool_entry}")
+        info(f"Attempting to connect to database: {pool_entry}")
         try:
             conn = await asyncpg.connect(
                 host=pool_entry['ts_ip'],
@@ -312,8 +312,8 @@ class APIConfig(BaseModel):
             finally:
                 await conn.close()
         except Exception as e:
-            crit(f"Failed to connect to database: {pool_entry['ts_ip']}:{pool_entry['db_port']}")
-            crit(f"Error: {str(e)}")
+            warn(f"Failed to connect to database: {pool_entry['ts_ip']}:{pool_entry['db_port']}")
+            err(f"Error: {str(e)}")
             raise
 
     async def initialize_sync(self):
@@ -559,24 +559,24 @@ class APIConfig(BaseModel):
                                         (" NOT NULL" if source_col['is_nullable'] == 'NO' else "") + \
                                         (f" DEFAULT {source_col['column_default']}" if source_col['column_default'] else "")
                                 sql = f'ALTER TABLE "{table_name}" ADD COLUMN {col_def}'
-                                info(f"Executing SQL: {sql}")
+                                debug(f"Executing SQL: {sql}")
                                 await conn.execute(sql)
                             else:
                                 target_col = target_columns[col_name]
                                 if source_col != target_col:
                                     col_type = get_column_type(source_col['data_type'])
                                     sql = f'ALTER TABLE "{table_name}" ALTER COLUMN "{col_name}" TYPE {col_type}'
-                                    err(f"Executing SQL: {sql}")
+                                    debug(f"Executing SQL: {sql}")
                                     await conn.execute(sql)
                                     if source_col['is_nullable'] != target_col['is_nullable']:
                                         null_constraint = "DROP NOT NULL" if source_col['is_nullable'] == 'YES' else "SET NOT NULL"
                                         sql = f'ALTER TABLE "{table_name}" ALTER COLUMN "{col_name}" {null_constraint}'
-                                        info(f"Executing SQL: {sql}")
+                                        debug(f"Executing SQL: {sql}")
                                         await conn.execute(sql)
                                     if source_col['column_default'] != target_col['column_default']:
                                         default_clause = f"SET DEFAULT {source_col['column_default']}" if source_col['column_default'] else "DROP DEFAULT"
                                         sql = f'ALTER TABLE "{table_name}" ALTER COLUMN "{col_name}" {default_clause}'
-                                        info(f"Executing SQL: {sql}")
+                                        debug(f"Executing SQL: {sql}")
                                         await conn.execute(sql)
                 except Exception as e:
                     err(f"Error processing table {table_name}: {str(e)}")
@@ -587,13 +587,13 @@ class APIConfig(BaseModel):
 
                 for idx_name, idx_def in source_indexes.items():
                     if idx_name not in target_indexes:
-                        info(f"Executing SQL: {idx_def}")
+                        debug(f"Executing SQL: {idx_def}")
                         await conn.execute(idx_def)
                     elif idx_def != target_indexes[idx_name]:
                         sql = f'DROP INDEX IF EXISTS "{idx_name}"'
-                        info(f"Executing SQL: {sql}")
+                        debug(f"Executing SQL: {sql}")
                         await conn.execute(sql)
-                        info(f"Executing SQL: {idx_def}")
+                        debug(f"Executing SQL: {idx_def}")
                         await conn.execute(idx_def)
             except Exception as e:
                 err(f"Error processing indexes: {str(e)}")
@@ -605,14 +605,14 @@ class APIConfig(BaseModel):
                 for con_name, source_con in source_constraints.items():
                     if con_name not in target_constraints:
                         sql = f'ALTER TABLE "{source_con["table_name"]}" ADD CONSTRAINT "{con_name}" {source_con["definition"]}'
-                        info(f"Executing SQL: {sql}")
+                        debug(f"Executing SQL: {sql}")
                         await conn.execute(sql)
                     elif source_con != target_constraints[con_name]:
                         sql = f'ALTER TABLE "{source_con["table_name"]}" DROP CONSTRAINT IF EXISTS "{con_name}"'
-                        info(f"Executing SQL: {sql}")
+                        debug(f"Executing SQL: {sql}")
                         await conn.execute(sql)
                         sql = f'ALTER TABLE "{source_con["table_name"]}" ADD CONSTRAINT "{con_name}" {source_con["definition"]}'
-                        info(f"Executing SQL: {sql}")
+                        debug(f"Executing SQL: {sql}")
                         await conn.execute(sql)
             except Exception as e:
                 err(f"Error processing constraints: {str(e)}")
