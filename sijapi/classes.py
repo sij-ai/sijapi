@@ -375,12 +375,13 @@ class APIConfig(BaseModel):
                     if rows:
                         columns = rows[0].keys()
                         # Upsert records to the destination table
-                        await dest_conn.executemany(f"""
-                            INSERT INTO {table_name} ({', '.join(columns)})
-                            VALUES ({', '.join(f'${i+1}' for i in range(len(columns)))})
-                            ON CONFLICT ({', '.join(pk_cols)}) DO UPDATE SET
-                            {', '.join(f"{col} = EXCLUDED.{col}" for col in columns if col not in pk_cols)}
-                        """, [tuple(row[col] for col in columns) for row in rows])
+                        for row in rows:
+                            await dest_conn.execute(f"""
+                                INSERT INTO {table_name} ({', '.join(columns)})
+                                VALUES ({', '.join(f'${i+1}' for i in range(len(columns)))})
+                                ON CONFLICT ({', '.join(pk_cols)}) DO UPDATE SET
+                                {', '.join(f"{col} = EXCLUDED.{col}" for col in columns if col not in pk_cols)}
+                            """, *[row[col] for col in columns])
                     
                     info(f"Completed processing table: {table_name}")
 
