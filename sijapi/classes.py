@@ -443,6 +443,45 @@ class APIConfig(BaseModel):
         END $$;
         """)
 
+    async def get_schema(self, pool_entry: Dict[str, Any]):
+        async with self.get_connection(pool_entry) as conn:
+            tables = await conn.fetch("""
+                SELECT table_name, column_name, data_type, character_maximum_length,
+                    is_nullable, column_default, ordinal_position
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                ORDER BY table_name, ordinal_position
+            """)
+            
+            indexes = await conn.fetch("""
+                SELECT indexname, indexdef
+                FROM pg_indexes
+                WHERE schemaname = 'public'
+            """)
+            
+            constraints = await conn.fetch("""
+                SELECT conname, contype, conrelid::regclass::text as table_name,
+                    pg_get_constraintdef(oid) as definition
+                FROM pg_constraint
+                WHERE connamespace = 'public'::regnamespace
+            """)
+            
+            return {
+                'tables': tables,
+                'indexes': indexes,
+                'constraints': constraints
+            }
+
+    async def create_sequence_if_not_exists(self, conn, sequence_name):
+        await conn.execute(f"""
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_sequences WHERE schemaname = 'public' AND sequencename = '{sequence_name}') THEN
+                CREATE SEQUENCE {sequence_name};
+            END IF;
+        END $$;
+        """)
+
     async def apply_schema_changes(self, pool_entry: Dict[str, Any], source_schema, target_schema):
         async with self.get_connection(pool_entry) as conn:
             source_tables = {t['table_name']: t for t in source_schema['tables']}
