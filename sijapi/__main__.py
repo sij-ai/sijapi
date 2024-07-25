@@ -5,7 +5,6 @@ from fastapi import FastAPI, Request, HTTPException, Response
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import ClientDisconnect
 from hypercorn.asyncio import serve
 from hypercorn.config import Config as HypercornConfig
@@ -44,7 +43,6 @@ err(f"Error message.")
 def crit(text: str): logger.critical(text)
 crit(f"Critical message.")
 
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
@@ -52,36 +50,30 @@ async def lifespan(app: FastAPI):
     crit(f"Arguments: {args}")
 
     # Load routers
-    for module_name in API.MODULES.__fields__:
-        if getattr(API.MODULES, module_name):
-            load_router(module_name)
+    if args.test:
+        load_router(args.test)
+    else:
+        for module_name in API.MODULES.__fields__:
+            if getattr(API.MODULES, module_name):
+                load_router(module_name)
 
     crit("Starting database synchronization...")
     try:
-        # Log the current TS_ID
-        crit(f"Current TS_ID: {os.environ.get('TS_ID', 'Not set')}")
-        
-        # Log the local_db configuration
-        local_db = API.local_db
-        crit(f"Local DB configuration: {local_db}")
-        
-        # Test local connection
-        async with API.get_connection() as conn:
-            version = await conn.fetchval("SELECT version()")
-            crit(f"Successfully connected to local database. PostgreSQL version: {version}")
-        
+        # Initialize sync structures
+        await API.initialize_sync()
+
         # Sync schema across all databases
         await API.sync_schema()
         crit("Schema synchronization complete.")
         
-        # Attempt to pull changes from another database
-        source = await API.get_default_source()
+        # Check if other instances have more recent data
+        source = await API.get_most_recent_source()
         if source:
             crit(f"Pulling changes from {source['ts_id']}...")
             await API.pull_changes(source)
             crit("Data pull complete.")
         else:
-            crit("No available source for pulling changes. This might be the only active database.")
+            crit("No instances with more recent data found.")
 
     except Exception as e:
         crit(f"Error during startup: {str(e)}")
@@ -92,7 +84,6 @@ async def lifespan(app: FastAPI):
     # Shutdown
     crit("Shutting down...")
     # Perform any cleanup operations here if needed
-
 
 app = FastAPI(lifespan=lifespan)
 
@@ -124,7 +115,6 @@ class SimpleAPIKeyMiddleware(BaseHTTPMiddleware):
                         content={"detail": "Invalid or missing API key"}
                     )
         response = await call_next(request)
-        # debug(f"Request from {client_ip} is complete")
         return response
 
 # Add the middleware to your FastAPI app
@@ -135,7 +125,6 @@ async def http_exception_handler(request: Request, exc: HTTPException):
     err(f"HTTP Exception: {exc.status_code} - {exc.detail}")
     err(f"Request: {request.method} {request.url}")
     return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
-
 
 @app.middleware("http")
 async def handle_exception_middleware(request: Request, call_next):
@@ -149,6 +138,19 @@ async def handle_exception_middleware(request: Request, call_next):
             raise
     return response
 
+@app.middleware("http")
+async def sync_middleware(request: Request, call_next):
+    response = await call_next(request)
+    
+    # Check if the request was a database write operation
+    if request.method in ["POST", "PUT", "PATCH", "DELETE"]:
+        try:
+            # Push changes to other databases
+            await API.push_changes_to_all()
+        except Exception as e:
+            err(f"Error pushing changes to other databases: {str(e)}")
+    
+    return response
 
 def load_router(router_name):
     router_file = ROUTER_DIR / f'{router_name}.py'
@@ -160,24 +162,15 @@ def load_router(router_name):
             module = importlib.import_module(module_path)
             router = getattr(module, router_name)
             app.include_router(router)
-            # module_logger.info(f"{router_name.capitalize()} router loaded.")
         except (ImportError, AttributeError) as e:
             module_logger.critical(f"Failed to load router {router_name}: {e}")
     else:
         module_logger.error(f"Router file for {router_name} does not exist.")
 
 def main(argv):
-    if args.test:
-        load_router(args.test)
-    else:
-        crit(f"sijapi launched")
-        crit(f"Arguments: {args}")
-        for module_name in API.MODULES.__fields__:
-            if getattr(API.MODULES, module_name):
-                load_router(module_name)
-    
     config = HypercornConfig()
     config.bind = [API.BIND]
+    config.startup_timeout = 3600  # 1 hour
     asyncio.run(serve(app, config))
 
 if __name__ == "__main__":
