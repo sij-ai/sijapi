@@ -3,18 +3,16 @@ Uses whisper_cpp to create an OpenAI-compatible Whisper web service.
 '''
 # routers/asr.py
 import os
-import sys
 import uuid
 import json
 import asyncio
 import tempfile
-import subprocess
 from urllib.parse import unquote
 from fastapi import APIRouter, HTTPException, Form, UploadFile, File, BackgroundTasks
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from typing import Optional
-from sijapi import L, ASR_DIR, WHISPER_CPP_MODELS, GARBAGE_COLLECTION_INTERVAL, GARBAGE_TTL, WHISPER_CPP_DIR, MAX_CPU_CORES
+from sijapi import L, ASR_DIR, WHISPER_CPP_MODELS, WHISPER_CPP_DIR, MAX_CPU_CORES
 
 asr = APIRouter()
 logger = L.get_module_logger("asr")
@@ -24,9 +22,7 @@ def warn(text: str): logger.warning(text)
 def err(text: str): logger.error(text)
 def crit(text: str): logger.critical(text)
 
-# Global dictionary to store transcription results
 transcription_results = {}
-
 class TranscribeParams(BaseModel):
     model: str = Field(default="small")
     output_srt: Optional[bool] = Field(default=False)
@@ -67,8 +63,8 @@ async def transcribe_endpoint(
     job_id = await transcribe_audio(file_path=temp_file_path, params=parameters)
 
     # Poll for completion
-    max_wait_time = 3600  # 60 minutes
-    poll_interval = 10  # 2 seconds
+    max_wait_time = 3600
+    poll_interval = 10
     elapsed_time = 0
 
     while elapsed_time < max_wait_time:
@@ -85,7 +81,6 @@ async def transcribe_endpoint(
     # If we've reached this point, the transcription has taken too long
     return JSONResponse(content={"status": "timeout", "message": "Transcription is taking longer than expected. Please check back later."}, status_code=202)
 
-
 async def transcribe_audio(file_path, params: TranscribeParams):
     debug(f"Transcribing audio file from {file_path}...")
     file_path = await convert_to_wav(file_path)
@@ -94,8 +89,7 @@ async def transcribe_audio(file_path, params: TranscribeParams):
     command = [str(WHISPER_CPP_DIR / 'build' / 'bin' / 'main')]
     command.extend(['-m', str(model_path)])
     command.extend(['-t', str(max(1, min(params.threads or MAX_CPU_CORES, MAX_CPU_CORES)))])
-    command.extend(['-np'])  # Always enable no-prints
-
+    command.extend(['-np'])
 
     if params.split_on_word:
         command.append('-sow')
@@ -159,8 +153,6 @@ async def transcribe_audio(file_path, params: TranscribeParams):
     finally:
         # Ensure the task is cancelled if we exit the loop
         transcription_task.cancel()
-
-    # This line should never be reached, but just in case:
     raise Exception("Unexpected exit from transcription function")
 
 
