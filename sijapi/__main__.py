@@ -69,11 +69,12 @@ async def lifespan(app: FastAPI):
         # Check if other instances have more recent data
         source = await API.get_most_recent_source()
         if source:
-            crit(f"Pulling changes from {source['ts_id']}...")
-            await API.pull_changes(source)
-            crit("Data pull complete.")
+            crit(f"Pulling changes from {source['ts_id']} ({source['ts_ip']})...")
+            total_changes = await API.pull_changes(source)
+            crit(f"Data pull complete. Total changes: {total_changes}")
         else:
             crit("No instances with more recent data found.")
+
 
     except Exception as e:
         crit(f"Error during startup: {str(e)}")
