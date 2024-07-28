@@ -5,7 +5,6 @@ import yaml
 import math
 import os
 import re
-import traceback
 import aiofiles
 import aiohttp
 import asyncpg
@@ -30,7 +29,6 @@ def info(text: str): logger.info(text)
 def warn(text: str): logger.warning(text)
 def err(text: str): logger.error(text)
 def crit(text: str): logger.critical(text)
-
 
 T = TypeVar('T', bound='Configuration')
 
@@ -398,11 +396,12 @@ class APIConfig(BaseModel):
                     """, last_synced_version, source_pool_entry['ts_id'])
                     
                     for change in changes:
-                        # Convert change.keys() to a list
                         columns = list(change.keys())
                         values = [change[col] for col in columns]
                         
-                        # Construct the SQL query
+                        # Log the target database and table name
+                        debug(f"Attempting to insert data into table: {table_name} in database: {dest_conn._params['database']} (host: {dest_conn._params['host']})")
+                        
                         insert_query = f"""
                             INSERT INTO "{table_name}" ({', '.join(columns)})
                             VALUES ({', '.join(f'${i+1}' for i in range(len(columns)))})
@@ -410,11 +409,15 @@ class APIConfig(BaseModel):
                             {', '.join(f"{col} = EXCLUDED.{col}" for col in columns if col != 'id')}
                         """
                         
-                        # Execute the query
-                        await dest_conn.execute(insert_query, *values)
+                        try:
+                            await dest_conn.execute(insert_query, *values)
+                        except asyncpg.exceptions.UndefinedColumnError as e:
+                            err(f"UndefinedColumnError in table: {table_name} in database: {dest_conn._params['database']} (host: {dest_conn._params['host']})")
+                            raise e
                     
                     if changes:
                         await self.update_sync_status(table_name, source_pool_entry['ts_id'], changes[-1]['version'])
+
 
     async def push_changes_to_all(self):
         async with self.get_connection() as local_conn:
@@ -473,10 +476,6 @@ class APIConfig(BaseModel):
             """, table_name, server_id, version)
 
     async def sync_schema(self):
-        for pool_entry in self.POOL:
-            async with self.get_connection(pool_entry) as conn:
-                await conn.execute('CREATE EXTENSION IF NOT EXISTS postgis')
-
         source_entry = self.local_db
         source_schema = await self.get_schema(source_entry)
         
@@ -549,7 +548,16 @@ class APIConfig(BaseModel):
                                     col_def += f" DEFAULT {t['column_default']}"
                                 columns.append(col_def)
                         
-                        sql = f'CREATE TABLE "{table_name}" ({", ".join(columns)})'
+                        primary_key_constraint = next(
+                            (con['definition'] for con in source_schema['constraints'] if con['table_name'] == table_name and con['contype'] == 'p'), 
+                            None
+                        )
+                        
+                        sql = f'CREATE TABLE "{table_name}" ({", ".join(columns)}'
+                        if primary_key_constraint:
+                            sql += f', {primary_key_constraint}'
+                        sql += ')'
+                        
                         info(f"Executing SQL: {sql}")
                         await conn.execute(sql)
                     else:
@@ -584,6 +592,16 @@ class APIConfig(BaseModel):
                                         sql = f'ALTER TABLE "{table_name}" ALTER COLUMN "{col_name}" {default_clause}'
                                         debug(f"Executing SQL: {sql}")
                                         await conn.execute(sql)
+                        
+                        # Ensure primary key constraint exists
+                        primary_key_constraint = next(
+                            (con['definition'] for con in source_schema['constraints'] if con['table_name'] == table_name and con['contype'] == 'p'), 
+                            None
+                        )
+                        if primary_key_constraint and primary_key_constraint not in target_schema['constraints']:
+                            sql = f'ALTER TABLE "{table_name}" ADD CONSTRAINT {primary_key_constraint}'
+                            debug(f"Executing SQL: {sql}")
+                            await conn.execute(sql)
                 except Exception as e:
                     err(f"Error processing table {table_name}: {str(e)}")
 
@@ -634,6 +652,7 @@ class APIConfig(BaseModel):
             END IF;
         END $$;
         """)
+
 
 
 class Location(BaseModel):
