@@ -655,12 +655,13 @@ class APIConfig(BaseModel):
                 {', '.join(f"{col} = EXCLUDED.{col}" for col in columns if col != 'id')}
             """
 
-            # Execute the insert for each change
-            affected_rows = 0
-            for change in changes:
-                values = [change[col] for col in columns]
-                result = await conn.execute(insert_query, *values)
-                affected_rows += int(result.split()[-1])
+            # Execute the insert for all changes in a single transaction
+            async with conn.transaction():
+                affected_rows = 0
+                for change in changes:
+                    values = [change[col] for col in columns]
+                    result = await conn.execute(insert_query, *values)
+                    affected_rows += int(result.split()[-1])
 
             return affected_rows
 
@@ -668,6 +669,7 @@ class APIConfig(BaseModel):
             err(f"Error applying batch changes to {table_name}: {str(e)}")
             err(f"Traceback: {traceback.format_exc()}")
             return 0
+
 
 
     async def push_changes_to_all(self):
