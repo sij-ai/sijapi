@@ -503,7 +503,6 @@ class APIConfig(BaseModel):
 
 
 
-
     async def ensure_sync_trigger(self, conn, table_name):
         await conn.execute(f"""
             CREATE OR REPLACE FUNCTION update_version_and_server_id()
@@ -683,7 +682,6 @@ class APIConfig(BaseModel):
         return total_changes
 
 
-
     async def apply_batch_changes(self, conn, table_name, changes, has_primary_key):
         if not changes:
             return 0
@@ -718,10 +716,10 @@ class APIConfig(BaseModel):
             debug(f"Generated insert query for {table_name}: {insert_query}")
 
             affected_rows = 0
-            async for change in tqdm(changes, desc=f"Syncing {table_name}", unit="row"):
+            for change in tqdm(changes, desc=f"Syncing {table_name}", unit="row"):
                 values = [change[col] for col in columns]
                 debug(f"Executing query for {table_name} with values: {values}")
-                result = await conn.execute(insert_query, *values)
+                result = await conn.execute(insert_query, *values)  # Pass values as separate arguments
                 affected_rows += int(result.split()[-1])
 
             return affected_rows
@@ -730,6 +728,7 @@ class APIConfig(BaseModel):
             err(f"Error applying batch changes to {table_name}: {str(e)}")
             err(f"Traceback: {traceback.format_exc()}")
             return 0
+
 
 
 
