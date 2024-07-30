@@ -14,7 +14,7 @@ import reverse_geocoder as rg
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union, TypeVar
 from dotenv import load_dotenv
-from pydantic import BaseModel, Field, create_model, validator
+from pydantic import BaseModel, Field, create_model, PrivateAttr
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
@@ -204,10 +204,14 @@ class APIConfig(BaseModel):
     TZ: str
     KEYS: List[str]
     GARBAGE: Dict[str, Any]
+    _db_pool: DatabasePool = PrivateAttr(default_factory=DatabasePool)
 
-    def __init__(self, **data):
-        super().__init__(**data)
-        self._db_pool = DatabasePool()
+    class Config:
+        arbitrary_types_allowed = True
+
+    @property
+    def db_pool(self):
+        return self._db_pool
 
     @property
     def db_pool(self):
@@ -252,9 +256,7 @@ class APIConfig(BaseModel):
 
         config_data['MODULES'] = cls._create_dynamic_config(config_data.get('MODULES', {}), 'DynamicModulesConfig')
         config_data['EXTENSIONS'] = cls._create_dynamic_config(config_data.get('EXTENSIONS', {}), 'DynamicExtensionsConfig')
-        instance = cls(**config_data)
-        instance.db_pool = DatabasePool()
-        return instance
+        return cls(**config_data)
 
 
     @classmethod
@@ -739,10 +741,10 @@ class APIConfig(BaseModel):
         """, table_name, column_name)
         return exists
 
+
     async def close_db_pools(self):
         if self._db_pool:
             await self._db_pool.close_all()
-
 
 
 class Location(BaseModel):
