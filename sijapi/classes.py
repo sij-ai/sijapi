@@ -252,7 +252,10 @@ class APIConfig(BaseModel):
 
         config_data['MODULES'] = cls._create_dynamic_config(config_data.get('MODULES', {}), 'DynamicModulesConfig')
         config_data['EXTENSIONS'] = cls._create_dynamic_config(config_data.get('EXTENSIONS', {}), 'DynamicExtensionsConfig')
-        return cls(**config_data)
+        instance = cls(**config_data)
+        instance.db_pool = DatabasePool()
+        return instance
+
 
     @classmethod
     def _create_dynamic_config(cls, data: Dict[str, Any], model_name: str):
