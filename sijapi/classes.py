@@ -14,7 +14,7 @@ import reverse_geocoder as rg
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union, TypeVar
 from dotenv import load_dotenv
-from pydantic import BaseModel, Field, create_model
+from pydantic import BaseModel, Field, create_model, validator
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
@@ -204,11 +204,15 @@ class APIConfig(BaseModel):
     TZ: str
     KEYS: List[str]
     GARBAGE: Dict[str, Any]
-    db_pool: DatabasePool = None
+    db_pool: Optional[DatabasePool] = Field(default=None, exclude=True)
 
     def __init__(self, **data):
         super().__init__(**data)
         self.db_pool = DatabasePool()
+
+    @validator('db_pool', pre=True, always=True)
+    def set_db_pool(cls, v):
+        return v or DatabasePool()
 
     @classmethod
     def load(cls, config_path: Union[str, Path], secrets_path: Union[str, Path]):
