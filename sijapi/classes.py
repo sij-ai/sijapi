@@ -437,37 +437,61 @@ class APIConfig(BaseModel):
                 )
             """)
 
-            await conn.execute(f"""
-                DO $$ 
-                BEGIN 
-                    -- Ensure version column exists
-                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = '{table_name}' AND column_name = 'version') THEN
-                        ALTER TABLE "{table_name}" ADD COLUMN version INTEGER DEFAULT 1;
-                    END IF;
-
-                    -- Ensure server_id column exists
-                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = '{table_name}' AND column_name = 'server_id') THEN
-                        ALTER TABLE "{table_name}" ADD COLUMN server_id TEXT DEFAULT '{os.environ.get('TS_ID')}';
-                    END IF;
-
-                    -- Create or replace the trigger function
-                    CREATE OR REPLACE FUNCTION update_version_and_server_id()
-                    RETURNS TRIGGER AS $$
-                    BEGIN
-                        NEW.version = COALESCE(OLD.version, 0) + 1;
-                        NEW.server_id = '{os.environ.get('TS_ID')}';
-                        RETURN NEW;
-                    END;
-                    $$ LANGUAGE plpgsql;
-
-                    -- Create the trigger if it doesn't exist
-                    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_version_and_server_id_trigger' AND tgrelid = '{table_name}'::regclass) THEN
-                        CREATE TRIGGER update_version_and_server_id_trigger
-                        BEFORE INSERT OR UPDATE ON "{table_name}"
-                        FOR EACH ROW EXECUTE FUNCTION update_version_and_server_id();
-                    END IF;
-                END $$;
+            # Check if version column exists
+            version_exists = await conn.fetchval(f"""
+                SELECT EXISTS (
+                    SELECT 1 FROM information_schema.columns 
+                    WHERE table_name = '{table_name}' AND column_name = 'version'
+                )
             """)
+
+            # Check if server_id column exists
+            server_id_exists = await conn.fetchval(f"""
+                SELECT EXISTS (
+                    SELECT 1 FROM information_schema.columns 
+                    WHERE table_name = '{table_name}' AND column_name = 'server_id'
+                )
+            """)
+
+            # Add version column if it doesn't exist
+            if not version_exists:
+                await conn.execute(f"""
+                    ALTER TABLE "{table_name}" ADD COLUMN version INTEGER DEFAULT 1
+                """)
+
+            # Add server_id column if it doesn't exist
+            if not server_id_exists:
+                await conn.execute(f"""
+                    ALTER TABLE "{table_name}" ADD COLUMN server_id TEXT DEFAULT '{os.environ.get('TS_ID')}'
+                """)
+
+            # Create or replace the trigger function
+            await conn.execute("""
+                CREATE OR REPLACE FUNCTION update_version_and_server_id()
+                RETURNS TRIGGER AS $$
+                BEGIN
+                    NEW.version = COALESCE(OLD.version, 0) + 1;
+                    NEW.server_id = $1;
+                    RETURN NEW;
+                END;
+                $$ LANGUAGE plpgsql;
+            """)
+
+            # Create the trigger if it doesn't exist
+            trigger_exists = await conn.fetchval(f"""
+                SELECT EXISTS (
+                    SELECT 1 FROM pg_trigger 
+                    WHERE tgname = 'update_version_and_server_id_trigger' 
+                    AND tgrelid = '{table_name}'::regclass
+                )
+            """)
+
+            if not trigger_exists:
+                await conn.execute(f"""
+                    CREATE TRIGGER update_version_and_server_id_trigger
+                    BEFORE INSERT OR UPDATE ON "{table_name}"
+                    FOR EACH ROW EXECUTE FUNCTION update_version_and_server_id('{os.environ.get('TS_ID')}')
+                """)
             
             info(f"Successfully ensured sync columns and trigger for table {table_name}. Has primary key: {has_primary_key}")
             return has_primary_key
