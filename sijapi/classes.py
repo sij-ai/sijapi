@@ -204,15 +204,14 @@ class APIConfig(BaseModel):
     TZ: str
     KEYS: List[str]
     GARBAGE: Dict[str, Any]
-    db_pool: Optional[DatabasePool] = Field(default=None, exclude=True)
 
     def __init__(self, **data):
         super().__init__(**data)
-        self.db_pool = DatabasePool()
+        self._db_pool = DatabasePool()
 
-    @validator('db_pool', pre=True, always=True)
-    def set_db_pool(cls, v):
-        return v or DatabasePool()
+    @property
+    def db_pool(self):
+        return self._db_pool
 
     @classmethod
     def load(cls, config_path: Union[str, Path], secrets_path: Union[str, Path]):
@@ -722,8 +721,8 @@ class APIConfig(BaseModel):
         return exists
 
     async def close_db_pools(self):
-        if self.db_pool:
-            await self.db_pool.close_all()
+        if self._db_pool:
+            await self._db_pool.close_all()
 
 
 
