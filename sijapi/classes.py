@@ -378,6 +378,7 @@ class APIConfig(BaseModel):
         
         return most_recent_source
 
+
     async def pull_changes(self, source_pool_entry):
         total_inserts = 0
         total_updates = 0
@@ -392,8 +393,7 @@ class APIConfig(BaseModel):
 
         try:
             async with self.get_connection(source_pool_entry) as source_conn:
-                async with self.get_connection(self.local_db) as dest_conn:  # Connect to local DB explicitly
-                    # Compare tables
+                async with self.get_connection(self.local_db) as dest_conn:
                     source_tables = await self.get_tables(source_conn)
                     dest_tables = await self.get_tables(dest_conn)
                     
@@ -405,6 +405,12 @@ class APIConfig(BaseModel):
                     info(f"Tables only in destination: {tables_only_in_dest}")
                     info(f"Common tables: {common_tables}")
 
+                    for table in tables_only_in_source:
+                        create_table_stmt = await source_conn.fetchval(f"SELECT pg_get_tabledef('{table}'::regclass::oid);")
+                        await dest_conn.execute(create_table_stmt)
+                        info(f"Created table '{table}' in destination database.")
+                        common_tables.add(table)
+
                     for table in common_tables:
                         await self.compare_table_structure(source_conn, dest_conn, table)
                         inserts, updates = await self.compare_and_sync_data(source_conn, dest_conn, table, source_id)
@@ -412,10 +418,6 @@ class APIConfig(BaseModel):
                         total_inserts += inserts
                         total_updates += updates
                         table_changes[table] = {'inserts': inserts, 'updates': updates}
-
-                    # Optionally, handle tables only in source
-                    for table in tables_only_in_source:
-                        warn(f"Table '{table}' exists in source but not in destination. Consider manual migration.")
 
             info(f"Comprehensive sync complete from {source_id} ({source_ip}) to {dest_id} ({dest_ip})")
             info(f"Total changes: {total_inserts} inserts, {total_updates} updates")
@@ -428,8 +430,6 @@ class APIConfig(BaseModel):
             err(f"Traceback: {traceback.format_exc()}")
 
         return total_inserts + total_updates
-
-
 
     async def get_tables(self, conn):
         tables = await conn.fetch("""
