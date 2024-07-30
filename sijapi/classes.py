@@ -570,12 +570,16 @@ class APIConfig(BaseModel):
                             for change in changes:
                                 columns = change.keys()
                                 values = [change[col] for col in columns]
-                                await remote_conn.execute(f"""
+                                placeholders = [f'${i+1}' for i in range(len(columns))]
+                                
+                                insert_query = f"""
                                     INSERT INTO "{table_name}" ({', '.join(columns)})
-                                    VALUES ({', '.join(f'${i+1}' for i in range(len(columns)))})
+                                    VALUES ({', '.join(placeholders)})
                                     ON CONFLICT (id) DO UPDATE SET
                                     {', '.join(f"{col} = EXCLUDED.{col}" for col in columns if col != 'id')}
-                                """, *values)
+                                """
+                                
+                                await remote_conn.execute(insert_query, *values)
                             
                             if changes:
                                 await self.update_sync_status(table_name, pool_entry['ts_id'], changes[-1]['version'])
@@ -583,13 +587,16 @@ class APIConfig(BaseModel):
                     info(f"Successfully pushed changes to {pool_entry['ts_id']}")
                 except Exception as e:
                     err(f"Error pushing changes to {pool_entry['ts_id']}: {str(e)}")
+                    err(f"Traceback: {traceback.format_exc()}")
+
 
     async def get_last_synced_version(self, table_name, server_id):
         async with self.get_connection() as conn:
-            return await conn.fetchval("""
+            result = await conn.fetchval("""
                 SELECT last_synced_version FROM sync_status
                 WHERE table_name = $1 AND server_id = $2
-            """, table_name, server_id) or 0
+            """, table_name, server_id)
+            return result if result is not None else 0
 
 
     async def update_sync_status(self, table_name, server_id, version):
