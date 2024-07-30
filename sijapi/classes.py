@@ -721,11 +721,12 @@ class APIConfig(BaseModel):
             stmt = await conn.prepare(insert_query)
 
             affected_rows = 0
-            for change in tqdm(changes, desc=f"Syncing {table_name}", unit="row"):
-                values = [change[col] for col in columns]
-                debug(f"Executing query for {table_name} with values: {values}")
-                result = await stmt.execute(*values)
-                affected_rows += 1  # Since we're executing one at a time, each successful execution affects one row
+            values_list = [[change[col] for col in columns] for change in changes]
+            
+            # Use executemany for batch insert
+            result = await stmt.executemany(values_list)
+            affected_rows = result.split()[-1] if result else 0
+            affected_rows = int(affected_rows) if affected_rows.isdigit() else 0
 
             return affected_rows
 
@@ -733,6 +734,7 @@ class APIConfig(BaseModel):
             err(f"Error applying batch changes to {table_name}: {str(e)}")
             err(f"Traceback: {traceback.format_exc()}")
             return 0
+
 
 
 
