@@ -39,6 +39,7 @@ def warn(text: str): logger.warning(text)
 def err(text: str): logger.error(text)
 def crit(text: str): logger.critical(text)
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
@@ -65,7 +66,7 @@ async def lifespan(app: FastAPI):
             total_changes = await API.pull_changes(source)
             crit(f"Data pull complete. Total changes: {total_changes}")
         else:
-            crit("No instances with more recent data found.")
+            crit("No instances with more recent data found or all instances are offline.")
 
     except Exception as e:
         crit(f"Error during startup: {str(e)}")
@@ -77,7 +78,6 @@ async def lifespan(app: FastAPI):
     crit("Shutting down...")
     await API.close_db_pools()
     crit("Database pools closed.")
-
 
 
 app = FastAPI(lifespan=lifespan)
