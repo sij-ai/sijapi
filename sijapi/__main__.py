@@ -59,10 +59,10 @@ async def lifespan(app: FastAPI):
 
     crit("Starting database synchronization...")
     try:
-        # Initialize sync structures
+        # Initialize sync structures on all databases
         await API.initialize_sync()
 
-        # Now that tables are initialized, check for the most recent source
+        # Check if other instances have more recent data
         source = await API.get_most_recent_source()
         if source:
             crit(f"Pulling changes from {source['ts_id']} ({source['ts_ip']})...")
@@ -80,6 +80,7 @@ async def lifespan(app: FastAPI):
     # Shutdown
     crit("Shutting down...")
     # Perform any cleanup operations here if needed
+
 
 
 app = FastAPI(lifespan=lifespan)
