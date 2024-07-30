@@ -653,6 +653,7 @@ class APIConfig(BaseModel):
                             debug(f"Number of changes for {table_name}: {len(changes)}")
                             
                             if changes:
+                                debug(f"Sample change for {table_name}: {changes[0]}")
                                 changes_count = await self.apply_batch_changes(dest_conn, table_name, changes, has_primary_key)
                                 total_changes += changes_count
                                 
@@ -720,12 +721,16 @@ class APIConfig(BaseModel):
             # Prepare the statement
             stmt = await conn.prepare(insert_query)
 
-            # Convert list of dicts to list of tuples
-            values_list = [tuple(change[col] for col in columns) for change in changes]
-            
-            # Use executemany for batch insert
-            result = await stmt.executemany(values_list)
-            affected_rows = len(values_list)  # Assume all rows were affected
+            affected_rows = 0
+            for change in changes:
+                try:
+                    values = [change[col] for col in columns]
+                    result = await stmt.fetchval(*values)
+                    affected_rows += 1
+                except Exception as e:
+                    err(f"Error inserting row into {table_name}: {str(e)}")
+                    err(f"Row data: {change}")
+                    # Continue with the next row
 
             return affected_rows
 
@@ -733,6 +738,7 @@ class APIConfig(BaseModel):
             err(f"Error applying batch changes to {table_name}: {str(e)}")
             err(f"Traceback: {traceback.format_exc()}")
             return 0
+
 
 
 
