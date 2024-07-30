@@ -637,8 +637,11 @@ class APIConfig(BaseModel):
                     for table in tables:
                         table_name = table['tablename']
                         try:
+                            debug(f"Processing table: {table_name}")
                             has_primary_key = await self.ensure_sync_columns(dest_conn, table_name)
+                            debug(f"Table {table_name} has primary key: {has_primary_key}")
                             last_synced_version = await self.get_last_synced_version(dest_conn, table_name, source_id)
+                            debug(f"Last synced version for {table_name}: {last_synced_version}")
                             
                             changes = await source_conn.fetch(f"""
                                 SELECT * FROM "{table_name}"
@@ -646,6 +649,8 @@ class APIConfig(BaseModel):
                                 ORDER BY version ASC
                                 LIMIT $3
                             """, last_synced_version, source_id, batch_size)
+                            
+                            debug(f"Number of changes for {table_name}: {len(changes)}")
                             
                             if changes:
                                 changes_count = await self.apply_batch_changes(dest_conn, table_name, changes, has_primary_key)
@@ -712,12 +717,15 @@ class APIConfig(BaseModel):
 
             debug(f"Generated insert query for {table_name}: {insert_query}")
 
+            # Prepare the statement
+            stmt = await conn.prepare(insert_query)
+
             affected_rows = 0
             for change in tqdm(changes, desc=f"Syncing {table_name}", unit="row"):
                 values = [change[col] for col in columns]
                 debug(f"Executing query for {table_name} with values: {values}")
-                result = await conn.execute(insert_query, *values)
-                affected_rows += int(result.split()[-1])
+                result = await stmt.execute(*values)
+                affected_rows += 1  # Since we're executing one at a time, each successful execution affects one row
 
             return affected_rows
 
@@ -725,6 +733,7 @@ class APIConfig(BaseModel):
             err(f"Error applying batch changes to {table_name}: {str(e)}")
             err(f"Traceback: {traceback.format_exc()}")
             return 0
+
 
 
 
