@@ -80,6 +80,7 @@ async def lifespan(app: FastAPI):
     crit("Database pools closed.")
 
 
+
 app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
