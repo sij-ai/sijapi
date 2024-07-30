@@ -315,6 +315,7 @@ class APIConfig(BaseModel):
             err(f"Error: {str(e)}")
             raise
 
+
     async def initialize_sync(self):
         for pool_entry in self.POOL:
             async with self.get_connection(pool_entry) as conn:
@@ -367,6 +368,7 @@ class APIConfig(BaseModel):
             info(f"Sync initialization complete for {pool_entry['ts_ip']}. All tables now have version and server_id columns with appropriate triggers.")
 
 
+
     async def get_most_recent_source(self):
         most_recent_source = None
         max_version = -1
@@ -379,8 +381,8 @@ class APIConfig(BaseModel):
                 async with self.get_connection(pool_entry) as conn:
                     version = await conn.fetchval("""
                         SELECT COALESCE(MAX(version), -1) FROM (
-                            SELECT MAX(version) as version FROM pg_tables
-                            WHERE schemaname = 'public'
+                            SELECT MAX(version) as version FROM information_schema.columns
+                            WHERE table_schema = 'public' AND column_name = 'version'
                         ) as subquery
                     """)
                     if version > max_version:
