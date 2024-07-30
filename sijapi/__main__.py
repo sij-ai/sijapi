@@ -31,17 +31,13 @@ args = parser.parse_args()
 
 L.setup_from_args(args)
 print(f"Debug modules after setup: {L.debug_modules}")
+
 logger = L.get_module_logger("main")
 def debug(text: str): logger.debug(text)
-debug(f"Debug message.")
 def info(text: str): logger.info(text)
-info(f"Info message.")
 def warn(text: str): logger.warning(text)
-warn(f"Warning message.")
 def err(text: str): logger.error(text)
-err(f"Error message.")
 def crit(text: str): logger.critical(text)
-crit(f"Critical message.")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -79,8 +75,8 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     crit("Shutting down...")
-    # Perform any cleanup operations here if needed
-
+    await API.close_db_pools()
+    crit("Database pools closed.")
 
 
 
