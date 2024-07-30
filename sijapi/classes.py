@@ -651,7 +651,6 @@ class APIConfig(BaseModel):
 
 
 
-
     async def apply_batch_changes(self, conn, table_name, changes):
         if not changes:
             return 0
@@ -666,23 +665,26 @@ class APIConfig(BaseModel):
 
             if id_exists:
                 insert_query = f"""
-                    INSERT INTO "{table_name}" ({', '.join(columns)})
+                    INSERT INTO "{table_name}" ({', '.join(f'"{col}"' for col in columns)})
                     VALUES ({', '.join(placeholders)})
                     ON CONFLICT (id) DO UPDATE SET
-                    {', '.join(f"{col} = EXCLUDED.{col}" for col in columns if col != 'id')}
+                    {', '.join(f'"{col}" = EXCLUDED."{col}"' for col in columns if col != 'id')}
                 """
             else:
                 # For tables without 'id', use all columns as conflict target
                 insert_query = f"""
-                    INSERT INTO "{table_name}" ({', '.join(columns)})
+                    INSERT INTO "{table_name}" ({', '.join(f'"{col}"' for col in columns)})
                     VALUES ({', '.join(placeholders)})
                     ON CONFLICT DO NOTHING
                 """
 
+            debug(f"Generated insert query for {table_name}: {insert_query}")
+
             # Execute the insert for each change
             affected_rows = 0
-            for change in changes:
+            async for change in tqdm(changes, desc=f"Syncing {table_name}", unit="row"):
                 values = [change[col] for col in columns]
+                debug(f"Executing query for {table_name} with values: {values}")
                 result = await conn.execute(insert_query, *values)
                 affected_rows += int(result.split()[-1])
 
@@ -721,9 +723,10 @@ class APIConfig(BaseModel):
                     columns = source_entry.keys()
                     placeholders = [f'${i+1}' for i in range(len(columns))]
                     insert_query = f"""
-                        INSERT INTO spatial_ref_sys ({', '.join(columns)})
+                        INSERT INTO spatial_ref_sys ({', '.join(f'"{col}"' for col in columns)})
                         VALUES ({', '.join(placeholders)})
                     """
+                    debug(f"Inserting new entry for srid {srid}: {insert_query}")
                     await dest_conn.execute(insert_query, *source_entry.values())
                     inserts += 1
                 elif source_entry != dest_dict[srid]:
@@ -736,6 +739,7 @@ class APIConfig(BaseModel):
                             proj4text = $4::text
                         WHERE srid = $5::integer
                     """
+                    debug(f"Updating entry for srid {srid}: {update_query}")
                     await dest_conn.execute(update_query, 
                         source_entry['auth_name'],
                         source_entry['auth_srid'],
@@ -752,7 +756,6 @@ class APIConfig(BaseModel):
             err(f"Error syncing spatial_ref_sys table: {str(e)}")
             err(f"Traceback: {traceback.format_exc()}")
             return 0
-
 
 
     async def push_changes_to_all(self):
