@@ -380,6 +380,10 @@ class APIConfig(BaseModel):
 
 
     async def pull_changes(self, source_pool_entry):
+        if source_pool_entry['ts_id'] == os.environ.get('TS_ID'):
+            info("Skipping self-sync")
+            return 0
+
         total_inserts = 0
         total_updates = 0
         table_changes = {}
@@ -394,30 +398,49 @@ class APIConfig(BaseModel):
         try:
             async with self.get_connection(source_pool_entry) as source_conn:
                 async with self.get_connection(self.local_db) as dest_conn:
-                    source_tables = await self.get_tables(source_conn)
-                    dest_tables = await self.get_tables(dest_conn)
+                    tables = await source_conn.fetch("""
+                        SELECT tablename FROM pg_tables 
+                        WHERE schemaname = 'public'
+                    """)
                     
-                    tables_only_in_source = set(source_tables) - set(dest_tables)
-                    tables_only_in_dest = set(dest_tables) - set(source_tables)
-                    common_tables = set(source_tables) & set(dest_tables)
-
-                    info(f"Tables only in source: {tables_only_in_source}")
-                    info(f"Tables only in destination: {tables_only_in_dest}")
-                    info(f"Common tables: {common_tables}")
-
-                    for table in tables_only_in_source:
-                        create_table_stmt = await source_conn.fetchval(f"SELECT pg_get_tabledef('{table}'::regclass::oid);")
-                        await dest_conn.execute(create_table_stmt)
-                        info(f"Created table '{table}' in destination database.")
-                        common_tables.add(table)
-
-                    for table in common_tables:
-                        await self.compare_table_structure(source_conn, dest_conn, table)
-                        inserts, updates = await self.compare_and_sync_data(source_conn, dest_conn, table, source_id)
+                    for table in tables:
+                        table_name = table['tablename']
+                        last_synced_version = await self.get_last_synced_version(table_name, source_id)
+                        
+                        changes = await source_conn.fetch(f"""
+                            SELECT * FROM "{table_name}"
+                            WHERE version > $1 AND server_id = $2
+                            ORDER BY version ASC
+                        """, last_synced_version, source_id)
+                        
+                        inserts = 0
+                        updates = 0
+                        for change in changes:
+                            columns = list(change.keys())
+                            values = [change[col] for col in columns]
+                            placeholders = [f'${i+1}' for i in range(len(columns))]
+                            
+                            insert_query = f"""
+                                INSERT INTO "{table_name}" ({', '.join(columns)})
+                                VALUES ({', '.join(placeholders)})
+                                ON CONFLICT (id) DO UPDATE SET
+                                {', '.join(f"{col} = EXCLUDED.{col}" for col in columns if col != 'id')}
+                            """
+                            
+                            result = await dest_conn.execute(insert_query, *values)
+                            if 'UPDATE' in result:
+                                updates += 1
+                            else:
+                                inserts += 1
+                        
+                        if changes:
+                            await self.update_sync_status(table_name, source_id, changes[-1]['version'])
                         
                         total_inserts += inserts
                         total_updates += updates
-                        table_changes[table] = {'inserts': inserts, 'updates': updates}
+                        table_changes[table_name] = {'inserts': inserts, 'updates': updates}
+                        
+                        info(f"Synced {table_name} from {source_id} to {dest_id}: {inserts} inserts, {updates} updates")
 
             info(f"Comprehensive sync complete from {source_id} ({source_ip}) to {dest_id} ({dest_ip})")
             info(f"Total changes: {total_inserts} inserts, {total_updates} updates")
@@ -545,58 +568,58 @@ class APIConfig(BaseModel):
 
 
     async def push_changes_to_all(self):
-        async with self.get_connection() as local_conn:
-            tables = await local_conn.fetch("""
-                SELECT tablename FROM pg_tables 
-                WHERE schemaname = 'public'
-            """)
-            
-            for pool_entry in self.POOL:
-                if pool_entry['ts_id'] == os.environ.get('TS_ID'):
-                    continue
-                
-                try:
-                    async with self.get_connection(pool_entry) as remote_conn:
-                        for table in tables:
-                            table_name = table['tablename']
-                            last_synced_version = await self.get_last_synced_version(table_name, pool_entry['ts_id'])
-                            
-                            changes = await local_conn.fetch(f"""
-                                SELECT * FROM "{table_name}"
-                                WHERE version > $1 AND server_id = $2
-                                ORDER BY version ASC
-                            """, last_synced_version, os.environ.get('TS_ID'))
-                            
-                            for change in changes:
-                                columns = change.keys()
-                                values = [change[col] for col in columns]
-                                placeholders = [f'${i+1}' for i in range(len(columns))]
-                                
-                                insert_query = f"""
-                                    INSERT INTO "{table_name}" ({', '.join(columns)})
-                                    VALUES ({', '.join(placeholders)})
-                                    ON CONFLICT (id) DO UPDATE SET
-                                    {', '.join(f"{col} = EXCLUDED.{col}" for col in columns if col != 'id')}
-                                """
-                                
-                                await remote_conn.execute(insert_query, *values)
-                            
-                            if changes:
-                                await self.update_sync_status(table_name, pool_entry['ts_id'], changes[-1]['version'])
+        for pool_entry in self.POOL:
+            if pool_entry['ts_id'] != os.environ.get('TS_ID'):
+                await self.push_changes_to_one(pool_entry)
+
+    async def push_changes_to_one(self, pool_entry):
+        try:
+            async with self.get_connection() as local_conn:
+                async with self.get_connection(pool_entry) as remote_conn:
+                    tables = await local_conn.fetch("""
+                        SELECT tablename FROM pg_tables 
+                        WHERE schemaname = 'public'
+                    """)
                     
-                    info(f"Successfully pushed changes to {pool_entry['ts_id']}")
-                except Exception as e:
-                    err(f"Error pushing changes to {pool_entry['ts_id']}: {str(e)}")
-                    err(f"Traceback: {traceback.format_exc()}")
+                    for table in tables:
+                        table_name = table['tablename']
+                        last_synced_version = await self.get_last_synced_version(table_name, pool_entry['ts_id'])
+                        
+                        changes = await local_conn.fetch(f"""
+                            SELECT * FROM "{table_name}"
+                            WHERE version > $1 AND server_id = $2
+                            ORDER BY version ASC
+                        """, last_synced_version, os.environ.get('TS_ID'))
+                        
+                        for change in changes:
+                            columns = list(change.keys())
+                            values = [change[col] for col in columns]
+                            placeholders = [f'${i+1}' for i in range(len(columns))]
+                            
+                            insert_query = f"""
+                                INSERT INTO "{table_name}" ({', '.join(columns)})
+                                VALUES ({', '.join(placeholders)})
+                                ON CONFLICT (id) DO UPDATE SET
+                                {', '.join(f"{col} = EXCLUDED.{col}" for col in columns if col != 'id')}
+                            """
+                            
+                            await remote_conn.execute(insert_query, *values)
+                        
+                        if changes:
+                            await self.update_sync_status(table_name, pool_entry['ts_id'], changes[-1]['version'])
+            
+            info(f"Successfully pushed changes to {pool_entry['ts_id']}")
+        except Exception as e:
+            err(f"Error pushing changes to {pool_entry['ts_id']}: {str(e)}")
+            err(f"Traceback: {traceback.format_exc()}")
 
 
     async def get_last_synced_version(self, table_name, server_id):
         async with self.get_connection() as conn:
-            result = await conn.fetchval("""
+            return await conn.fetchval("""
                 SELECT last_synced_version FROM sync_status
                 WHERE table_name = $1 AND server_id = $2
-            """, table_name, server_id)
-            return result if result is not None else 0
+            """, table_name, server_id) or 0
 
 
     async def update_sync_status(self, table_name, server_id, version):
@@ -610,18 +633,13 @@ class APIConfig(BaseModel):
 
 
     async def sync_schema(self):
-        local_id = os.environ.get('TS_ID')
-        source_entry = self.local_db
-        source_schema = await self.get_schema(source_entry)
-        
+        local_schema_version = await self.get_schema_version(self.local_db)
         for pool_entry in self.POOL:
-            if pool_entry['ts_id'] != local_id:  # Skip the local instance
-                try:
-                    target_schema = await self.get_schema(pool_entry)
-                    await self.apply_schema_changes(pool_entry, source_schema, target_schema)
-                    info(f"Synced schema to {pool_entry['ts_ip']}")
-                except Exception as e:
-                    err(f"Failed to sync schema to {pool_entry['ts_ip']}: {str(e)}")
+            if pool_entry['ts_id'] != os.environ.get('TS_ID'):
+                remote_schema_version = await self.get_schema_version(pool_entry)
+                if remote_schema_version != local_schema_version:
+                    await self.apply_schema_changes(pool_entry)
+
 
     async def get_schema(self, pool_entry: Dict[str, Any]):
         async with self.get_connection(pool_entry) as conn:
@@ -652,8 +670,16 @@ class APIConfig(BaseModel):
                 'constraints': constraints
             }
 
+
     async def apply_schema_changes(self, pool_entry: Dict[str, Any], source_schema, target_schema):
         async with self.get_connection(pool_entry) as conn:
+            # Check schema version
+            source_version = await self.get_schema_version(self.local_db)
+            target_version = await self.get_schema_version(pool_entry)
+            if source_version == target_version:
+                info(f"Schema versions match for {pool_entry['ts_ip']}. Skipping synchronization.")
+                return
+
             source_tables = {t['table_name']: t for t in source_schema['tables']}
             target_tables = {t['table_name']: t for t in target_schema['tables']}
 
@@ -734,10 +760,16 @@ class APIConfig(BaseModel):
                             (con['definition'] for con in source_schema['constraints'] if con['table_name'] == table_name and con['contype'] == 'p'), 
                             None
                         )
-                        if primary_key_constraint and primary_key_constraint not in target_schema['constraints']:
-                            sql = f'ALTER TABLE "{table_name}" ADD CONSTRAINT {primary_key_constraint}'
-                            debug(f"Executing SQL: {sql}")
-                            await conn.execute(sql)
+                        if primary_key_constraint:
+                            constraint_name = f"{table_name}_pkey"
+                            constraint_exists = await conn.fetchval(f"""
+                                SELECT 1 FROM pg_constraint 
+                                WHERE conname = '{constraint_name}'
+                            """)
+                            if not constraint_exists:
+                                sql = f'ALTER TABLE "{table_name}" ADD CONSTRAINT {constraint_name} {primary_key_constraint}'
+                                debug(f"Executing SQL: {sql}")
+                                await conn.execute(sql)
                 except Exception as e:
                     err(f"Error processing table {table_name}: {str(e)}")
 
@@ -777,7 +809,15 @@ class APIConfig(BaseModel):
             except Exception as e:
                 err(f"Error processing constraints: {str(e)}")
 
-        info(f"Schema synchronization completed for {pool_entry['ts_ip']}")
+            # Update schema version
+            await conn.execute("UPDATE schema_version SET version = $1", source_version)
+            info(f"Schema synchronization completed for {pool_entry['ts_ip']}")
+
+
+    async def get_schema_version(self, pool_entry):
+        async with self.get_connection(pool_entry) as conn:
+            return await conn.fetchval("SELECT version FROM schema_version")
+
 
     async def create_sequence_if_not_exists(self, conn, sequence_name):
         await conn.execute(f"""
