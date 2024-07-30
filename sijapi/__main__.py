@@ -62,11 +62,7 @@ async def lifespan(app: FastAPI):
         # Initialize sync structures
         await API.initialize_sync()
 
-        # Sync schema across all databases
-        await API.sync_schema()
-        crit("Schema synchronization complete.")
-        
-        # Check if other instances have more recent data
+        # Now that tables are initialized, check for the most recent source
         source = await API.get_most_recent_source()
         if source:
             crit(f"Pulling changes from {source['ts_id']} ({source['ts_ip']})...")
@@ -74,7 +70,6 @@ async def lifespan(app: FastAPI):
             crit(f"Data pull complete. Total changes: {total_changes}")
         else:
             crit("No instances with more recent data found.")
-
 
     except Exception as e:
         crit(f"Error during startup: {str(e)}")
@@ -85,6 +80,7 @@ async def lifespan(app: FastAPI):
     # Shutdown
     crit("Shutting down...")
     # Perform any cleanup operations here if needed
+
 
 app = FastAPI(lifespan=lifespan)
 
