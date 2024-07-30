@@ -165,6 +165,32 @@ class Configuration(BaseModel):
 
 
 
+class DatabasePool:
+    def __init__(self):
+        self.pools = {}
+
+    async def get_connection(self, pool_entry):
+        pool_key = f"{pool_entry['ts_ip']}:{pool_entry['db_port']}"
+        if pool_key not in self.pools:
+            self.pools[pool_key] = await asyncpg.create_pool(
+                host=pool_entry['ts_ip'],
+                port=pool_entry['db_port'],
+                user=pool_entry['db_user'],
+                password=pool_entry['db_pass'],
+                database=pool_entry['db_name'],
+                min_size=1,
+                max_size=10
+            )
+        return await self.pools[pool_key].acquire()
+
+    async def release_connection(self, pool_entry, connection):
+        pool_key = f"{pool_entry['ts_ip']}:{pool_entry['db_port']}"
+        await self.pools[pool_key].release(connection)
+
+    async def close_all(self):
+        for pool in self.pools.values():
+            await pool.close()
+
 class APIConfig(BaseModel):
     HOST: str
     PORT: int
@@ -178,6 +204,11 @@ class APIConfig(BaseModel):
     TZ: str
     KEYS: List[str]
     GARBAGE: Dict[str, Any]
+    db_pool: DatabasePool = None
+
+    def __init__(self, **data):
+        super().__init__(**data)
+        self.db_pool = DatabasePool()
 
     @classmethod
     def load(cls, config_path: Union[str, Path], secrets_path: Union[str, Path]):
@@ -300,19 +331,20 @@ class APIConfig(BaseModel):
         
         info(f"Attempting to connect to database: {pool_entry}")
         try:
-            conn = await asyncpg.connect(
-                host=pool_entry['ts_ip'],
-                port=pool_entry['db_port'],
-                user=pool_entry['db_user'],
-                password=pool_entry['db_pass'],
-                database=pool_entry['db_name']
-            )
+            conn = await self.db_pool.get_connection(pool_entry)
             try:
                 yield conn
             finally:
-                await conn.close()
+                await self.db_pool.release_connection(pool_entry, conn)
+        except asyncpg.exceptions.ConnectionDoesNotExistError:
+            err(f"Connection to database {pool_entry['ts_ip']}:{pool_entry['db_port']} does not exist or has been closed")
+            raise
+        except asyncpg.exceptions.ConnectionFailureError as e:
+            err(f"Failed to connect to database: {pool_entry['ts_ip']}:{pool_entry['db_port']}")
+            err(f"Connection error: {str(e)}")
+            raise
         except Exception as e:
-            warn(f"Failed to connect to database: {pool_entry['ts_ip']}:{pool_entry['db_port']}")
+            err(f"Unexpected error connecting to database: {pool_entry['ts_ip']}:{pool_entry['db_port']}")
             err(f"Error: {str(e)}")
             raise
 
@@ -331,10 +363,11 @@ class APIConfig(BaseModel):
                         await self.create_sync_trigger(conn, table_name)
 
                     info(f"Sync initialization complete for {pool_entry['ts_ip']}. All tables now have version and server_id columns with appropriate triggers.")
+            except asyncpg.exceptions.ConnectionFailureError:
+                err(f"Failed to connect to database during initialization: {pool_entry['ts_ip']}:{pool_entry['db_port']}")
             except Exception as e:
                 err(f"Error initializing sync for {pool_entry['ts_ip']}: {str(e)}")
                 err(f"Traceback: {traceback.format_exc()}")
-
 
     async def ensure_sync_columns(self, conn, table_name):
         try:
@@ -355,7 +388,6 @@ class APIConfig(BaseModel):
         except Exception as e:
             err(f"Error ensuring sync columns for table {table_name}: {str(e)}")
             err(f"Traceback: {traceback.format_exc()}")
-
 
     async def create_sync_trigger(self, conn, table_name):
         await conn.execute(f"""
@@ -416,6 +448,8 @@ class APIConfig(BaseModel):
                     if version > max_version:
                         max_version = version
                         most_recent_source = pool_entry
+            except asyncpg.exceptions.ConnectionFailureError:
+                err(f"Failed to connect to database: {pool_entry['ts_ip']}:{pool_entry['db_port']}")
             except Exception as e:
                 err(f"Error checking version for {pool_entry['ts_id']}: {str(e)}")
         
@@ -425,7 +459,6 @@ class APIConfig(BaseModel):
             info("No valid source found with version information")
         
         return most_recent_source
-
 
     async def pull_changes(self, source_pool_entry, batch_size=10000):
         if source_pool_entry['ts_id'] == os.environ.get('TS_ID'):
@@ -684,7 +717,9 @@ class APIConfig(BaseModel):
         """, table_name, column_name)
         return exists
 
-
+    async def close_db_pools(self):
+        if self.db_pool:
+            await self.db_pool.close_all()
 
 
 
