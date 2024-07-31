@@ -417,50 +417,49 @@ if API.EXTENSIONS.courtlistener == "on" or API.EXTENSIONS.courtlistener == True:
             await cl_download_file(download_url, target_path, session)
             debug(f"Downloaded {file_name} to {target_path}")
 
-
 @serve.get("/s", response_class=HTMLResponse)
 async def shortener_form(request: Request):
     return templates.TemplateResponse("shortener.html", {"request": request})
 
 @serve.post("/s")
 async def create_short_url(request: Request, long_url: str = Form(...), custom_code: Optional[str] = Form(None)):
-    async with API.get_connection() as conn:
-        await create_tables(conn)
+    await create_tables()
 
-        if custom_code:
-            if len(custom_code) != 3 or not custom_code.isalnum():
-                return templates.TemplateResponse("shortener.html", {"request": request, "error": "Custom code must be 3 alphanumeric characters"})
-            
-            existing = await conn.fetchval('SELECT 1 FROM short_urls WHERE short_code = $1', custom_code)
-            if existing:
-                return templates.TemplateResponse("shortener.html", {"request": request, "error": "Custom code already in use"})
-            
-            short_code = custom_code
-        else:
-            chars = string.ascii_letters + string.digits
-            while True:
-                short_code = ''.join(random.choice(chars) for _ in range(3))
-                existing = await conn.fetchval('SELECT 1 FROM short_urls WHERE short_code = $1', short_code)
-                if not existing:
-                    break
+    if custom_code:
+        if len(custom_code) != 3 or not custom_code.isalnum():
+            return templates.TemplateResponse("shortener.html", {"request": request, "error": "Custom code must be 3 alphanumeric characters"})
+        
+        existing = await API.execute_write_query('SELECT 1 FROM short_urls WHERE short_code = $1', custom_code, table_name="short_urls")
+        if existing:
+            return templates.TemplateResponse("shortener.html", {"request": request, "error": "Custom code already in use"})
+        
+        short_code = custom_code
+    else:
+        chars = string.ascii_letters + string.digits
+        while True:
+            short_code = ''.join(random.choice(chars) for _ in range(3))
+            existing = await API.execute_write_query('SELECT 1 FROM short_urls WHERE short_code = $1', short_code, table_name="short_urls")
+            if not existing:
+                break
 
-        await conn.execute(
-            'INSERT INTO short_urls (short_code, long_url) VALUES ($1, $2)',
-            short_code, long_url
-        )
+    await API.execute_write_query(
+        'INSERT INTO short_urls (short_code, long_url) VALUES ($1, $2)',
+        short_code, long_url,
+        table_name="short_urls"
+    )
 
     short_url = f"https://sij.ai/{short_code}"
     return templates.TemplateResponse("shortener.html", {"request": request, "short_url": short_url})
 
-async def create_tables(conn):
-    await conn.execute('''
+async def create_tables():
+    await API.execute_write_query('''
         CREATE TABLE IF NOT EXISTS short_urls (
             short_code VARCHAR(3) PRIMARY KEY,
             long_url TEXT NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
-    ''')
-    await conn.execute('''
+    ''', table_name="short_urls")
+    await API.execute_write_query('''
         CREATE TABLE IF NOT EXISTS click_logs (
             id SERIAL PRIMARY KEY,
             short_code VARCHAR(3) REFERENCES short_urls(short_code),
@@ -468,48 +467,51 @@ async def create_tables(conn):
             ip_address TEXT,
             user_agent TEXT
         )
-    ''')
+    ''', table_name="click_logs")
 
 @serve.get("/{short_code}", response_class=RedirectResponse, status_code=301)
 async def redirect_short_url(request: Request, short_code: str = PathParam(..., min_length=3, max_length=3)):
     if request.headers.get('host') != 'sij.ai':
         raise HTTPException(status_code=404, detail="Not Found")
     
-    async with API.get_connection() as conn:
-        result = await conn.fetchrow(
-            'SELECT long_url FROM short_urls WHERE short_code = $1',
-            short_code
-        )
+    result = await API.execute_write_query(
+        'SELECT long_url FROM short_urls WHERE short_code = $1',
+        short_code,
+        table_name="short_urls"
+    )
     
-        if result:
-            await conn.execute(
-                'INSERT INTO click_logs (short_code, ip_address, user_agent) VALUES ($1, $2, $3)',
-                short_code, request.client.host, request.headers.get("user-agent")
-            )
-            return result['long_url']
-        else:
-            raise HTTPException(status_code=404, detail="Short URL not found")
+    if result:
+        await API.execute_write_query(
+            'INSERT INTO click_logs (short_code, ip_address, user_agent) VALUES ($1, $2, $3)',
+            short_code, request.client.host, request.headers.get("user-agent"),
+            table_name="click_logs"
+        )
+        return result['long_url']
+    else:
+        raise HTTPException(status_code=404, detail="Short URL not found")
 
 @serve.get("/analytics/{short_code}")
 async def get_analytics(short_code: str):
-    async with API.get_connection() as conn:
-        url_info = await conn.fetchrow(
-            'SELECT long_url, created_at FROM short_urls WHERE short_code = $1',
-            short_code
-        )
-        if not url_info:
-            raise HTTPException(status_code=404, detail="Short URL not found")
-        
-        click_count = await conn.fetchval(
-            'SELECT COUNT(*) FROM click_logs WHERE short_code = $1',
-            short_code
-        )
-        
-        clicks = await conn.fetch(
-            'SELECT clicked_at, ip_address, user_agent FROM click_logs WHERE short_code = $1 ORDER BY clicked_at DESC LIMIT 100',
-            short_code
-        )
-        
+    url_info = await API.execute_write_query(
+        'SELECT long_url, created_at FROM short_urls WHERE short_code = $1',
+        short_code,
+        table_name="short_urls"
+    )
+    if not url_info:
+        raise HTTPException(status_code=404, detail="Short URL not found")
+    
+    click_count = await API.execute_write_query(
+        'SELECT COUNT(*) FROM click_logs WHERE short_code = $1',
+        short_code,
+        table_name="click_logs"
+    )
+    
+    clicks = await API.execute_write_query(
+        'SELECT clicked_at, ip_address, user_agent FROM click_logs WHERE short_code = $1 ORDER BY clicked_at DESC LIMIT 100',
+        short_code,
+        table_name="click_logs"
+    )
+    
     return {
         "short_code": short_code,
         "long_url": url_info['long_url'],
@@ -517,6 +519,7 @@ async def get_analytics(short_code: str):
         "total_clicks": click_count,
         "recent_clicks": [dict(click) for click in clicks]
     }
+
 
 
 

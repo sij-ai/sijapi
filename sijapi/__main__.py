@@ -134,6 +134,17 @@ async def handle_exception_middleware(request: Request, call_next):
             raise
     return response
 
+
+# This was removed on 7/31/2024 when we decided to instead use a targeted push sync approach.
+deprecated = '''
+async def push_changes_background():
+    try:
+        await API.push_changes_to_all()
+    except Exception as e:
+        err(f"Error pushing changes to other databases: {str(e)}")
+        err(f"Traceback: {traceback.format_exc()}")
+
+
 @app.middleware("http")
 async def sync_middleware(request: Request, call_next):
     response = await call_next(request)
@@ -147,6 +158,7 @@ async def sync_middleware(request: Request, call_next):
             err(f"Error pushing changes to other databases: {str(e)}")
     
     return response
+'''
 
 def load_router(router_name):
     router_file = ROUTER_DIR / f'{router_name}.py'
