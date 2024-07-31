@@ -14,7 +14,7 @@ import traceback
 from tqdm.asyncio import tqdm
 import reverse_geocoder as rg
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union, TypeVar
+from typing import Any, Dict, List, Optional, Tuple, Union, TypeVar, ClassVar
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field, create_model
 from concurrent.futures import ThreadPoolExecutor
@@ -181,9 +181,9 @@ class APIConfig(BaseModel):
     TZ: str
     KEYS: List[str]
     GARBAGE: Dict[str, Any]
-    _db_pools: Dict[str, asyncpg.Pool] = {}
+    _db_pools: Dict[str, Any] = Field(default_factory=dict)
 
-    SPECIAL_TABLES = ['spatial_ref_sys']  # Tables that can't have server_id and version columns
+    SPECIAL_TABLES: ClassVar[List[str]] = ['spatial_ref_sys']
 
     @classmethod
     def load(cls, config_path: Union[str, Path], secrets_path: Union[str, Path]):
