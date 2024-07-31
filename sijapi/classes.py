@@ -16,7 +16,7 @@ import reverse_geocoder as rg
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union, TypeVar, ClassVar
 from dotenv import load_dotenv
-from pydantic import BaseModel, Field, create_model
+from pydantic import BaseModel, Field, create_model, PrivateAttr
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
@@ -181,9 +181,10 @@ class APIConfig(BaseModel):
     TZ: str
     KEYS: List[str]
     GARBAGE: Dict[str, Any]
-    _db_pools: Dict[str, Any] = Field(default_factory=dict)
-
+    
     SPECIAL_TABLES: ClassVar[List[str]] = ['spatial_ref_sys']
+    
+    _db_pools: Dict[str, Any] = PrivateAttr(default_factory=dict)
 
     @classmethod
     def load(cls, config_path: Union[str, Path], secrets_path: Union[str, Path]):
