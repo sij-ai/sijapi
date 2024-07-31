@@ -6,7 +6,7 @@ import multiprocessing
 from dotenv import load_dotenv
 from dateutil import tz
 from pathlib import Path
-from .classes import Database, Geocoder, APIConfig, Configuration
+from .classes import Geocoder, APIConfig, Configuration
 from .logs import Logger
 
 # INITIALization
