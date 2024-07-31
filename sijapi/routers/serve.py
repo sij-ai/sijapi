@@ -31,7 +31,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from sijapi import (
-    L, API, LOGS_DIR, TS_ID, CASETABLE_PATH, COURTLISTENER_DOCKETS_URL, COURTLISTENER_API_KEY,
+    L, API, Serve, LOGS_DIR, TS_ID, CASETABLE_PATH, COURTLISTENER_DOCKETS_URL, COURTLISTENER_API_KEY,
     COURTLISTENER_BASE_URL, COURTLISTENER_DOCKETS_DIR, COURTLISTENER_SEARCH_DIR, ALERTS_DIR,
     MAC_UN, MAC_PW, MAC_ID, TS_TAILNET, IMG_DIR, PUBLIC_KEY, OBSIDIAN_VAULT_DIR
 )
@@ -51,7 +51,7 @@ templates = Jinja2Templates(directory=Path(__file__).parent.parent / "sites")
 
 @serve.get("/pgp")
 async def get_pgp():
-    return Response(PUBLIC_KEY, media_type="text/plain")
+    return Response(Serve.PGP, media_type="text/plain")
 
 @serve.get("/img/{image_name}")
 def serve_image(image_name: str):
@@ -119,17 +119,6 @@ async def hook_alert(request: Request):
     
     return await notify(alert)
 
-@serve.post("/alert/cd")
-async def hook_changedetection(webhook_data: dict):
-    body = webhook_data.get("body", {})
-    message = body.get("message", "")
-    
-    if message and any(word in message.split() for word in ["SPI", "sierra", "pacific"]):
-        filename = ALERTS_DIR / f"alert_{int(time.time())}.json"
-        filename.write_text(json.dumps(webhook_data, indent=4))
-        notify(message)
-
-    return {"status": "received"}
 
 async def notify(alert: str):
     fail = True
@@ -528,3 +517,65 @@ async def get_analytics(short_code: str):
         "total_clicks": click_count,
         "recent_clicks": [dict(click) for click in clicks]
     }
+
+
+
+async def forward_traffic(reader: asyncio.StreamReader, writer: asyncio.StreamWriter, destination: str):
+    dest_host, dest_port = destination.split(':')
+    dest_port = int(dest_port)
+    
+    try:
+        dest_reader, dest_writer = await asyncio.open_connection(dest_host, dest_port)
+    except Exception as e:
+        writer.close()
+        await writer.wait_closed()
+        return
+
+    async def forward(src, dst):
+        try:
+            while True:
+                data = await src.read(8192)
+                if not data:
+                    break
+                dst.write(data)
+                await dst.drain()
+        except Exception as e:
+            pass
+        finally:
+            dst.close()
+            await dst.wait_closed()
+
+    await asyncio.gather(
+        forward(reader, dest_writer),
+        forward(dest_reader, writer)
+    )
+
+async def start_server(source: str, destination: str):
+    host, port = source.split(':')
+    port = int(port)
+
+    server = await asyncio.start_server(
+        lambda r, w: forward_traffic(r, w, destination),
+        host,
+        port
+    )
+
+    async with server:
+        await server.serve_forever()
+
+async def start_port_forwarding():
+    if hasattr(Serve, 'forwarding_rules'):
+        for rule in Serve.forwarding_rules:
+            asyncio.create_task(start_server(rule.source, rule.destination))
+    else:
+        warn("No forwarding rules found in the configuration.")
+
+@serve.get("/forward_status")
+async def get_forward_status():
+    if hasattr(Serve, 'forwarding_rules'):
+        return {"status": "active", "rules": Serve.forwarding_rules}
+    else:
+        return {"status": "inactive", "message": "No forwarding rules configured"}
+
+# Add this to the end of your serve.py file
+asyncio.create_task(start_port_forwarding())

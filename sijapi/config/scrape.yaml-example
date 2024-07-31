@@ -1,0 +1,37 @@
+- name: "CalFire_THP"
+  url: "https://caltreesplans.resources.ca.gov/Caltrees/Report/ShowReport.aspx?module=TH_Document&reportID=492&reportType=LINK_REPORT_LIST"
+  output_file: "{{ Dir.DATA }}/calfire_thp_data.json"
+  content:
+    type: "pdf"
+    selector: null
+    js_render: false
+  processing:
+    - name: "split_entries"
+      type: "regex_split"
+      pattern: '(\d+-\d+-\d+-\w+)'
+    - name: "filter_entries"
+      type: "keyword_filter"
+      keywords: ["Sierra Pacific", "SPI", "Land & Timber"]
+    - name: "extract_data"
+      type: "regex_extract"
+      extractions:
+        - name: "Harvest Document"
+          pattern: '(\d+-\d+-\d+-\w+)'
+        - name: "Land Owner"
+          pattern: '((?:SIERRA PACIFIC|SPI|.*?LAND & TIMBER).*?)(?=\d+-\d+-\d+-\w+|\Z)'
+          flags: ["DOTALL", "IGNORECASE"]
+        - name: "Location"
+          pattern: '((?:MDBM|HBM):.*?)(?=(?:SIERRA PACIFIC|SPI|.*?LAND & TIMBER)|\Z)'
+          flags: ["DOTALL"]
+        - name: "Total Acres"
+          pattern: '(\d+\.\d+)\s+acres'
+        - name: "Watershed"
+          pattern: 'Watershed:\s+(.+)'
+  post_processing:
+    - name: "extract_plss_coordinates"
+      type: "regex_extract"
+      field: "Location"
+      pattern: '(\w+): T(\d+)([NSEW]) R(\d+)([NSEW]) S(\d+)'
+      output_field: "PLSS Coordinates"
+      all_matches: true
+      format: "{0}: T{1}{2} R{3}{4} S{5}"

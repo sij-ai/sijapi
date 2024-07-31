@@ -1,0 +1,24 @@
+base_url: 'https://cloudflare.com'
+token: '{{ SECRET.CF_TOKEN }}'
+cf_ip: '65.1.1.1' # replace me
+ai: # tld, e.g. .ai
+  sij: # domain, e.g. sij.ai
+    _zone: c00a9e0ff540308232eb5762621d5b1 # zone id
+    _www: 8a26b17923ac3a8f21b6127cdb3d7459 # dns id for domain, e.g. www.sij.ai
+    api: 8a336ee8a5b13e112d6d4ae77c149bd6 # dns id for subdomain, e.g. api.sij.ai
+    txt: b4b0bd48ac4272b1c48eb1624072adb2 # dns id for subdomaikn, e.g. txt.sij.ai 
+    git: cd524c00b6daf824c933a294cb52eae2 # dns id for subdomain, e.g. git.sij.ai
+law: # tld, e.g. .law
+  sij: # domain, e.g. sij.law
+    _zone: 5b68d9cd99b896e26c232f03cda89d66 # zone id
+    _www: ba9afd99deeb0407ea1b74ba88eb5564 # dns id for domain, e.g. www.sij.law
+    map: 4de8fe05bb0e722ee2c78b2ddf553c82 # dns id for subdomain, e.g. map.sij.law
+    imap: 384acd03c139ffaed37f4e70c627e7d1 # dns id for subdomain, e.g. imap.sij.law
+    smtp: 0677e42ea9b589d67d1da21aa00455e0 # dns id for subdomain, e.g. smtp.sij.law
+esq: # tld, e.g. .esq
+  env: # domain, e.g. env.esq
+    _zone: faf889fd7c227c2e61875b2e70b5c6fe # zone id
+    _www: b9b636ce9bd4812a6564f572f0f373ee # dns id for domain, e.g. www.env.esq
+    dt: afbc205e829cfb8d3f79dab187c06f99 # dns id for subdomain, e.g. dt.env.esq
+    rss: f043d5cf485f4e53f9cbcb85fed2c861 # dns id for subdomain, e.g. rss.env.esq
+    s3: a5fa431a4be8f50af2c118aed353b0ec # dns id for subdomain, e.g. s3.env.esq
