@@ -1,0 +1,5 @@
+forwarding_rules:
+  - source: "test.domain.com:80"
+    destination: "100.64.64.14:8080"
+  - source: "100.64.64.20:1024"
+    destination: "127.0.0.1:1025"

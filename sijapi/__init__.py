@@ -28,6 +28,7 @@ MAX_CPU_CORES = min(int(os.getenv("MAX_CPU_CORES", int(multiprocessing.cpu_count
 IMG = Configuration.load('img', 'secrets')
 News = Configuration.load('news', 'secrets')
 Scrape = Configuration.load('scrape', 'secrets', Dir)
+Serve = Configuration.load('serve')
 
 # Directories & general paths
 ROUTER_DIR = BASE_DIR / "routers"
