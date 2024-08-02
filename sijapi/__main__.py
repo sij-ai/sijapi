@@ -39,12 +39,11 @@ def warn(text: str): logger.warning(text)
 def err(text: str): logger.error(text)
 def crit(text: str): logger.critical(text)
 
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
     crit("sijapi launched")
-    crit(f"Arguments: {args}")
+    info(f"Arguments: {args}")
 
     # Load routers
     if args.test:
@@ -54,20 +53,10 @@ async def lifespan(app: FastAPI):
             if getattr(API.MODULES, module_name):
                 load_router(module_name)
 
-    crit("Starting database synchronization...")
     try:
         # Initialize sync structures on all databases
         await API.initialize_sync()
-
-        # Check if other instances have more recent data
-        source = await API.get_most_recent_source()
-        if source:
-            crit(f"Pulling changes from {source['ts_id']} ({source['ts_ip']})...")
-            total_changes = await API.pull_changes(source)
-            crit(f"Data pull complete. Total changes: {total_changes}")
-        else:
-            crit("No instances with more recent data found or all instances are offline.")
-
+        
     except Exception as e:
         crit(f"Error during startup: {str(e)}")
         crit(f"Traceback: {traceback.format_exc()}")
@@ -78,8 +67,6 @@ async def lifespan(app: FastAPI):
     crit("Shutting down...")
     await API.close_db_pools()
     crit("Database pools closed.")
-
-
 
 app = FastAPI(lifespan=lifespan)
 
@@ -135,30 +122,41 @@ async def handle_exception_middleware(request: Request, call_next):
     return response
 
 
-# This was removed on 7/31/2024 when we decided to instead use a targeted push sync approach.
-deprecated = '''
-async def push_changes_background():
+@app.post("/sync/pull")
+async def pull_changes():
     try:
-        await API.push_changes_to_all()
-    except Exception as e:
-        err(f"Error pushing changes to other databases: {str(e)}")
-        err(f"Traceback: {traceback.format_exc()}")
-
-
-@app.middleware("http")
-async def sync_middleware(request: Request, call_next):
-    response = await call_next(request)
-    
-    # Check if the request was a database write operation
-    if request.method in ["POST", "PUT", "PATCH", "DELETE"]:
+        await API.add_primary_keys_to_local_tables()
+        await API.add_primary_keys_to_remote_tables()
         try:
-            # Push changes to other databases
-            await API.push_changes_to_all()
+            
+            source = await API.get_most_recent_source()
+            
+            if source:
+                # Pull changes from the source
+                total_changes = await API.pull_changes(source)
+                
+                return JSONResponse(content={
+                    "status": "success",
+                    "message": f"Pull complete. Total changes: {total_changes}",
+                    "source": f"{source['ts_id']} ({source['ts_ip']})",
+                    "changes": total_changes
+                })
+            else:
+                return JSONResponse(content={
+                    "status": "info",
+                    "message": "No instances with more recent data found or all instances are offline."
+                })
+        
         except Exception as e:
-            err(f"Error pushing changes to other databases: {str(e)}")
-    
-    return response
-'''
+            err(f"Error during pull: {str(e)}")
+            err(f"Traceback: {traceback.format_exc()}")
+            raise HTTPException(status_code=500, detail=f"Error during pull: {str(e)}")
+        
+    except Exception as e:
+            err(f"Error while ensuring primary keys to tables: {str(e)}")
+            err(f"Traceback: {traceback.format_exc()}")
+            raise HTTPException(status_code=500, detail=f"Error during primary key insurance: {str(e)}")
+
 
 def load_router(router_name):
     router_file = ROUTER_DIR / f'{router_name}.py'

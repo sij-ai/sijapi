@@ -20,6 +20,7 @@ L = Logger("Central", LOGS_DIR)
 
 # API essentials
 API = APIConfig.load('api', 'secrets')
+
 Dir = Configuration.load('dirs')
 HOST = f"{API.BIND}:{API.PORT}"
 LOCAL_HOSTS = [ipaddress.ip_address(localhost.strip()) for localhost in os.getenv('LOCAL_HOSTS', '127.0.0.1').split(',')] + ['localhost']

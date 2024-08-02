@@ -212,14 +212,12 @@ if API.EXTENSIONS.shellfish == "on" or API.EXTENSIONS.shellfish == True:
             except requests.exceptions.RequestException:
                 results.append(f"{address} is down")
         
-        # Generate a simple text-based graph
         graph = '|' * up_count + '.' * (len(addresses) - up_count)
         text_update = "\n".join(results)
         
         widget_command = ["widget", "--text", text_update, "--text", f"Graph: {graph}", "--icon", "network"]
         output = shellfish_run_widget_command(widget_command)
         return {"output": output, "graph": graph}
-
 
     def shellfish_update_widget(update: WidgetUpdate):
         widget_command = ["widget"]
@@ -290,6 +288,7 @@ if API.EXTENSIONS.courtlistener == "on" or API.EXTENSIONS.courtlistener == True:
         for result in results:
             bg_tasks.add_task(cl_docket_process, result)
         return JSONResponse(content={"message": "Received"}, status_code=status.HTTP_200_OK)
+    
 
     async def cl_docket_process(result):
         async with httpx.AsyncClient() as session:
@@ -346,11 +345,13 @@ if API.EXTENSIONS.courtlistener == "on" or API.EXTENSIONS.courtlistener == True:
             await cl_download_file(file_url, target_path, session)
             debug(f"Downloaded {file_name} to {target_path}")
 
+
     def cl_case_details(docket):
         case_info = CASETABLE.get(str(docket), {"code": "000", "shortname": "UNKNOWN"})
         case_code = case_info.get("code")
         short_name = case_info.get("shortname")
         return case_code, short_name
+    
 
     async def cl_download_file(url: str, path: Path, session: aiohttp.ClientSession = None):
         headers = {
@@ -417,19 +418,20 @@ if API.EXTENSIONS.courtlistener == "on" or API.EXTENSIONS.courtlistener == True:
             await cl_download_file(download_url, target_path, session)
             debug(f"Downloaded {file_name} to {target_path}")
 
+
 @serve.get("/s", response_class=HTMLResponse)
 async def shortener_form(request: Request):
     return templates.TemplateResponse("shortener.html", {"request": request})
 
+
 @serve.post("/s")
 async def create_short_url(request: Request, long_url: str = Form(...), custom_code: Optional[str] = Form(None)):
-    await create_tables()
 
     if custom_code:
         if len(custom_code) != 3 or not custom_code.isalnum():
             return templates.TemplateResponse("shortener.html", {"request": request, "error": "Custom code must be 3 alphanumeric characters"})
         
-        existing = await API.execute_write_query('SELECT 1 FROM short_urls WHERE short_code = $1', custom_code, table_name="short_urls")
+        existing = await API.execute_read_query('SELECT 1 FROM short_urls WHERE short_code = $1', custom_code, table_name="short_urls")
         if existing:
             return templates.TemplateResponse("shortener.html", {"request": request, "error": "Custom code already in use"})
         
@@ -437,8 +439,9 @@ async def create_short_url(request: Request, long_url: str = Form(...), custom_c
     else:
         chars = string.ascii_letters + string.digits
         while True:
+            debug(f"FOUND THE ISSUE")
             short_code = ''.join(random.choice(chars) for _ in range(3))
-            existing = await API.execute_write_query('SELECT 1 FROM short_urls WHERE short_code = $1', short_code, table_name="short_urls")
+            existing = await API.execute_read_query('SELECT 1 FROM short_urls WHERE short_code = $1', short_code, table_name="short_urls")
             if not existing:
                 break
 
@@ -451,48 +454,36 @@ async def create_short_url(request: Request, long_url: str = Form(...), custom_c
     short_url = f"https://sij.ai/{short_code}"
     return templates.TemplateResponse("shortener.html", {"request": request, "short_url": short_url})
 
-async def create_tables():
-    await API.execute_write_query('''
-        CREATE TABLE IF NOT EXISTS short_urls (
-            short_code VARCHAR(3) PRIMARY KEY,
-            long_url TEXT NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''', table_name="short_urls")
-    await API.execute_write_query('''
-        CREATE TABLE IF NOT EXISTS click_logs (
-            id SERIAL PRIMARY KEY,
-            short_code VARCHAR(3) REFERENCES short_urls(short_code),
-            clicked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            ip_address TEXT,
-            user_agent TEXT
-        )
-    ''', table_name="click_logs")
 
-@serve.get("/{short_code}", response_class=RedirectResponse, status_code=301)
-async def redirect_short_url(request: Request, short_code: str = PathParam(..., min_length=3, max_length=3)):
-    if request.headers.get('host') != 'sij.ai':
-        raise HTTPException(status_code=404, detail="Not Found")
-    
-    result = await API.execute_write_query(
+@serve.get("/{short_code}")
+async def redirect_short_url(short_code: str):
+    results = await API.execute_read_query(
         'SELECT long_url FROM short_urls WHERE short_code = $1',
         short_code,
         table_name="short_urls"
     )
     
-    if result:
-        await API.execute_write_query(
-            'INSERT INTO click_logs (short_code, ip_address, user_agent) VALUES ($1, $2, $3)',
-            short_code, request.client.host, request.headers.get("user-agent"),
-            table_name="click_logs"
-        )
-        return result['long_url']
-    else:
+    if not results:
         raise HTTPException(status_code=404, detail="Short URL not found")
+    
+    long_url = results[0].get('long_url')
+    
+    if not long_url:
+        raise HTTPException(status_code=404, detail="Long URL not found")
+    
+    # Increment click count (you may want to do this asynchronously)
+    await API.execute_write_query(
+        'INSERT INTO click_logs (short_code, clicked_at) VALUES ($1, $2)',
+        short_code, datetime.now(),
+        table_name="click_logs"
+    )
+    
+    return RedirectResponse(url=long_url)
+
 
 @serve.get("/analytics/{short_code}")
 async def get_analytics(short_code: str):
-    url_info = await API.execute_write_query(
+    url_info = await API.execute_read_query(
         'SELECT long_url, created_at FROM short_urls WHERE short_code = $1',
         short_code,
         table_name="short_urls"
@@ -500,13 +491,13 @@ async def get_analytics(short_code: str):
     if not url_info:
         raise HTTPException(status_code=404, detail="Short URL not found")
     
-    click_count = await API.execute_write_query(
+    click_count = await API.execute_read_query(
         'SELECT COUNT(*) FROM click_logs WHERE short_code = $1',
         short_code,
         table_name="click_logs"
     )
     
-    clicks = await API.execute_write_query(
+    clicks = await API.execute_read_query(
         'SELECT clicked_at, ip_address, user_agent FROM click_logs WHERE short_code = $1 ORDER BY clicked_at DESC LIMIT 100',
         short_code,
         table_name="click_logs"
@@ -521,15 +512,20 @@ async def get_analytics(short_code: str):
     }
 
 
-
-
 async def forward_traffic(reader: asyncio.StreamReader, writer: asyncio.StreamWriter, destination: str):
-    dest_host, dest_port = destination.split(':')
-    dest_port = int(dest_port)
+    try:
+        dest_host, dest_port = destination.split(':')
+        dest_port = int(dest_port)
+    except ValueError:
+        warn(f"Invalid destination format: {destination}. Expected 'host:port'.")
+        writer.close()
+        await writer.wait_closed()
+        return
     
     try:
         dest_reader, dest_writer = await asyncio.open_connection(dest_host, dest_port)
     except Exception as e:
+        warn(f"Failed to connect to destination {destination}: {str(e)}")
         writer.close()
         await writer.wait_closed()
         return
@@ -543,7 +539,7 @@ async def forward_traffic(reader: asyncio.StreamReader, writer: asyncio.StreamWr
                 dst.write(data)
                 await dst.drain()
         except Exception as e:
-            pass
+            warn(f"Error in forwarding: {str(e)}")
         finally:
             dst.close()
             await dst.wait_closed()
@@ -554,8 +550,12 @@ async def forward_traffic(reader: asyncio.StreamReader, writer: asyncio.StreamWr
     )
 
 async def start_server(source: str, destination: str):
-    host, port = source.split(':')
-    port = int(port)
+    if ':' in source:
+        host, port = source.split(':')
+        port = int(port)
+    else:
+        host = source
+        port = 80
 
     server = await asyncio.start_server(
         lambda r, w: forward_traffic(r, w, destination),
@@ -566,12 +566,14 @@ async def start_server(source: str, destination: str):
     async with server:
         await server.serve_forever()
 
+
 async def start_port_forwarding():
     if hasattr(Serve, 'forwarding_rules'):
         for rule in Serve.forwarding_rules:
             asyncio.create_task(start_server(rule.source, rule.destination))
     else:
         warn("No forwarding rules found in the configuration.")
+
 
 @serve.get("/forward_status")
 async def get_forward_status():
@@ -580,5 +582,5 @@ async def get_forward_status():
     else:
         return {"status": "inactive", "message": "No forwarding rules configured"}
 
-# Add this to the end of your serve.py file
+
 asyncio.create_task(start_port_forwarding())

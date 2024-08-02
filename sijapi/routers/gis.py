@@ -120,7 +120,6 @@ async def get_last_location() -> Optional[Location]:
     
     return None
 
-
 async def fetch_locations(start: Union[str, int, datetime], end: Union[str, int, datetime, None] = None) -> List[Location]:
     start_datetime = await dt(start)
     if end is None:
@@ -133,10 +132,24 @@ async def fetch_locations(start: Union[str, int, datetime], end: Union[str, int,
 
     debug(f"Fetching locations between {start_datetime} and {end_datetime}")
 
-    async with API.get_connection() as conn:
-        locations = []
-        # Check for records within the specified datetime range
-        range_locations = await conn.fetch('''
+    query = '''
+        SELECT id, datetime,
+        ST_X(ST_AsText(location)::geometry) AS longitude,
+        ST_Y(ST_AsText(location)::geometry) AS latitude,
+        ST_Z(ST_AsText(location)::geometry) AS elevation,
+        city, state, zip, street,
+        action, device_type, device_model, device_name, device_os
+        FROM locations
+        WHERE datetime >= $1 AND datetime <= $2
+        ORDER BY datetime DESC
+    '''
+    
+    locations = await API.execute_read_query(query, start_datetime.replace(tzinfo=None), end_datetime.replace(tzinfo=None), table_name="locations")
+    
+    debug(f"Range locations query returned: {locations}")
+
+    if not locations and (end is None or start_datetime.date() == end_datetime.date()):
+        fallback_query = '''
             SELECT id, datetime,
             ST_X(ST_AsText(location)::geometry) AS longitude,
             ST_Y(ST_AsText(location)::geometry) AS latitude,
@@ -144,30 +157,14 @@ async def fetch_locations(start: Union[str, int, datetime], end: Union[str, int,
             city, state, zip, street,
             action, device_type, device_model, device_name, device_os
             FROM locations
-            WHERE datetime >= $1 AND datetime <= $2
+            WHERE datetime < $1
             ORDER BY datetime DESC
-            ''', start_datetime.replace(tzinfo=None), end_datetime.replace(tzinfo=None))
-        
-        debug(f"Range locations query returned: {range_locations}")
-        locations.extend(range_locations)
-
-        if not locations and (end is None or start_datetime.date() == end_datetime.date()):
-            location_data = await conn.fetchrow('''
-                SELECT id, datetime,
-                ST_X(ST_AsText(location)::geometry) AS longitude,
-                ST_Y(ST_AsText(location)::geometry) AS latitude,
-                ST_Z(ST_AsText(location)::geometry) AS elevation,
-                city, state, zip, street,
-                action, device_type, device_model, device_name, device_os
-                FROM locations
-                WHERE datetime < $1
-                ORDER BY datetime DESC
-                LIMIT 1
-                ''', start_datetime.replace(tzinfo=None))
-            
-            debug(f"Fallback query returned: {location_data}")
-            if location_data:
-                locations.append(location_data)
+            LIMIT 1
+        '''
+        location_data = await API.execute_read_query(fallback_query, start_datetime.replace(tzinfo=None), table_name="locations")
+        debug(f"Fallback query returned: {location_data}")
+        if location_data:
+            locations = location_data
 
     debug(f"Locations found: {locations}")
 
@@ -197,35 +194,32 @@ async def fetch_locations(start: Union[str, int, datetime], end: Union[str, int,
 
     return location_objects if location_objects else []
 
-# Function to fetch the last location before the specified datetime
 async def fetch_last_location_before(datetime: datetime) -> Optional[Location]:
     datetime = await dt(datetime)
     
     debug(f"Fetching last location before {datetime}")
 
-    async with API.get_connection() as conn:
+    query = '''
+        SELECT id, datetime,
+            ST_X(ST_AsText(location)::geometry) AS longitude,
+            ST_Y(ST_AsText(location)::geometry) AS latitude,
+            ST_Z(ST_AsText(location)::geometry) AS elevation,
+            city, state, zip, street, country,
+            action
+        FROM locations
+        WHERE datetime < $1
+        ORDER BY datetime DESC
+        LIMIT 1
+    '''
+    
+    location_data = await API.execute_read_query(query, datetime.replace(tzinfo=None), table_name="locations")
 
-        location_data = await conn.fetchrow('''
-            SELECT id, datetime,
-                ST_X(ST_AsText(location)::geometry) AS longitude,
-                ST_Y(ST_AsText(location)::geometry) AS latitude,
-                ST_Z(ST_AsText(location)::geometry) AS elevation,
-                city, state, zip, street, country,
-                action
-            FROM locations
-            WHERE datetime < $1
-            ORDER BY datetime DESC
-            LIMIT 1
-        ''', datetime.replace(tzinfo=None))
-        
-        await conn.close()
-
-        if location_data:
-            debug(f"Last location found: {location_data}")
-            return Location(**location_data)
-        else:
-            debug("No location found before the specified datetime")
-            return None
+    if location_data:
+        debug(f"Last location found: {location_data[0]}")
+        return Location(**location_data[0])
+    else:
+        debug("No location found before the specified datetime")
+        return None
 
 @gis.get("/map", response_class=HTMLResponse)
 async def generate_map_endpoint(
@@ -247,16 +241,12 @@ async def generate_map_endpoint(
     return HTMLResponse(content=html_content)
 
 async def get_date_range():
-    async with API.get_connection() as conn:
-        query = "SELECT MIN(datetime) as min_date, MAX(datetime) as max_date FROM locations"
-        row = await conn.fetchrow(query)
-        if row and row['min_date'] and row['max_date']:
-            return row['min_date'], row['max_date']
-        else:
-            return datetime(2022, 1, 1), datetime.now()
-
-
-
+    query = "SELECT MIN(datetime) as min_date, MAX(datetime) as max_date FROM locations"
+    row = await API.execute_read_query(query, table_name="locations")
+    if row and row[0]['min_date'] and row[0]['max_date']:
+        return row[0]['min_date'], row[0]['max_date']
+    else:
+        return datetime(2022, 1, 1), datetime.now()
 
 async def generate_and_save_heatmap(
     start_date: Union[str, int, datetime],
@@ -313,8 +303,6 @@ Generate a heatmap for the given date range and save it as a PNG file using Foli
         err(f"Error generating and saving heatmap: {str(e)}")
         raise
 
-
-
 async def generate_map(start_date: datetime, end_date: datetime, max_points: int):
     locations = await fetch_locations(start_date, end_date)
     if not locations:
@@ -343,8 +331,6 @@ async def generate_map(start_date: datetime, end_date: datetime, max_points: int
 
     folium.TileLayer('cartodbdark_matter', name='Dark Mode').add_to(m)
 
-
-    # In the generate_map function:
     draw = Draw(
         draw_options={
             'polygon': True,
@@ -433,70 +419,70 @@ map.on(L.Draw.Event.CREATED, function (event) {
     return m.get_root().render()
 
 async def post_location(location: Location):
-    # if not location.datetime:
-    #     info(f"location appears to be missing datetime: {location}")
-    # else:
-    #    debug(f"post_location called with {location.datetime}")
-    async with API.get_connection() as conn:
-        try:
-            context = location.context or {}
-            action = context.get('action', 'manual')
-            device_type = context.get('device_type', 'Unknown')
-            device_model = context.get('device_model', 'Unknown')
-            device_name = context.get('device_name', 'Unknown')
-            device_os = context.get('device_os', 'Unknown')
-            
-            # Parse and localize the datetime
-            localized_datetime = await dt(location.datetime)
+    try:
+        context = location.context or {}
+        action = context.get('action', 'manual')
+        device_type = context.get('device_type', 'Unknown')
+        device_model = context.get('device_model', 'Unknown')
+        device_name = context.get('device_name', 'Unknown')
+        device_os = context.get('device_os', 'Unknown')
+        
+        # Parse and localize the datetime
+        localized_datetime = await dt(location.datetime)
 
-            await conn.execute('''
-                INSERT INTO locations (
-                    datetime, location, city, state, zip, street, action, device_type, device_model, device_name, device_os,
-                    class_, type, name, display_name, amenity, house_number, road, quarter, neighbourhood, 
-                    suburb, county, country_code, country
-                )
-                VALUES ($1, ST_SetSRID(ST_MakePoint($2, $3, $4), 4326), $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 
-                        $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)
-            ''', localized_datetime, location.longitude, location.latitude, location.elevation, location.city, location.state, 
-                    location.zip, location.street, action, device_type, device_model, device_name, device_os, 
-                    location.class_, location.type, location.name, location.display_name, 
-                    location.amenity, location.house_number, location.road, location.quarter, location.neighbourhood, 
-                    location.suburb, location.county, location.country_code, location.country)
-                
-            await conn.close()
-            info(f"Successfully posted location: {location.latitude}, {location.longitude}, {location.elevation} on {localized_datetime}")
-            return {
-                'datetime': localized_datetime,
-                'latitude': location.latitude,
-                'longitude': location.longitude,
-                'elevation': location.elevation,
-                'city': location.city,
-                'state': location.state,
-                'zip': location.zip,
-                'street': location.street,
-                'action': action,
-                'device_type': device_type,
-                'device_model': device_model,
-                'device_name': device_name,
-                'device_os': device_os,
-                'class_': location.class_,
-                'type': location.type,
-                'name': location.name,
-                'display_name': location.display_name,
-                'amenity': location.amenity,
-                'house_number': location.house_number,
-                'road': location.road,
-                'quarter': location.quarter,
-                'neighbourhood': location.neighbourhood,
-                'suburb': location.suburb,
-                'county': location.county,
-                'country_code': location.country_code,
-                'country': location.country
-            }
-        except Exception as e:
-            err(f"Error posting location {e}")
-            err(traceback.format_exc())
-            return None
+        query = '''
+            INSERT INTO locations (
+                datetime, location, city, state, zip, street, action, device_type, device_model, device_name, device_os,
+                class_, type, name, display_name, amenity, house_number, road, quarter, neighbourhood, 
+                suburb, county, country_code, country
+            )
+            VALUES ($1, ST_SetSRID(ST_MakePoint($2, $3, $4), 4326), $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 
+                    $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)
+        '''
+        
+        await API.execute_write_query(
+            query,
+            localized_datetime, location.longitude, location.latitude, location.elevation, location.city, location.state, 
+            location.zip, location.street, action, device_type, device_model, device_name, device_os, 
+            location.class_, location.type, location.name, location.display_name, 
+            location.amenity, location.house_number, location.road, location.quarter, location.neighbourhood, 
+            location.suburb, location.county, location.country_code, location.country,
+            table_name="locations"
+        )
+            
+        info(f"Successfully posted location: {location.latitude}, {location.longitude}, {location.elevation} on {localized_datetime}")
+        return {
+            'datetime': localized_datetime,
+            'latitude': location.latitude,
+            'longitude': location.longitude,
+            'elevation': location.elevation,
+            'city': location.city,
+            'state': location.state,
+            'zip': location.zip,
+            'street': location.street,
+            'action': action,
+            'device_type': device_type,
+            'device_model': device_model,
+            'device_name': device_name,
+            'device_os': device_os,
+            'class_': location.class_,
+            'type': location.type,
+            'name': location.name,
+            'display_name': location.display_name,
+            'amenity': location.amenity,
+            'house_number': location.house_number,
+            'road': location.road,
+            'quarter': location.quarter,
+            'neighbourhood': location.neighbourhood,
+            'suburb': location.suburb,
+            'county': location.county,
+            'country_code': location.country_code,
+            'country': location.country
+        }
+    except Exception as e:
+        err(f"Error posting location {e}")
+        err(traceback.format_exc())
+        return None
 
 
 @gis.post("/locate")
@@ -551,6 +537,7 @@ async def get_last_location_endpoint() -> JSONResponse:
         return JSONResponse(content=location_dict)
     else:
         raise HTTPException(status_code=404, detail="No location found before the specified datetime")
+
 
 
 @gis.get("/locate/{datetime_str}", response_model=List[Location])
