@@ -2,9 +2,10 @@
 Image generation module using StableDiffusion and similar models by way of ComfyUI.
 DEPENDS ON:
   LLM module
-  COMFYUI_URL, COMFYUI_DIR, COMFYUI_OUTPUT_DIR, TS_SUBNET, TS_ADDRESS, DATA_DIR, IMG_CONFIG_DIR, IMG_DIR, IMG_WORKFLOWS_DIR, LOCAL_HOSTS, API.URL, PHOTOPRISM_USER*, PHOTOPRISM_URL*, PHOTOPRISM_PASS*
+  COMFYUI_URL, COMFYUI_DIR, COMFYUI_OUTPUT_DIR, TS_SUBNET, TS_ADDRESS, DATA_DIR, IMG_CONFIG_DIR, IMG_DIR, IMG_WORKFLOWS_DIR, LOCAL_HOSTS
 *unimplemented.
 '''
+#routers/img.py
 
 from fastapi import APIRouter, Request, Query
 from fastapi.responses import JSONResponse, RedirectResponse

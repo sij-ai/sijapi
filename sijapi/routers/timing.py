@@ -1,6 +1,8 @@
 '''
 Uses the Timing.app API to get nicely formatted timeslip charts and spreadsheets.
 '''
+#routers/timing.py
+
 import tempfile
 import os
 import json
@@ -29,8 +31,8 @@ from sijapi import L, TIMING_API_KEY, TIMING_API_URL
 from sijapi.routers import gis
 
 
-time = APIRouter(tags=["private"])
-logger = L.get_module_logger("time")
+timing = APIRouter(tags=["private"])
+logger = L.get_module_logger("timing")
 def debug(text: str): logger.debug(text)
 def info(text: str): logger.info(text)
 def warn(text: str): logger.warning(text)
@@ -56,7 +58,7 @@ class TimingRequest(BaseModel):
 ####################
 #### TIMING API ####
 ####################
-@time.post("/time/post")
+@timing.post("/time/post")
 async def post_time_entry_to_timing(entry: Dict):
     url = 'https://web.timingapp.com/api/v1/time-entries'
     headers = {
@@ -195,7 +197,7 @@ def create_time_entry(original_entry, start_time, end_time, duration_seconds):
 
 
 # TIMELINE
-@time.get("/time/line")
+@timing.get("/time/line")
 async def get_timing_timeline(
     request: Request,
     start_date: str = Query(..., regex=r"\d{4}-\d{2}-\d{2}"),
@@ -251,7 +253,7 @@ def process_timeline(timing_data, queried_start_date, queried_end_date):
 
 
 # CSV
-@time.get("/time/csv")
+@timing.get("/time/csv")
 async def get_timing_csv(
     request: Request,
     start_date: str = Query(..., regex=r"\d{4}-\d{2}-\d{2}"),
@@ -311,7 +313,7 @@ def process_csv(timing_data, queried_start_date, queried_end_date):
     return output.getvalue()
 
 # MARKDOWN
-@time.get("/time/markdown3")
+@timing.get("/time/markdown3")
 async def get_timing_markdown3(
     request: Request,
     start_date: str = Query(..., regex=r"\d{4}-\d{2}-\d{2}"),
@@ -373,7 +375,7 @@ def process_timing_markdown3(timing_data, queried_start_date, queried_end_date):
     return "\n".join(markdown_output)
 
 
-@time.get("/time/markdown")
+@timing.get("/time/markdown")
 async def get_timing_markdown(
     request: Request,
     start: str = Query(..., regex=r"\d{4}-\d{2}-\d{2}"),
@@ -440,7 +442,7 @@ async def process_timing_markdown(start_date: datetime, end_date: datetime): # t
 
 
 #JSON
-@time.get("/time/json")
+@timing.get("/time/json")
 async def get_timing_json(
     request: Request,
     start_date: str = Query(..., regex=r"\d{4}-\d{2}-\d{2}"),
@@ -563,13 +565,13 @@ async def post_time_entry_to_timing(entry):
     return response.status_code, response.json()
 
 
-@time.get("/time/flagemoji/{country_code}")
+@timing.get("/time/flagemoji/{country_code}")
 def flag_emoji(country_code: str):
     offset = 127397
     flag = ''.join(chr(ord(char) + offset) for char in country_code.upper())
     return {"emoji": flag}
 
 
-@time.head("/time/")
+@timing.head("/time/")
 async def read_root():
     return {}

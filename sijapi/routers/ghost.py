@@ -1,3 +1,19 @@
+'''
+WIP. Will be used to manage and update Ghost blogs.
+'''
+#routers/ghost.py
+
+from fastapi import APIRouter
+from datetime import date
+import os
+import requests
+import json
+import yaml
+import jwt
+from sijapi import GHOST_API_KEY, GHOST_API_URL
+
+ghost = APIRouter()
+
 def generate_jwt_token():
     key_id, key_secret = GHOST_API_KEY.split(':')
     iat = int(date.now().timestamp())

@@ -1,6 +1,8 @@
 '''
 IN DEVELOPMENT - Cloudflare + Caddy module. Based on a bash script that's able to rapidly deploy new Cloudflare subdomains on new Caddy reverse proxy configurations, managing everything including restarting Caddy. The Python version needs more testing before actual use.
 '''
+#routers/cf.py
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from fastapi.responses import PlainTextResponse, JSONResponse
