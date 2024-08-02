@@ -81,6 +81,7 @@ async def transcribe_endpoint(
     # If we've reached this point, the transcription has taken too long
     return JSONResponse(content={"status": "timeout", "message": "Transcription is taking longer than expected. Please check back later."}, status_code=202)
 
+
 async def transcribe_audio(file_path, params: TranscribeParams):
     debug(f"Transcribing audio file from {file_path}...")
     file_path = await convert_to_wav(file_path)

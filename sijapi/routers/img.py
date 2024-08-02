@@ -6,29 +6,20 @@ DEPENDS ON:
 *unimplemented.
 '''
 
-from fastapi import APIRouter, Request, Response, Query
-from starlette.datastructures import Address
+from fastapi import APIRouter, Request, Query
 from fastapi.responses import JSONResponse, RedirectResponse
-from fastapi.staticfiles import StaticFiles
-from aiohttp import ClientSession, ClientTimeout
+from aiohttp import ClientSession
 import aiofiles
 from PIL import Image
 from pathlib import Path
 import uuid
 import json
 import yaml
-import ipaddress
 import socket
 import subprocess
-import os, re, io
 import random
-from io import BytesIO
-import base64
+import os
 import asyncio
-import shutil
-# from photoprism.Session import Session
-# from photoprism.Photo import Photo
-# from webdav3.client import Client
 from sijapi.routers.llm import query_ollama
 from sijapi import API, L, COMFYUI_URL, COMFYUI_OUTPUT_DIR, IMG_CONFIG_PATH, IMG_DIR, IMG_WORKFLOWS_DIR
 
@@ -245,6 +236,7 @@ def get_scene(scene):
             return scene_data
     return None
 
+
 # This returns the scene with the most trigger words present in the provided prompt,
 # or otherwise if none match it returns the first scene in the array - 
 # meaning the first should be considered the default scene.
@@ -268,11 +260,6 @@ def get_matching_scene(prompt):
         return IMG_CONFIG['scenes'][0]
 
 
-
-import asyncio
-import socket
-import subprocess
-from typing import Optional
 
 async def ensure_comfy(retries: int = 4, timeout: float = 6.0):
     """
@@ -310,35 +297,6 @@ async def ensure_comfy(retries: int = 4, timeout: float = 6.0):
 
     crit(f"Failed to ensure ComfyUI is running after {retries} attempts with {timeout} second intervals.")
     raise RuntimeError(f"Failed to ensure ComfyUI is running after {retries} attempts with {timeout} second intervals.")
-
-# async def upload_and_get_shareable_link(image_path):
- #   try:
-        # Set up the PhotoPrism session
- #       pp_session = Session(PHOTOPRISM_USER, PHOTOPRISM_PASS, PHOTOPRISM_URL, use_https=True)
- #       pp_session.create()
-
-        # Start import
-        # photo = Photo(pp_session)
-        # photo.start_import(path=os.path.dirname(image_path))
-
-        # Give PhotoPrism some time to process the upload
- #       await asyncio.sleep(5)
-
-        # Search for the uploaded photo
- #       photo_name = os.path.basename(image_path)
- #       search_results = photo.search(query=f"name:{photo_name}", count=1)
-
- #       if search_results['photos']:
- #           photo_uuid = search_results['photos'][0]['uuid']
- #           shareable_link = f"https://{PHOTOPRISM_URL}/p/{photo_uuid}"
- #           return shareable_link
- #       else:
- #           err("Could not find the uploaded photo details.")
- #           return None
- #   except Exception as e:
- #       err(f"Error in upload_and_get_shareable_link: {e}")
- #       return None
-
 
 
 @img.get("/image/{prompt_id}")
@@ -453,7 +411,6 @@ Even more important, it finds and returns the key to the filepath where the file
 
     update_recursive(workflow)
     return found_key[0]
-
 
 
 async def queue_prompt(workflow_data):
