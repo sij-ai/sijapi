@@ -528,12 +528,13 @@ async def post_locate_endpoint(locations: Union[Location, List[Location]]):
     return {"message": "Locations and weather updated", "results": responses}
 
 
+
 @gis.get("/locate", response_model=Location)
 async def get_last_location_endpoint() -> JSONResponse:
     this_location = await get_last_location()
 
     if this_location:
-        location_dict = this_location.model_dump()
+        location_dict = this_location.model_dump(mode='json')
         return JSONResponse(content=location_dict)
     else:
         raise HTTPException(status_code=404, detail="No location found before the specified datetime")

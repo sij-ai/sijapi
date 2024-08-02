@@ -1176,7 +1176,6 @@ class Location(BaseModel):
         }
         populate_by_name = True
 
-
 class Geocoder:
     def __init__(self, named_locs: Union[str, Path] = None, cache_file: Union[str, Path] = 'timezone_cache.json'):
         self.tf = TimezoneFinder()
