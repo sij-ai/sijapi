@@ -29,9 +29,13 @@ def load_env():
 
 
 def check_server(ip, port, ts_id):
+    address = f"http://{ip}:{port}/id"
+    logging.info(f"Checking {address} for response...")
     try:
-        response = requests.get(f"http://{ip}:{port}/ts_id", timeout=5)
-        return response.status_code == 200 and response.text.strip() == ts_id
+        response = requests.get(address, timeout=5)
+        response_text = response.text.strip().strip('"') 
+        logging.info(f"{address} responded '{response_text}'")
+        return response.status_code == 200 and response_text == ts_id
     except requests.RequestException as e:
         logging.error(f"Error checking server {ts_id}: {str(e)}")
         return False
@@ -97,6 +101,8 @@ def start_remote_server(server):
     finally:
         ssh.close()
 
+
+
 def main():
     load_env()
     config = load_config()
@@ -108,7 +114,7 @@ def main():
         if check_server(server['ts_ip'], server['app_port'], server['ts_id']):
             logging.info(f"{server['ts_id']} is running and responding correctly.")
         else:
-            logging.info(f"{server['ts_id']} is not responding. Attempting to start...")
+            logging.info(f"{server['ts_id']} is not responding correctly. Attempting to start...")
             if server['ts_id'] == local_ts_id:
                 start_local_server(server)
             else:
@@ -116,6 +122,7 @@ def main():
         
         logging.info("Waiting 5 seconds before next check...")
         time.sleep(5)
+
 
 if __name__ == "__main__":
     main()
