@@ -1,3 +1,8 @@
+'''
+Used to scrape data from websites, watch sites for changes, and make alerts based on specific changes.
+'''
+#routers/scrape.py
+
 import asyncio
 import json
 import re

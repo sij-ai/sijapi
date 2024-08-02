@@ -1,6 +1,8 @@
 '''
 Uses IMAP and SMTP login credentials to monitor an inbox and summarize incoming emails that match certain criteria and save the Text-To-Speech converted summaries into a specified "podcast" folder. 
 '''
+#routers/email.py
+
 from fastapi import APIRouter
 import asyncio
 import aiofiles

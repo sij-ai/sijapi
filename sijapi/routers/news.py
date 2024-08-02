@@ -1,4 +1,8 @@
+'''
+Used to scrape, process, summarize, markdownify, and speechify news articles.
+'''
 # routers/news.py
+
 import os
 import uuid
 import asyncio

@@ -1,0 +1,10 @@
+default: xtts
+email: xtts
+webclip: 11L
+rss: xtts
+podcast_dir: '{{ DIR.HOME }}/Library/Mobile Documents/iCloud~co~supertop~castro/Documents/Sideloads'
+xtts:
+  voice: joanne
+elevenlabs:
+  voice: luna
+  api_key: '{{ SECRET.ELEVENLABS_API_KEY }}'

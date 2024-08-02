@@ -2,6 +2,7 @@
 IN DEVELOPMENT: Retrieval-Augmented Generation module.
 NOTES: Haven't yet decided if this should depend on the Obsidian and Chat modules, or if they should depend on it, or one of one the other the other.
 '''
+#routers/rag.py
 
 from fastapi import APIRouter
 from sijapi import L

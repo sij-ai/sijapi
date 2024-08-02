@@ -2,6 +2,7 @@
 Manages an Obsidian vault, in particular daily notes, using information and functionality drawn from the other routers, primarily calendar, email, ig, llm, rag, img, serve, time, tts, and weather.
 '''
 # routers/note.py
+
 from fastapi import APIRouter, BackgroundTasks, File, UploadFile, Form, HTTPException, Response, Query, Path as FastAPIPath
 from fastapi.responses import JSONResponse, PlainTextResponse
 import os, re
@@ -17,7 +18,7 @@ from fastapi import HTTPException, status
 from pathlib import Path
 from fastapi import APIRouter, Query, HTTPException
 from sijapi import API, L, OBSIDIAN_VAULT_DIR, OBSIDIAN_RESOURCES_DIR, OBSIDIAN_BANNER_SCENE, DEFAULT_11L_VOICE, DEFAULT_VOICE, GEO
-from sijapi.routers import asr, cal, gis, img, llm, serve, time, tts, weather
+from sijapi.routers import asr, cal, gis, img, llm, serve, timing, tts, weather
 from sijapi.utilities import assemble_journal_path, convert_to_12_hour_format, sanitize_filename, convert_degrees_to_cardinal, check_file_name, HOURLY_COLUMNS_MAPPING
 from sijapi.classes import Location
 
@@ -388,7 +389,7 @@ async def build_daily_timeslips(date):
 
     '''
     absolute_path, relative_path = assemble_journal_path(date, filename = "Timeslips", extension=".md", no_timestamp = True)
-    content = await time.process_timing_markdown(date, date)
+    content = await timing.process_timing_markdown(date, date)
     # document_content = await document.read()
     with open(absolute_path, 'wb') as f:
         f.write(content.encode())
