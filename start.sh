@@ -14,6 +14,3 @@ source "./sijapi/config/.env"
 
 # Run the Python script
 python "$SCRIPT_PATH"
-
-# Deactivate the conda environment
-conda deactivate
