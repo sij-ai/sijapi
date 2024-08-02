@@ -63,7 +63,7 @@ async def lifespan(app: FastAPI):
 
     try:
         yield  # This is where the app runs
-        
+
     finally:
         # Shutdown
         crit("Shutting down...")
@@ -184,7 +184,8 @@ def load_router(router_name):
 def main(argv):
     config = HypercornConfig()
     config.bind = [API.BIND]
-    config.startup_timeout = 3600  # 1 hour
+    config.startup_timeout = 300 # 5 minutes
+    config.shutdown_timeout = 15 # 15 seconds
     asyncio.run(serve(app, config))
 
 if __name__ == "__main__":
