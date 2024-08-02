@@ -12,7 +12,8 @@ sijapi/data/*.json
 sijapi/data/*.geojson
 sijapi/data/img/images/
 sijapi/config/*.yaml
-sijapi/config/MS365/
+sijapi/config/ms365/
+sijapi/data/ms365/
 sijapi/local_only/
 sijapi/testbed/
 khoj/
@@ -36,6 +37,8 @@ podcast/sideloads/*
 **/*.wav
 **/*.pyc
 **/.ipynb_checkpoints/
+**/*.pem
+**/*.key
 venv/
 env/
 .venv/
@@ -55,6 +58,8 @@ env/
 *.gz
 *.iso
 *.jar
+*.key
+*.pem
 *.rar
 *.tar
 *.zip
