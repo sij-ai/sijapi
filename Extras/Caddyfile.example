@@ -1,19 +1,22 @@
 {
 	log {
+		# Specify path and log level for Caddy logs
 		output file /var/log/caddy/logfile.log
 		level INFO
 	}
 
+	# replace `localhost` with an externally accessible IP address, e.g. a local LAN address or Tailscale IP. Take care not to use a publicly accessible IP address, as the Caddy API is not separately protected by API keys!
 	admin localhost:2019
 
 	servers {
 		metrics
 	}
 
-	email !{!{ YOUR EMAIL ADDRESS }!}!
+	# Replace with your email address for SSL certificate registration
+	email info@example.com
 }
 
-# This is an extremely permissive CORS config. Dial it back as your use case allows.
+# This is a highly permissive CORS config. Dial it back as your use case allows.
 (cors) {
 	@cors_preflight method OPTIONS
 	header {
@@ -32,21 +35,29 @@
 	}
 }
 
-# Specify which endpoints are public, one or more methods of API key authentication, and your load balancing priority (if any)
-!{!{ YOUR SIJAPI SUBDOMAIN }!}! {
+# Replace with the subdomain you want to expose your API over
+api.example.com {
 	import cors
+
+	# Specify which endpoints do not require an API key
 	@public {
 		path /img/* /oauth /oauth/* /MS365 /MS365/* /ip /health /health* /health/* /id /identity
 	}
+
+	# Accept your GLOBAL_API_KEY (specified via environment variable in Caddy's context) via `Authorization: Bearer` header
 	@apiKeyAuthHeader {
-		header Authorization "Bearer !{!{ YOUR GLOBAL_API_KEY }!}!"
+		header Authorization "Bearer {env.GLOBAL_API_KEY}"
 	}
+
+	# Optionally, accept your GLOBAL_API_KEY via query parameters
 	@apiKeyAuthQuery {
-		query api_key=!{!{ YOUR GLOBAL_API_KEY }!}!
+		query api_key={env.GLOBAL_API_KEY}
 	}
+
 	handle @public {
 		reverse_proxy {
-			to !{!{ YOUR IP(s) WHERE SIJAPI IS RUNNING, WITH PORTS, e.g. 100.64.64.20:4444 10.13.37.30:4444 localhost:4444 }!}!
+			# Specify the local (or Tailscale) IPs & ports where the API service is running
+			to  100.64.64.20:4444 100.64.64.11:4444 10.13.37.30:4444 localhost:4444
 			lb_policy first
 			health_uri /health
 			health_interval 10s
@@ -56,9 +67,11 @@
 			header_up X-Forwarded-Proto {scheme}
 		}
 	}
+
 	handle @apiKeyAuthHeader {
 		reverse_proxy {
-			to !{!{ YOUR IP(s) WHERE SIJAPI IS RUNNING, WITH PORTS, e.g. 100.64.64.20:4444 10.13.37.30:4444 localhost:4444 }!}!
+			# Specify the local (or Tailscale) IPs & ports where the API service is running
+			to  100.64.64.20:4444 100.64.64.11:4444 10.13.37.30:4444 localhost:4444
 			lb_policy first
 			health_uri /health
 			health_interval 10s
@@ -66,9 +79,11 @@
 			health_status 2xx
 		}
 	}
+
 	handle @apiKeyAuthQuery {
 		reverse_proxy {
-			to !{!{ YOUR IP(s) WHERE SIJAPI IS RUNNING, WITH PORTS, e.g. 100.64.64.20:4444 10.13.37.30:4444 localhost:4444 }!}!
+			# Specify the local (or Tailscale) IPs & ports where the API service is running
+			to  100.64.64.20:4444 100.64.64.11:4444 10.13.37.30:4444 localhost:4444
 			lb_policy first
 			health_uri /health
 			health_interval 10s
@@ -76,12 +91,16 @@
 			health_status 2xx
 		}
 	}
+
 	handle {
 		respond "Unauthorized: Valid API key required" 401
 	}
+
+	# Assuming you use Cloudflare for DNS challenges and have configured a CLOUDFLARE_API_TOKEN environmental variable in Caddy's context
 	tls {
 		dns cloudflare {env.CLOUDFLARE_API_TOKEN}
 	}
+
 	log {
 		output file /var/log/caddy/sijapi.log {
 			roll_size 100mb
@@ -92,5 +111,108 @@
 			time_format "iso8601"
 			message_key "message"
 		}
+	}
+}
+
+# Everything below here is ancillary to the primary API functionality
+# If you have another domain you want to expose a particular endpoint on, try something like this -- e.g., here, https://sij.law/pgp as a short URL to share my public PGP key via.
+sij.law {
+	reverse_proxy /pgp 100.64.64.20:4444 100.64.64.30:4444 100.64.64.11:4444 localhost:4444 {
+		lb_policy first
+		health_uri /health
+		health_interval 10s
+		health_timeout 5s
+		health_status 2xx
+	}
+
+	# Because I maintain a seperate service on this domain (a Ghost blog), I need fall back handling for everything besides `/pgp`.
+	reverse_proxy localhost:2368
+	tls {
+		dns cloudflare {env.CLOUDFLARE_API_TOKEN}
+	}
+}
+
+# Another special use case example: this provides handling for my URL shortener. 
+sij.ai {
+	
+	# Any three-character alphanumeric URI is construed as a shortened URL.
+	@shorturl {
+		path_regexp ^/[a-zA-Z0-9]{3}$
+	}
+
+	# https://sij.ai/s points to the WebUI for my URL shortener
+	@shortener_ui {
+		path /s
+	}
+
+	@apiKeyAuthHeader {
+        header Authorization "Bearer {env.GLOBAL_API_KEY}"
+    }
+
+    @apiKeyAuthQuery {
+        query api_key={env.GLOBAL_API_KEY}
+    }
+
+	@analytics {
+		path_regexp ^/analytics/[a-zA-Z0-9]{3}$
+	}
+
+	@pgp {
+		path /pgp
+	}
+
+	handle @shortener_ui {
+		reverse_proxy 100.64.64.20:4444 100.64.64.30:4444 100.64.64.11:4444 localhost:4444 {
+			lb_policy first
+			health_uri /health
+			health_interval 10s
+			health_timeout 5s
+			health_status 2xx
+		}
+	}
+
+	handle @shorturl {
+		reverse_proxy 100.64.64.20:4444 100.64.64.30:4444 100.64.64.11:4444 localhost:4444 {
+			lb_policy first
+			health_uri /health
+			health_interval 10s
+			health_timeout 5s
+			health_status 2xx
+		}
+	}
+
+	handle @analytics {
+		reverse_proxy 100.64.64.20:4444 100.64.64.30:4444 100.64.64.11:4444 localhost:4444 {
+			lb_policy first
+			health_uri /health
+			health_interval 10s
+			health_timeout 5s
+			health_status 2xx
+		}
+	}
+
+	# Handling for my public PGP key endpoint
+	handle @pgp {
+		reverse_proxy 100.64.64.20:4444 100.64.64.30:4444 100.64.64.11:4444 localhost:4444 {
+			lb_policy first
+			health_uri /health
+			health_interval 10s
+			health_timeout 5s
+			health_status 2xx
+		}
+	}
+	
+	# Base domain redirects to my Ghost blog
+	handle / {
+		redir https://sij.law permanent
+	}
+
+	# All URIs that don't fit the patterns above redirect to the equivalent URI on my Ghost blog domain
+	handle /* {
+		redir https://sij.law{uri} permanent
+	}
+
+	tls {
+		dns cloudflare {env.CLOUDFLARE_API_TOKEN}
 	}
 }

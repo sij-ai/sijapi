@@ -1,7 +1,10 @@
-HOST: 0.0.0.0
+# Primary configuration file
+
+HOST: '0.0.0.0'
 PORT: 4444
 BIND: '{{ HOST }}:{{ PORT }}'
-URL: https://api.yourdomain.com
+URL: 'https://api.example.com'
+
 PUBLIC: 
   - /id
   - /ip
@@ -10,27 +13,85 @@ PUBLIC:
   - /cl/dockets
   - /cl/search
   - /cd/alert
+
 TRUSTED_SUBNETS:
-  - 127.0.0.1/32 # don't change this
-  - 192.168.50.0/24 # optionally set to your local subnet, or omit
-  - 100.11.11.0/24 # optionally set to your tailscale subnet, or omit
+  - 127.0.0.1/32
+  - 10.0.0.0/24
+  - 192.168.0.0/24
+
 MODULES:
   asr: on
   cal: on
   cf: off
   dist: off
   email: on
+  gis: on
   health: on
   ig: off
+  img: on
   llm: on
-  loc: on
   news: on
   note: on
   rag: off
-  img: on
+  scrape: on
   serve: on
-  time: on
+  timing: on
   tts: on
   weather: on
-TZ: 'America/Los_Angeles' # this is just for the initial config, and is dynamically updated based on location
-KEYS: ['{{ SECRET.GLOBAL_API_KEYS }}'] # sourced from .env
+
+POOL:
+  - ts_id: 'server1'
+    ts_ip: '192.168.0.10'
+    app_port: 4444
+    db_port: 5432
+    db_name: mydb
+    db_user: dbuser
+    db_pass: 'password123'
+    ssh_port: 22
+    ssh_user: sshuser
+    ssh_pass: 'password456'
+    path: '~/projects/myapi'
+    tmux: '/opt/homebrew/bin/tmux'
+    conda: '~/miniforge3/bin/mamba'
+    conda_env: 'myenv'
+  - ts_id: 'server2'
+    ts_ip: '192.168.0.11'
+    app_port: 4444
+    db_port: 5432
+    db_name: mydb
+    db_user: dbuser
+    db_pass: 'password123'
+    ssh_port: 22
+    ssh_user: sshuser
+    ssh_pass: 'password456'
+    path: '~/projects/myapi'
+    tmux: '/usr/bin/tmux'
+    conda: '~/miniforge3/bin/mamba'
+    conda_env: 'myenv'
+  - ts_id: 'server3'
+    ts_ip: '192.168.0.12'
+    app_port: 4444
+    db_port: 5432
+    db_name: mydb
+    db_user: dbuser
+    db_pass: 'password123'
+    ssh_port: 22
+    ssh_user: sshuser
+    ssh_pass: 'password456'
+    path: '~/projects/myapi'
+    tmux: '/usr/bin/tmux'
+    conda: '~/miniforge3/bin/mamba'
+    conda_env: 'myenv'
+  
+EXTENSIONS:
+  courtlistener: off
+  macnotify: on
+  shellfish: on
+
+TZ: 'UTC'
+
+KEYS: ['{{ SECRET.GLOBAL_API_KEYS }}']
+
+GARBAGE:
+  COLLECTION_INTERVAL: 60 * 60
+  TTL: 60 * 60 * 24
