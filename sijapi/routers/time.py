@@ -573,9 +573,3 @@ def flag_emoji(country_code: str):
 @time.head("/time/")
 async def read_root():
     return {}
-
-
-@time.get("/time/")
-async def root():
-    return {"message": "Ring, ring, ring, ring, ring, ring, ring. \n\n. Banana phone."}
-

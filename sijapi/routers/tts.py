@@ -167,8 +167,6 @@ async def generate_speech(
         raise HTTPException(status_code=500, detail=f"Failed to generate speech: {str(e)}")
 
 
-
-
 async def get_model(voice: str = None, voice_file: UploadFile = None):
     if voice_file or (voice and await select_voice(voice)):
         return "xtts"

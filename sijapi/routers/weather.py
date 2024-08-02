@@ -2,6 +2,7 @@
 Uses the VisualCrossing API and Postgres/PostGIS to source local weather forecasts and history.
 '''
 import asyncio
+import traceback
 from fastapi import APIRouter, HTTPException, Query
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse
@@ -166,7 +167,7 @@ async def store_weather_to_db(date_time: dt_datetime, weather_data: dict):
     
     try:
         daily_weather_query = '''
-        INSERT INTO DailyWeather (
+        INSERT INTO dailyweather (
             sunrise, sunriseepoch, sunset, sunsetepoch, description,
             tempmax, tempmin, uvindex, winddir, windspeed, icon, last_updated,
             datetime, datetimeepoch, temp, feelslikemax, feelslikemin, feelslike,
@@ -178,7 +179,7 @@ async def store_weather_to_db(date_time: dt_datetime, weather_data: dict):
         RETURNING id
         '''
 
-        daily_weather_id = await API.execute_write_query(daily_weather_query, *daily_weather_params, table_name="DailyWeather")
+        daily_weather_id = await API.execute_write_query(daily_weather_query, *daily_weather_params, table_name="dailyweather")
     
         if 'hours' in day_data:
             debug(f"Processing hours now...")
@@ -219,13 +220,13 @@ async def store_weather_to_db(date_time: dt_datetime, weather_data: dict):
 
                     try:
                         hourly_weather_query = '''
-                        INSERT INTO HourlyWeather (daily_weather_id, datetime, datetimeepoch, temp, feelslike, humidity, dew, precip, precipprob,
+                        INSERT INTO hourlyweather (daily_weather_id, datetime, datetimeepoch, temp, feelslike, humidity, dew, precip, precipprob,
                         preciptype, snow, snowdepth, windgust, windspeed, winddir, pressure, cloudcover, visibility, solarradiation, solarenergy,
                         uvindex, severerisk, conditions, icon, stations, source)
                         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)
                         RETURNING id
                         '''
-                        hourly_weather_id = await API.execute_write_query(hourly_weather_query, *hourly_weather_params, table_name="HourlyWeather")
+                        hourly_weather_id = await API.execute_write_query(hourly_weather_query, *hourly_weather_params, table_name="hourlyweather")
                         debug(f"Done processing hourly_weather_id {hourly_weather_id}")
                     except Exception as e:
                         err(f"EXCEPTION: {e}")
@@ -241,60 +242,42 @@ async def store_weather_to_db(date_time: dt_datetime, weather_data: dict):
 
    
 
-
 async def get_weather_from_db(date_time: dt_datetime, latitude: float, longitude: float):
     warn(f"Using {date_time.strftime('%Y-%m-%d %H:%M:%S')} as our datetime in get_weather_from_db.")
-    async with API.get_connection() as conn:
-        query_date = date_time.date()
-        try:
-            # Query to get daily weather data
-            query = '''
-                SELECT DW.* FROM DailyWeather DW
-                WHERE DW.datetime::date = $1
-                AND ST_DWithin(DW.location::geography, ST_MakePoint($2,$3)::geography, 8046.72) 
-                ORDER BY ST_Distance(DW.location, ST_MakePoint($4, $5)::geography) ASC
-                LIMIT 1
-            '''
+    query_date = date_time.date()
+    try:
+        # Query to get daily weather data
+        daily_query = '''
+            SELECT DW.* FROM dailyweather DW
+            WHERE DW.datetime::date = $1
+            AND ST_DWithin(DW.location::geography, ST_MakePoint($2,$3)::geography, 8046.72) 
+            ORDER BY ST_Distance(DW.location, ST_MakePoint($4, $5)::geography) ASC
+            LIMIT 1
+        '''
 
-            daily_weather_record = await conn.fetchrow(query, query_date, longitude, latitude, longitude, latitude)
+        daily_weather_records = await API.execute_read_query(daily_query, query_date, longitude, latitude, longitude, latitude, table_name='dailyweather')
 
-            if daily_weather_record is None:
-                debug(f"No daily weather data retrieved from database.")
-                return None
+        if not daily_weather_records:
+            debug(f"No daily weather data retrieved from database.")
+            return None
 
-            # Convert asyncpg.Record to a mutable dictionary
-            daily_weather_data = dict(daily_weather_record)
-            # debug(f"Daily weather data prior to tz corrections: {daily_weather_data}")
-            # Now we can modify the dictionary
-            # tz = await GEO.tz_at(latitude, longitude)
-            # daily_weather_data['datetime'] = await gis.dt(daily_weather_data.get('datetime'), tz)
-            # daily_weather_data['sunrise'] = await gis.dt(daily_weather_data.get('sunrise'), tz)
-            # daily_weather_data['sunset'] = await gis.dt(daily_weather_data.get('sunset'), tz)
-
-            # debug(f"Daily weather data after tz corrections: {daily_weather_data}")
-
-            # Query to get hourly weather data
-            query = '''
-                SELECT HW.* FROM HourlyWeather HW
-                WHERE HW.daily_weather_id = $1
-            '''
-            
-            hourly_weather_records = await conn.fetch(query, daily_weather_data['id'])
-            
-            hourly_weather_data = []
-            for record in hourly_weather_records:
-                hour_data = dict(record)
-                # hour_data['datetime'] = await gis.dt(hour_data.get('datetime'), tz)
-                hourly_weather_data.append(hour_data)
-
-            # debug(f"Hourly weather data after tz corrections: {hourly_weather_data}")
-            day = {
-                'DailyWeather': daily_weather_data,
-                'HourlyWeather': hourly_weather_data,
-            }
-            # debug(f"day: {day}")
-            return day
-        except Exception as e:
-            err(f"Unexpected error occurred: {e}")
-
-
+        daily_weather_data = daily_weather_records[0]  # Get the first (and only) record
+        
+        # Query to get hourly weather data
+        hourly_query = '''
+            SELECT HW.* FROM hourlyweather HW
+            WHERE HW.daily_weather_id = $1
+        '''
+        
+        hourly_weather_records = await API.execute_read_query(hourly_query, daily_weather_data['id'], table_name='hourlyweather')
+        
+        day = {
+            'DailyWeather': daily_weather_data,
+            'HourlyWeather': hourly_weather_records,
+        }
+        
+        return day
+    except Exception as e:
+        err(f"Unexpected error occurred in get_weather_from_db: {e}")
+        err(f"Traceback: {traceback.format_exc()}")
+        return None

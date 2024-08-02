@@ -383,7 +383,6 @@ created: "{dt_datetime.now().strftime("%Y-%m-%d %H:%M:%S")}"
     
 
 
-
 async def build_daily_timeslips(date):
     '''
 
@@ -956,17 +955,6 @@ async def format_events_as_markdown(event_data: Dict[str, Union[str, List[Dict[s
 
             if event['description']:
                 description = event['description']
-           #     # This was intended to clean up the descriptions of Zoom and Teams events but is presently broken; should be an easy fix.
-           #     if 'Zoom Meeting' in description:
-           #         description_parts = description.split('---')
-           #         if len(description_parts) > 2:
-           #             description = description_parts[1].strip()
-           #     if 'Microsoft Teams' in description:
-           #         description_parts = description.split('---')
-           #         if len(description_parts) > 2:
-           #             event_data['description'] = description_parts[1].strip()
-           #     description = remove_characters(description)
-           #     description = remove_characters(description)
                 if len(description) > 150:
                     description = await llm.summarize_text(description, length_override=150)
 
