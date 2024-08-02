@@ -116,129 +116,129 @@ async def get_weather(date_time: dt_datetime, latitude: float, longitude: float,
 
 async def store_weather_to_db(date_time: dt_datetime, weather_data: dict):
     warn(f"Using {date_time.strftime('%Y-%m-%d %H:%M:%S')} as our datetime in store_weather_to_db")
-    async with API.get_connection() as conn:
-        try:
-            day_data = weather_data.get('days')[0]
-            debug(f"RAW DAY_DATA: {day_data}")
-            # Handle preciptype and stations as PostgreSQL arrays
-            preciptype_array = day_data.get('preciptype', []) or []
-            stations_array = day_data.get('stations', []) or []
+    try:
+        day_data = weather_data.get('days')[0]
+        debug(f"RAW DAY_DATA: {day_data}")
+        # Handle preciptype and stations as PostgreSQL arrays
+        preciptype_array = day_data.get('preciptype', []) or []
+        stations_array = day_data.get('stations', []) or []
 
-            date_str = date_time.strftime("%Y-%m-%d")
-            warn(f"Using {date_str} in our query in store_weather_to_db.")
+        date_str = date_time.strftime("%Y-%m-%d")
+        warn(f"Using {date_str} in our query in store_weather_to_db.")
 
-            # Get location details from weather data if available
-            longitude = weather_data.get('longitude')
-            latitude = weather_data.get('latitude')
-            tz = await GEO.tz_at(latitude, longitude)
-            elevation = await GEO.elevation(latitude, longitude)
-            location_point = f"POINTZ({longitude} {latitude} {elevation})" if longitude and latitude and elevation else None
+        # Get location details from weather data if available
+        longitude = weather_data.get('longitude')
+        latitude = weather_data.get('latitude')
+        tz = await GEO.tz_at(latitude, longitude)
+        elevation = await GEO.elevation(latitude, longitude)
+        location_point = f"POINTZ({longitude} {latitude} {elevation})" if longitude and latitude and elevation else None
 
-            warn(f"Uncorrected datetimes in store_weather_to_db: {day_data['datetime']}, sunrise: {day_data['sunrise']}, sunset: {day_data['sunset']}")
-            day_data['datetime'] = await gis.dt(day_data.get('datetimeEpoch'))
-            day_data['sunrise'] = await gis.dt(day_data.get('sunriseEpoch'))
-            day_data['sunset'] = await gis.dt(day_data.get('sunsetEpoch'))
-            warn(f"Corrected datetimes in store_weather_to_db: {day_data['datetime']}, sunrise: {day_data['sunrise']}, sunset: {day_data['sunset']}")
+        warn(f"Uncorrected datetimes in store_weather_to_db: {day_data['datetime']}, sunrise: {day_data['sunrise']}, sunset: {day_data['sunset']}")
+        day_data['datetime'] = await gis.dt(day_data.get('datetimeEpoch'))
+        day_data['sunrise'] = await gis.dt(day_data.get('sunriseEpoch'))
+        day_data['sunset'] = await gis.dt(day_data.get('sunsetEpoch'))
+        warn(f"Corrected datetimes in store_weather_to_db: {day_data['datetime']}, sunrise: {day_data['sunrise']}, sunset: {day_data['sunset']}")
 
-            daily_weather_params = (
-                day_data.get('sunrise'), day_data.get('sunriseEpoch'),
-                day_data.get('sunset'), day_data.get('sunsetEpoch'),
-                day_data.get('description'), day_data.get('tempmax'),
-                day_data.get('tempmin'), day_data.get('uvindex'),
-                day_data.get('winddir'), day_data.get('windspeed'),
-                day_data.get('icon'), dt_datetime.now(tz),
-                day_data.get('datetime'), day_data.get('datetimeEpoch'),
-                day_data.get('temp'), day_data.get('feelslikemax'),
-                day_data.get('feelslikemin'), day_data.get('feelslike'),
-                day_data.get('dew'), day_data.get('humidity'),
-                day_data.get('precip'), day_data.get('precipprob'),
-                day_data.get('precipcover'), preciptype_array,
-                day_data.get('snow'), day_data.get('snowdepth'),
-                day_data.get('windgust'), day_data.get('pressure'),
-                day_data.get('cloudcover'), day_data.get('visibility'),
-                day_data.get('solarradiation'), day_data.get('solarenergy'),
-                day_data.get('severerisk', 0), day_data.get('moonphase'),
-                day_data.get('conditions'), stations_array, day_data.get('source'),
-                location_point
-            )
-        except Exception as e:
-            err(f"Failed to prepare database query in store_weather_to_db! {e}")
-        
-        try:
-            daily_weather_query = '''
-            INSERT INTO DailyWeather (
-                sunrise, sunriseepoch, sunset, sunsetepoch, description,
-                tempmax, tempmin, uvindex, winddir, windspeed, icon, last_updated,
-                datetime, datetimeepoch, temp, feelslikemax, feelslikemin, feelslike,
-                dew, humidity, precip, precipprob, precipcover, preciptype,
-                snow, snowdepth, windgust, pressure, cloudcover, visibility,
-                solarradiation, solarenergy, severerisk, moonphase, conditions,
-                stations, source, location
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38)
-            RETURNING id
-            '''
+        daily_weather_params = (
+            day_data.get('sunrise'), day_data.get('sunriseEpoch'),
+            day_data.get('sunset'), day_data.get('sunsetEpoch'),
+            day_data.get('description'), day_data.get('tempmax'),
+            day_data.get('tempmin'), day_data.get('uvindex'),
+            day_data.get('winddir'), day_data.get('windspeed'),
+            day_data.get('icon'), dt_datetime.now(tz),
+            day_data.get('datetime'), day_data.get('datetimeEpoch'),
+            day_data.get('temp'), day_data.get('feelslikemax'),
+            day_data.get('feelslikemin'), day_data.get('feelslike'),
+            day_data.get('dew'), day_data.get('humidity'),
+            day_data.get('precip'), day_data.get('precipprob'),
+            day_data.get('precipcover'), preciptype_array,
+            day_data.get('snow'), day_data.get('snowdepth'),
+            day_data.get('windgust'), day_data.get('pressure'),
+            day_data.get('cloudcover'), day_data.get('visibility'),
+            day_data.get('solarradiation'), day_data.get('solarenergy'),
+            day_data.get('severerisk', 0), day_data.get('moonphase'),
+            day_data.get('conditions'), stations_array, day_data.get('source'),
+            location_point
+        )
+    except Exception as e:
+        err(f"Failed to prepare database query in store_weather_to_db! {e}")
+        return "FAILURE"
+    
+    try:
+        daily_weather_query = '''
+        INSERT INTO DailyWeather (
+            sunrise, sunriseepoch, sunset, sunsetepoch, description,
+            tempmax, tempmin, uvindex, winddir, windspeed, icon, last_updated,
+            datetime, datetimeepoch, temp, feelslikemax, feelslikemin, feelslike,
+            dew, humidity, precip, precipprob, precipcover, preciptype,
+            snow, snowdepth, windgust, pressure, cloudcover, visibility,
+            solarradiation, solarenergy, severerisk, moonphase, conditions,
+            stations, source, location
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38)
+        RETURNING id
+        '''
 
-            async with conn.transaction():
-                daily_weather_id = await conn.fetchval(daily_weather_query, *daily_weather_params)
-        
-            if 'hours' in day_data:
-                debug(f"Processing hours now...")
-                for hour_data in day_data['hours']:
+        daily_weather_id = await API.execute_write_query(daily_weather_query, *daily_weather_params, table_name="DailyWeather")
+    
+        if 'hours' in day_data:
+            debug(f"Processing hours now...")
+            for hour_data in day_data['hours']:
+                try:
+                    await asyncio.sleep(0.01)
+                    hour_data['datetime'] = await gis.dt(hour_data.get('datetimeEpoch'))
+                    hour_preciptype_array = hour_data.get('preciptype', []) or []
+                    hour_stations_array = hour_data.get('stations', []) or []
+                    hourly_weather_params = (
+                        daily_weather_id,
+                        hour_data['datetime'],
+                        hour_data.get('datetimeEpoch'),
+                        hour_data['temp'],
+                        hour_data['feelslike'],
+                        hour_data['humidity'],
+                        hour_data['dew'],
+                        hour_data['precip'],
+                        hour_data['precipprob'],
+                        hour_preciptype_array,
+                        hour_data['snow'],
+                        hour_data['snowdepth'],
+                        hour_data['windgust'],
+                        hour_data['windspeed'],
+                        hour_data['winddir'],
+                        hour_data['pressure'],
+                        hour_data['cloudcover'],
+                        hour_data['visibility'],
+                        hour_data['solarradiation'],
+                        hour_data['solarenergy'],
+                        hour_data['uvindex'],
+                        hour_data.get('severerisk', 0),
+                        hour_data['conditions'],
+                        hour_data['icon'],
+                        hour_stations_array,
+                        hour_data.get('source', ''),
+                    )
+
                     try:
-                        await asyncio.sleep(0.01)
-                        hour_data['datetime'] = await gis.dt(hour_data.get('datetimeEpoch'))
-                        hour_preciptype_array = hour_data.get('preciptype', []) or []
-                        hour_stations_array = hour_data.get('stations', []) or []
-                        hourly_weather_params = (
-                            daily_weather_id,
-                            hour_data['datetime'],
-                            hour_data.get('datetimeEpoch'),
-                            hour_data['temp'],
-                            hour_data['feelslike'],
-                            hour_data['humidity'],
-                            hour_data['dew'],
-                            hour_data['precip'],
-                            hour_data['precipprob'],
-                            hour_preciptype_array,
-                            hour_data['snow'],
-                            hour_data['snowdepth'],
-                            hour_data['windgust'],
-                            hour_data['windspeed'],
-                            hour_data['winddir'],
-                            hour_data['pressure'],
-                            hour_data['cloudcover'],
-                            hour_data['visibility'],
-                            hour_data['solarradiation'],
-                            hour_data['solarenergy'],
-                            hour_data['uvindex'],
-                            hour_data.get('severerisk', 0),
-                            hour_data['conditions'],
-                            hour_data['icon'],
-                            hour_stations_array,
-                            hour_data.get('source', ''),
-                        )
-
-                        try:
-                            hourly_weather_query = '''
-                            INSERT INTO HourlyWeather (daily_weather_id, datetime, datetimeepoch, temp, feelslike, humidity, dew, precip, precipprob,
-                            preciptype, snow, snowdepth, windgust, windspeed, winddir, pressure, cloudcover, visibility, solarradiation, solarenergy,
-                            uvindex, severerisk, conditions, icon, stations, source)
-                            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)
-                            RETURNING id
-                            '''
-                            async with conn.transaction():
-                                hourly_weather_id = await conn.fetchval(hourly_weather_query, *hourly_weather_params)
-                                debug(f"Done processing hourly_weather_id {hourly_weather_id}")
-                        except Exception as e:
-                            err(f"EXCEPTION: {e}")
-
+                        hourly_weather_query = '''
+                        INSERT INTO HourlyWeather (daily_weather_id, datetime, datetimeepoch, temp, feelslike, humidity, dew, precip, precipprob,
+                        preciptype, snow, snowdepth, windgust, windspeed, winddir, pressure, cloudcover, visibility, solarradiation, solarenergy,
+                        uvindex, severerisk, conditions, icon, stations, source)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)
+                        RETURNING id
+                        '''
+                        hourly_weather_id = await API.execute_write_query(hourly_weather_query, *hourly_weather_params, table_name="HourlyWeather")
+                        debug(f"Done processing hourly_weather_id {hourly_weather_id}")
                     except Exception as e:
                         err(f"EXCEPTION: {e}")
 
-            return "SUCCESS"
-            
-        except Exception as e:
-            err(f"Error in dailyweather storage: {e}")
+                except Exception as e:
+                    err(f"EXCEPTION: {e}")
+
+        return "SUCCESS"
+        
+    except Exception as e:
+        err(f"Error in dailyweather storage: {e}")
+        return "FAILURE"
+
    
 
 
