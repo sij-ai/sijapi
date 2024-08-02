@@ -61,12 +61,20 @@ async def lifespan(app: FastAPI):
         crit(f"Error during startup: {str(e)}")
         crit(f"Traceback: {traceback.format_exc()}")
 
-    yield  # This is where the app runs
-
-    # Shutdown
-    crit("Shutting down...")
-    await API.close_db_pools()
-    crit("Database pools closed.")
+    try:
+        yield  # This is where the app runs
+        
+    finally:
+        # Shutdown
+        crit("Shutting down...")
+        try:
+            await asyncio.wait_for(API.close_db_pools(), timeout=20)
+            crit("Database pools closed.")
+        except asyncio.TimeoutError:
+            crit("Timeout while closing database pools.")
+        except Exception as e:
+            crit(f"Error during shutdown: {str(e)}")
+            crit(f"Traceback: {traceback.format_exc()}")
 
 app = FastAPI(lifespan=lifespan)
 
