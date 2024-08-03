@@ -43,6 +43,7 @@ venv/
 env/
 .venv/
 .vscode/
+.nova/
 .idea/
 *~
 *.swp
