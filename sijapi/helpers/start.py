@@ -27,14 +27,12 @@ def load_env():
                     except ValueError:
                         logging.warning(f"Skipping invalid line in .env file: {line}")
 
-
 def check_server(ip, port, ts_id):
     address = f"http://{ip}:{port}/id"
-    logging.info(f"Checking {address} for response...")
     try:
         response = requests.get(address, timeout=5)
         response_text = response.text.strip().strip('"') 
-        logging.info(f"{address} responded '{response_text}'")
+
         return response.status_code == 200 and response_text == ts_id
     except requests.RequestException as e:
         logging.error(f"Error checking server {ts_id}: {str(e)}")
@@ -81,8 +79,7 @@ def start_remote_server(server):
             password=server['ssh_pass'],
             timeout=10
         )
-        
-        # Check if tmux session already exists
+    
         status, output, error = execute_ssh_command(ssh, f"{server['tmux']} has-session -t sijapi 2>/dev/null && echo 'exists' || echo 'not exists'")
         if output == 'exists':
             logging.info(f"sijapi session already exists on {server['ts_id']}")
@@ -102,7 +99,6 @@ def start_remote_server(server):
         ssh.close()
 
 
-
 def main():
     load_env()
     config = load_config()
@@ -110,7 +106,6 @@ def main():
     local_ts_id = os.environ.get('TS_ID')
     
     for server in pool:
-        logging.info(f"Checking {server['ts_id']}...")
         if check_server(server['ts_ip'], server['app_port'], server['ts_id']):
             logging.info(f"{server['ts_id']} is running and responding correctly.")
         else:
@@ -120,9 +115,7 @@ def main():
             else:
                 start_remote_server(server)
         
-        logging.info("Waiting 5 seconds before next check...")
-        time.sleep(5)
-
+        time.sleep(1)
 
 if __name__ == "__main__":
     main()
