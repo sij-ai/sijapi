@@ -24,26 +24,65 @@ from datetime import datetime, timedelta, timezone
 from timezonefinder import TimezoneFinder
 from zoneinfo import ZoneInfo
 from srtm import get_data
-from .logs import Logger
+import os
+import sys
+from loguru import logger
+
+# Custom logger class
+class Logger:
+    def __init__(self, name, logs_dir):
+        self.logs_dir = logs_dir
+        self.name = name
+        self.logger = logger
+        self.debug_modules = set()
+
+    def setup_from_args(self, args):
+        if not os.path.exists(self.logs_dir):
+            os.makedirs(self.logs_dir)
+        
+        self.logger.remove()
+        
+        log_format = "{time:YYYY-MM-DD HH:mm:ss} - {name} - <level>{level: <8}</level> - <level>{message}</level>"
+        
+        # File handler
+        self.logger.add(os.path.join(self.logs_dir, 'app.log'), rotation="2 MB", level="DEBUG", format=log_format)
+        
+        # Set debug modules
+        self.debug_modules = set(args.debug)
+        
+        # Console handler with custom filter
+        def module_filter(record):
+            return (record["level"].no >= logger.level(args.log.upper()).no or
+                    record["name"] in self.debug_modules)
+        
+        self.logger.add(sys.stdout, level="DEBUG", format=log_format, filter=module_filter, colorize=True)
+        
+        # Custom color and style mappings
+        self.logger.level("CRITICAL", color="<yellow><bold><MAGENTA>")
+        self.logger.level("ERROR", color="<red><bold>")
+        self.logger.level("WARNING", color="<yellow><bold>")
+        self.logger.level("DEBUG", color="<green><bold>")
+        
+        self.logger.info(f"Debug modules: {self.debug_modules}")
+
+    def get_module_logger(self, module_name):
+        return self.logger.bind(name=module_name)
 
 L = Logger("classes", "classes")
 logger = L.get_module_logger("classes")
-
-# Logging functions
 def debug(text: str): logger.debug(text)
 def info(text: str): logger.info(text)
 def warn(text: str): logger.warning(text)
 def err(text: str): logger.error(text)
 def crit(text: str): logger.critical(text)
-
-T = TypeVar('T', bound='Configuration')
-
 BASE_DIR = Path(__file__).resolve().parent
 CONFIG_DIR = BASE_DIR / "config"
 ENV_PATH = CONFIG_DIR / ".env"
 load_dotenv(ENV_PATH)
 TS_ID = os.environ.get('TS_ID')
+T = TypeVar('T', bound='Configuration')
 
+# Primary configuration class
 class Configuration(BaseModel):
     HOME: Path = Path.home()
     _dir_config: Optional['Configuration'] = None
@@ -86,7 +125,6 @@ class Configuration(BaseModel):
         except Exception as e:
             err(f"Error loading configuration: {str(e)}")
             raise
-
 
     @classmethod
     def _resolve_path(cls, path: Union[str, Path], default_dir: str) -> Path:
@@ -168,7 +206,7 @@ class Configuration(BaseModel):
         arbitrary_types_allowed = True
 
 
-
+# Configuration class for API & Database methods.
 class APIConfig(BaseModel):
     HOST: str
     PORT: int
