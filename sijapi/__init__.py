@@ -6,8 +6,7 @@ import multiprocessing
 from dotenv import load_dotenv
 from dateutil import tz
 from pathlib import Path
-from .classes import Geocoder, APIConfig, Configuration
-from .logs import Logger
+from .classes import Geocoder, APIConfig, Configuration, Logger
 
 # INITIALization
 BASE_DIR = Path(__file__).resolve().parent
