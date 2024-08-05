@@ -27,6 +27,7 @@ SUBNET_BROADCAST = os.getenv("SUBNET_BROADCAST", '10.255.255.255')
 MAX_CPU_CORES = min(int(os.getenv("MAX_CPU_CORES", int(multiprocessing.cpu_count()/2))), multiprocessing.cpu_count())
 IMG = Configuration.load('img', 'secrets')
 News = Configuration.load('news', 'secrets')
+Archivist = Configuration.load('archivist')
 Scrape = Configuration.load('scrape', 'secrets', Dir)
 Serve = Configuration.load('serve')
 

@@ -11,7 +11,7 @@ import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse
 from datetime import datetime as dt_datetime, timedelta
-from typing import Optional
+from typing import Optional, List, Tuple
 import aiohttp
 import aiofiles
 import newspaper
@@ -19,12 +19,13 @@ import trafilatura
 from newspaper import Article
 from readability import Document
 from markdownify import markdownify as md
+from better_profanity import profanity
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from fastapi import APIRouter, BackgroundTasks, UploadFile, Form, HTTPException, Query, Path as FastAPIPath
 from pathlib import Path
-from sijapi import L, News, OBSIDIAN_VAULT_DIR, OBSIDIAN_RESOURCES_DIR, DEFAULT_11L_VOICE, DEFAULT_VOICE
-from sijapi.utilities import sanitize_filename, assemble_journal_path, assemble_archive_path
+from sijapi import L, News, Archivist, OBSIDIAN_VAULT_DIR, OBSIDIAN_RESOURCES_DIR, DEFAULT_11L_VOICE, DEFAULT_VOICE
+from sijapi.utilities import sanitize_filename, assemble_journal_path, assemble_archive_path, contains_profanity
 from sijapi.routers import gis, llm, tts, note
 
 news = APIRouter()
@@ -329,12 +330,13 @@ async def html_to_markdown(url: str = None, source: str = None) -> Optional[str]
     return markdown_content
 
 
+
 async def process_archive(
     url: str,
     title: Optional[str] = None,
     encoding: str = 'utf-8',
     source: Optional[str] = None,
-) -> Path:
+) -> Optional[Path]:
     timestamp = dt_datetime.now().strftime('%b %d, %Y at %H:%M')
     readable_title = title if title else f"{url} - {timestamp}"
     
@@ -342,16 +344,24 @@ async def process_archive(
     if content is None:
         raise HTTPException(status_code=400, detail="Failed to convert content to markdown")
     
-    markdown_path, relative_path = assemble_archive_path(readable_title, ".md")
+    if contains_profanity(url, content, 0.2, Archivist.blacklist):
+        info(f"Not archiving {url} due to profanity")
+        return None
+    
+    try:
+        markdown_path, relative_path = assemble_archive_path(filename=readable_title, extension=".md")
+    except Exception as e:
+        warn(f"Failed to assemble archive path for {url}: {str(e)}")
+        return None
     
     markdown_content = f"---\n"
-    markdown_content += f"title: {readable_title}\n"
+    markdown_content += f"title: \"{readable_title}\"\n"
     markdown_content += f"added: {timestamp}\n"
-    markdown_content += f"url: {url}"
-    markdown_content += f"date: {dt_datetime.now().strftime('%Y-%m-%d')}"
+    markdown_content += f"url: \"{url}\"\n"
+    markdown_content += f"date: \"{dt_datetime.now().strftime('%Y-%m-%d')}\"\n"
     markdown_content += f"---\n\n"
     markdown_content += f"# {readable_title}\n\n"
-    markdown_content += f"Clipped from [{url}]({url}) on {timestamp}"
+    markdown_content += f"Clipped from [{url}]({url}) on {timestamp}\n\n"
     markdown_content += content
     
     try:
@@ -363,6 +373,7 @@ async def process_archive(
     except Exception as e:
         warn(f"Failed to write markdown file: {str(e)}")
         return None
+
 
 
 def download_file(url, folder):

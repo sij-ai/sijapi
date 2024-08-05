@@ -1,0 +1,11 @@
+__future__
+cv2
+dateparser_data
+ionic
+json  # Used for working with JSON data
+llama_cpp
+markdown_it
+phonenumber_field
+pptx
+requests  # Used for making HTTP requests
+sijapi
