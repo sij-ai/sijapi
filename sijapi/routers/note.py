@@ -22,7 +22,6 @@ from sijapi.routers import asr, cal, gis, img, llm, serve, timing, tts, weather
 from sijapi.utilities import assemble_journal_path, convert_to_12_hour_format, sanitize_filename, convert_degrees_to_cardinal, check_file_name, HOURLY_COLUMNS_MAPPING
 from sijapi.classes import Location
 
-
 note = APIRouter()
 logger = L.get_module_logger("note")
 def debug(text: str): logger.debug(text)
@@ -43,7 +42,6 @@ async def note_add_endpoint(file: Optional[UploadFile] = File(None), text: Optio
         return JSONResponse({"message": "Note added successfully", "entry": result}, status_code=201)
 
 
-
 async def process_for_daily_note(file: Optional[UploadFile] = File(None), text: Optional[str] = None, source: Optional[str] = None, bg_tasks: BackgroundTasks = None):
     now = dt_datetime.now()
     transcription_entry = ""
@@ -52,24 +50,24 @@ async def process_for_daily_note(file: Optional[UploadFile] = File(None), text: 
         debug("File received...")
         file_content = await file.read()
         audio_io = BytesIO(file_content)
-        
+
         # Improve error handling for file type guessing
         guessed_type = mimetypes.guess_type(file.filename)
         file_type = guessed_type[0] if guessed_type[0] else "application/octet-stream"
-        
+
         debug(f"Processing as {file_type}...")
-        
+
         # Extract the main type (e.g., 'audio', 'image', 'video')
         main_type = file_type.split('/')[0]
         subdir = main_type.title() if main_type else "Documents"
-        
+
         absolute_path, relative_path = assemble_journal_path(now, subdir=subdir, filename=file.filename)
         debug(f"Destination path: {absolute_path}")
-        
+
         with open(absolute_path, 'wb') as f:
             f.write(file_content)
         debug(f"Processing {f.name}...")
-        
+
         if main_type == 'audio':
             transcription = await asr.transcribe_audio(file_path=absolute_path, params=asr.TranscribeParams(model="small-en", language="en", threads=6))
             file_entry = f"![[{relative_path}]]"
@@ -77,24 +75,22 @@ async def process_for_daily_note(file: Optional[UploadFile] = File(None), text: 
             file_entry = f"![[{relative_path}]]"
         else:
             file_entry = f"[Source]({relative_path})"
-    
+
     text_entry = text if text else ""
     debug(f"transcription: {transcription_entry}\nfile_entry: {file_entry}\ntext_entry: {text_entry}")
     return await add_to_daily_note(transcription_entry, file_entry, text_entry, now)
-
-
 
 
 async def add_to_daily_note(transcription: str = None, file_link: str = None, additional_text: str = None, date_time: dt_datetime = None):
     date_time = date_time or dt_datetime.now()
     note_path, _ = assemble_journal_path(date_time, filename='Notes', extension=".md", no_timestamp = True)
     time_str = date_time.strftime("%H:%M")
-    
+
     entry_lines = []
     if additional_text and additional_text.strip():
-        entry_lines.append(f"\t* {additional_text.strip()}") 
+        entry_lines.append(f"\t* {additional_text.strip()}")
     if transcription and transcription.strip():
-        entry_lines.append(f"\t* {transcription.strip()}") 
+        entry_lines.append(f"\t* {transcription.strip()}")
     if file_link and file_link.strip():
         entry_lines.append(f"\t\t {file_link.strip()}")
 
@@ -104,7 +100,7 @@ async def add_to_daily_note(transcription: str = None, file_link: str = None, ad
     if note_path.exists():
         with open(note_path, 'a', encoding='utf-8') as note_file:
             note_file.write(entry)
-    else: 
+    else:
         date_str = date_time.strftime("%Y-%m-%d")
         frontmatter = f"""---
 date: {date_str}
@@ -119,7 +115,6 @@ tags:
             note_file.write(content)
 
     return {"timestamp": time_str, "content": entry.strip()}
-
 
 
 async def process_document(
@@ -195,6 +190,7 @@ added: {timestamp}
         err(f"Failed to clip: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
 def list_and_correct_impermissible_files(root_dir, rename: bool = False):
     """List and correct all files with impermissible names."""
     impermissible_files = []
@@ -204,11 +200,11 @@ def list_and_correct_impermissible_files(root_dir, rename: bool = False):
                 file_path = Path(dirpath) / filename
                 impermissible_files.append(file_path)
                 debug(f"Impermissible file found: {file_path}")
-                
+
                 # Sanitize the file name
                 new_filename = sanitize_filename(filename)
                 new_file_path = Path(dirpath) / new_filename
-                
+
                 # Ensure the new file name does not already exist
                 if new_file_path.exists():
                     counter = 1
@@ -217,24 +213,23 @@ def list_and_correct_impermissible_files(root_dir, rename: bool = False):
                         new_filename = f"{base_name}_{counter}{ext}"
                         new_file_path = Path(dirpath) / new_filename
                         counter += 1
-                
+
                 # Rename the file
                 if rename:
                     os.rename(file_path, new_file_path)
                     debug(f"Renamed: {file_path} -> {new_file_path}")
-    
+
     return impermissible_files
 
 journal = OBSIDIAN_VAULT_DIR / "journal"
 list_and_correct_impermissible_files(journal, rename=True)
 
-### Daily Note Builder ###
 
 @note.get("/note/bulk/{dt_start}/{dt_end}")
 async def build_daily_note_range_endpoint(dt_start: str, dt_end: str):
     start_date = dt_datetime.strptime(dt_start, "%Y-%m-%d")
     end_date = dt_datetime.strptime(dt_end, "%Y-%m-%d")
-    
+
     results = []
     current_date = start_date
     while current_date <= end_date:
@@ -242,9 +237,8 @@ async def build_daily_note_range_endpoint(dt_start: str, dt_end: str):
         result = await build_daily_note(formatted_date)
         results.append(result)
         current_date += timedelta(days=1)
-    
-    return {"urls": results}
 
+    return {"urls": results}
 
 
 @note.get("/note/create")
@@ -261,7 +255,7 @@ async def build_daily_note_getpoint():
         date_time = dt_datetime.now(tz)
         path = await build_daily_note(date_time, loc.latitude, loc.longitude)
         path_str = str(path)
-        
+
         info(f"Successfully created daily note at {path_str}")
         return JSONResponse(content={"path": path_str}, status_code=200)
 
@@ -275,7 +269,6 @@ async def build_daily_note_getpoint():
         err(error_msg)
         err(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail="An unexpected error occurred")
-
 
 
 @note.post("/note/create")
@@ -305,7 +298,7 @@ async def build_daily_note_endpoint(
     path = await build_daily_note(date_time, lat, lon)
 
     path_str = str(path)  # Convert PosixPath to string
-    
+
     return JSONResponse(content={"path": path_str}, status_code=200)
 
 
@@ -319,13 +312,13 @@ Obsidian helper. Takes a datetime and creates a new daily note. Note: it uses th
     day_before = (date_time - timedelta(days=1)).strftime("%Y-%m-%d %A")  # 2024-05-26 Sunday formatting
     day_after = (date_time + timedelta(days=1)).strftime("%Y-%m-%d %A")  # 2024-05-28 Tuesday formatting
     header = f"# [[{day_before}|← ]] {formatted_day} [[{day_after}| →]]\n\n"
-    
+
     if not lat or not lon:
         places = await gis.fetch_locations(date_time)
         lat, lon = places[0].latitude, places[0].longitude
 
     location = await GEO.code((lat, lon))
-    
+
     timeslips = await build_daily_timeslips(date_time)
 
     fm_day = date_time.strftime("%Y-%m-%d")
@@ -349,7 +342,7 @@ Obsidian helper. Takes a datetime and creates a new daily note. Note: it uses th
     map_embed = f"![[{map_path}]]"
 
     _, banner_path = assemble_journal_path(date_time, filename="Banner", extension=".jpg", no_timestamp = True)
-   
+
     body = f"""---
 date: "{fm_day}"
 banner: "![[{banner_path}]]"
@@ -357,14 +350,14 @@ tags:
  - daily-note
 created: "{dt_datetime.now().strftime("%Y-%m-%d %H:%M:%S")}"
 ---
-    
+
 {header}
 {weather_embed}
 {map_path}
 
 ## Events
 {event_embed}
- 
+
 ## Tasks
 {task_embed}
 
@@ -381,19 +374,15 @@ created: "{dt_datetime.now().strftime("%Y-%m-%d %H:%M:%S")}"
     banner = await generate_banner(formatted_day, location, weather_note)
 
     return absolute_path
-    
 
 
 async def build_daily_timeslips(date):
-    '''
-
-    '''
     absolute_path, relative_path = assemble_journal_path(date, filename = "Timeslips", extension=".md", no_timestamp = True)
     content = await timing.process_timing_markdown(date, date)
     # document_content = await document.read()
     with open(absolute_path, 'wb') as f:
         f.write(content.encode())
-    
+
     return f"![[{relative_path}]]"
 
 
@@ -402,21 +391,17 @@ async def update_frontmatter_endpoint(date: str, key: str, value: str):
     date_time = dt_datetime.strptime(date, "%Y-%m-%d")
     result = await update_frontmatter(date_time, key, value)
     return result
-    
-async def update_frontmatter(date_time: dt_datetime, key: str, value: str):
-    # Parse the date and format paths
-    file_path, relative_path = assemble_journal_path(date_time)
 
-    # Check if the file exists
+
+async def update_frontmatter(date_time: dt_datetime, key: str, value: str):
+    file_path, relative_path = assemble_journal_path(date_time)
     if not file_path.exists():
         crit(f"Markdown file not found at {file_path}")
         raise HTTPException(status_code=404, detail="Markdown file not found.")
 
-    # Read the file
     with open(file_path, "r", encoding="utf-8") as file:
         lines = file.readlines()
-    
-    # Extract the frontmatter
+
     try:
         start_index = lines.index("---\n") + 1
         end_index = lines[start_index:].index("---\n") + start_index
@@ -424,32 +409,21 @@ async def update_frontmatter(date_time: dt_datetime, key: str, value: str):
     except ValueError:
         raise HTTPException(status_code=500, detail="Frontmatter not found.")
 
-    # Remove the existing key if present
     pattern = re.compile(f"^{key}:.*", re.IGNORECASE)
     frontmatter = [line for line in frontmatter if not pattern.match(line)]
-
-    # Process value as a CSV string into a list
     values = value.split(',')
-
-    # Determine insertion format
     if len(values) == 1:
-        # Single value, add as a simple key-value
         new_entry = f"{key}: {values[0]}\n"
     else:
-        # Multiple values, format as a list under the key
         new_entry = f"{key}:\n" + "\n".join([f" - {val}" for val in values]) + "\n"
 
-    # Insert the new key-value(s)
     frontmatter.append(new_entry)
-
-    # Reassemble the file
     content = lines[:start_index] + frontmatter + ["---\n"] + lines[end_index + 1:]
-
-    # Write changes back to the file
     with open(file_path, "w", encoding="utf-8") as file:
         file.writelines(content)
 
     return {"message": "Frontmatter updated successfully."}
+
 
 @note.post("/note/banner")
 async def banner_endpoint(dt: str, location: str = None, forecast: str = None, mood: str = None, other_context: str = None):
@@ -482,6 +456,7 @@ async def generate_banner(dt, location: Location = None, forecast: str = None, m
     jpg_embed = f"\"![[{local_path}]]\""
     await update_frontmatter(date_time, "banner", jpg_embed)
     return local_path
+
 
 async def generate_context(date_time, location: Location, forecast: str, mood: str, other_context: str):
     display_name = "Location: "
@@ -534,13 +509,12 @@ async def generate_context(date_time, location: Location, forecast: str, mood: s
     additional_info = ', '.join(formatted_events) if formatted_events else ''
 
     other_context = f"{other_context}, {additional_info}" if other_context else additional_info
-    other_context = f"Additional information: {other_context}" if other_context else "" 
+    other_context = f"Additional information: {other_context}" if other_context else ""
 
     prompt = "Generate an aesthetically appealing banner image for a daily note that helps to visualize the following scene information: "
     prompt += "\n".join([display_name, forecast, mood, other_context])
 
     return prompt
-
 
 
 async def get_note(date_time: dt_datetime):
@@ -551,6 +525,7 @@ async def get_note(date_time: dt_datetime):
         with open(absolute_path, 'r', encoding='utf-8') as file:
             content = file.read()
         return content if content else None
+
 
 async def sentiment_analysis(date_time: dt_datetime):
     most_recent_note = await get_note(date_time)
@@ -578,14 +553,14 @@ async def note_weather_get(
         debug(f"date: {date} .. date_time: {date_time}")
         content = await update_dn_weather(date_time, force_refresh_weather) #, lat, lon)
         return JSONResponse(content={"forecast": content}, status_code=200)
-    
+
     except HTTPException as e:
         return JSONResponse(content={"detail": str(e.detail)}, status_code=e.status_code)
 
     except Exception as e:
         err(f"Error in note_weather_get: {str(e)}")
         raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
-                    
+
 
 @note.post("/update/note/{date}")
 async def post_update_daily_weather_and_calendar_and_timeslips(date: str, refresh: str="False") -> PlainTextResponse:
@@ -596,6 +571,7 @@ async def post_update_daily_weather_and_calendar_and_timeslips(date: str, refres
     await update_daily_note_events(date_time)
     await build_daily_timeslips(date_time)
     return f"[Refresh]({API.URL}/update/note/{date_time.strftime('%Y-%m-%d')}"
+
 
 async def update_dn_weather(date_time: dt_datetime, force_refresh: bool = False, lat: float = None, lon: float = None):
     warn(f"Using {date_time.strftime('%Y-%m-%d %H:%M:%S')} as our datetime in update_dn_weather.")
@@ -609,7 +585,7 @@ async def update_dn_weather(date_time: dt_datetime, force_refresh: bool = False,
             place = places[0]
             lat = place.latitude
             lon = place.longitude
-        
+
         debug(f"lat: {lat}, lon: {lon}, place: {place}")
         city = GEO.find_override_location(lat, lon)
         if city:
@@ -626,7 +602,7 @@ async def update_dn_weather(date_time: dt_datetime, force_refresh: bool = False,
                 city = location.name
                 city = city if city else location.city
                 city = city if city else location.house_number + ' ' + location.road
-                
+
                 debug(f"City geocoded: {city}")
 
         # Assemble journal path
@@ -644,9 +620,9 @@ async def update_dn_weather(date_time: dt_datetime, force_refresh: bool = False,
                     # debug(f"Day: {DailyWeather}")
                     icon = DailyWeather.get('icon')
                     debug(f"Icon: {icon}")
-                    
+
                     weather_icon, admonition = get_icon_and_admonition(icon) if icon else (":LiSunMoon:", "ad-weather")
-                    
+
                     temp = DailyWeather.get('feelslike')
 
                     if DailyWeather.get('tempmax', 0) > 85:
@@ -669,7 +645,7 @@ async def update_dn_weather(date_time: dt_datetime, force_refresh: bool = False,
                     sunset = DailyWeather.get('sunset')
                     srise_str = sunrise.time().strftime("%H:%M")
                     sset_str = sunset.time().strftime("%H:%M")
-                    
+
 
                     date_str = date_time.strftime("%Y-%m-%d")
                     now = dt_datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -701,17 +677,17 @@ async def update_dn_weather(date_time: dt_datetime, force_refresh: bool = False,
                         for hour in HourlyWeather:
                             if hour.get('datetime').strftime("%H:%M:%S") in HOURLY_COLUMNS_MAPPING.values():
 
-                                times.append(format_hourly_time(hour)) 
+                                times.append(format_hourly_time(hour))
 
                                 condition_symbols.append(format_hourly_icon(hour, sunrise, sunset))
 
                                 temps.append(format_hourly_temperature(hour))
 
                                 winds.append(format_hourly_wind(hour))
-                        
+
                         detailed_forecast += assemble_hourly_data_table(times, condition_symbols, temps, winds)
                         detailed_forecast += f"```\n\n"
-                    
+
                     debug(f"Detailed forecast: {detailed_forecast}.")
 
                     with open(absolute_path, 'w', encoding='utf-8') as note_file:
@@ -725,12 +701,12 @@ async def update_dn_weather(date_time: dt_datetime, force_refresh: bool = False,
             else:
                 err(f"Failed to get day")
                 raise HTTPException(status_code=500, detail="Failed to retrieve weather data")
-            
+
         except HTTPException as e:
             err(f"HTTP error: {e}")
             err(traceback.format_exc())
             raise e
-        
+
         except Exception as e:
             err(f"Error: {e}")
             err(traceback.format_exc())
@@ -740,11 +716,12 @@ async def update_dn_weather(date_time: dt_datetime, force_refresh: bool = False,
         err(f"Value error in update_dn_weather: {str(ve)}")
         err(traceback.format_exc())
         raise HTTPException(status_code=400, detail=f"Value error: {str(ve)}")
-    
+
     except Exception as e:
         err(f"Error in update_dn_weather: {str(e)}")
         err(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Error in update_dn_weather: {str(e)}")
+
 
 def format_hourly_time(hour):
     try:
@@ -754,21 +731,22 @@ def format_hourly_time(hour):
         err(f"Error in format_hourly_time: {str(e)}")
         err(traceback.format_exc())
         return ""
-    
+
+
 def format_hourly_icon(hour, sunrise, sunset):
     try:
         icon_str = hour.get('icon', '')
         icon, _ = get_icon_and_admonition(icon_str)
-            
+
         precip = hour.get('precip', float(0.0))
         precip_prob = hour.get('precipprob', float(0.0))
         debug(f"precip: {precip}, prob: {precip_prob}")
-        
+
         sp_str = None
 
         if (precip > 0.05 and precip_prob > 25):
             precip_type = hour.get('preciptype', [''])
-            sp_str = f"{str(precip)}mm" 
+            sp_str = f"{str(precip)}mm"
 
         if abs(hour.get('datetime') - sunrise) < timedelta(minutes=60):
             icon = ":LiSunrise:"
@@ -779,16 +757,17 @@ def format_hourly_icon(hour, sunrise, sunset):
         elif hour.get('uvindex') > 8:
             icon = ":LiRadiation:"
             sp_str = f"UV: {hour.get('uvindex', '')}"
-        
+
         formatted = f"{icon}" if icon else ""
         formatted += f" {sp_str}" if sp_str else " "
 
         return formatted
-    
+
     except Exception as e:
         err(f"Error in format_hourly_special: {str(e)}")
         err(traceback.format_exc())
         return ""
+
 
 def format_hourly_temperature(hour):
     try:
@@ -798,7 +777,8 @@ def format_hourly_temperature(hour):
         err(f"Error in format_hourly_temperature: {str(e)}")
         err(traceback.format_exc())
         return ""
-    
+
+
 def format_hourly_wind(hour):
     try:
         windspeed = hour.get('windspeed', '')
@@ -823,7 +803,7 @@ def get_icon_and_admonition(icon_str) -> Tuple:
     debug(f"Received request for emoji {icon_str}")
     if icon_str.startswith(":") and icon_str.endswith(":"):
         return icon_str
-    
+
     icon_str = icon_str.lower()
 
     if icon_str == "clear-day":
@@ -876,34 +856,24 @@ def get_icon_and_admonition(icon_str) -> Tuple:
         ad = "ad-thunder"
     else:
         icon = ":LiHelpCircle:"
-        ad = "ad-weather" 
-    
+        ad = "ad-weather"
+
     return icon, ad
 
 def get_weather_emoji(weather_condition):
     condition = weather_condition.lower()
-    if 'clear' in condition or 'sunny' in condition:
-        return "☀️"
-    elif 'cloud' in condition or 'overcast' in condition:
-        return "☁️"
-    elif 'rain' in condition:
-        return "🌧️"
-    elif 'snow' in condition:
-        return "❄️"
-    elif 'thunder' in condition or 'storm' in condition:
-        return "⛈️"
-    elif 'fog' in condition or 'mist' in condition:
-        return "🌫️"
-    elif 'wind' in condition:
-        return "💨"
-    elif 'hail' in condition:
-        return "🌨️"
-    elif 'sleet' in condition:
-        return "🌧️"
-    elif 'partly' in condition:
-        return "⛅"
-    else:
-        return "🌡️"  # Default emoji for unclassified weather
+    if 'clear' in condition or 'sunny' in condition: return "☀️"
+    elif 'cloud' in condition or 'overcast' in condition: return "☁️"
+    elif 'rain' in condition: return "🌧️"
+    elif 'snow' in condition: return "❄️"
+    elif 'thunder' in condition or 'storm' in condition: return "⛈️"
+    elif 'fog' in condition or 'mist' in condition: return "🌫️"
+    elif 'wind' in condition: return "💨"
+    elif 'hail' in condition: return "🌨️"
+    elif 'sleet' in condition: return "🌧️"
+    elif 'partly' in condition: return "⛅"
+    else: return "🌡️"  # Default emoji for unclassified weather
+
 
 async def format_events_as_markdown(event_data: Dict[str, Union[str, List[Dict[str, str]]]]) -> str:
     def remove_characters(s: str) -> str:
@@ -911,7 +881,7 @@ async def format_events_as_markdown(event_data: Dict[str, Union[str, List[Dict[s
         s = s.strip('\n')
         s = re.sub(r'^_+|_+$', '', s)
         return s
-    
+
     date_str = event_data["date"]
     now = dt_datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     events_markdown = []
@@ -940,7 +910,7 @@ async def format_events_as_markdown(event_data: Dict[str, Union[str, List[Dict[s
 
             else:
                 event_markdown += f"\n - [ ] **{event['start']}—{event['end']}** {markdown_name}"
-                
+
             if event['attendees']:
                 attendee_list = []
                 for att in event['attendees']:
@@ -961,10 +931,10 @@ async def format_events_as_markdown(event_data: Dict[str, Union[str, List[Dict[s
 
                 event_markdown += f"\n     * {description}"
             event_markdown += f"\n "
-   
+
     event_markdown += "\n```\n"
     events_markdown.append(event_markdown)
-    
+
     header = (
         "---\n"
         f"date: {date_str}\n"
@@ -973,23 +943,25 @@ async def format_events_as_markdown(event_data: Dict[str, Union[str, List[Dict[s
         f"updated: {now}\n"
         "---\n"
     )
-    
+
     detailed_events = (
         f"{header}"
         f"{''.join(events_markdown)}"
     )
     return detailed_events
 
+
 @note.get("/note/events", response_class=PlainTextResponse)
 async def note_events_endpoint(date: str = Query(None)):
-        
+
     date_time = await gis.dt(date) if date else await gis.dt(dt_datetime.now())
     response = await update_daily_note_events(date_time)
     return PlainTextResponse(content=response, status_code=200)
 
+
 async def update_daily_note_events(date_time: dt_datetime):
     debug(f"Looking up events on date: {date_time.strftime('%Y-%m-%d')}")
-    try:    
+    try:
         events = await cal.get_events(date_time, date_time)
         debug(f"Raw events: {events}")
         event_data = {
@@ -1009,6 +981,3 @@ async def update_daily_note_events(date_time: dt_datetime):
     except Exception as e:
         err(f"Error processing events: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
-
-
