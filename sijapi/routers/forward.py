@@ -1,5 +1,5 @@
 '''
-Used to port-forwarding and reverse proxy configurations.
+Used for port-forwarding and reverse proxy configurations.
 '''
 #routers/forward.py
 
