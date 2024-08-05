@@ -29,6 +29,7 @@ from fastapi import Depends, HTTPException, Request, UploadFile
 from fastapi.security.api_key import APIKeyHeader
 
 from sijapi import L, API, YEAR_FMT, MONTH_FMT, DAY_FMT, DAY_SHORT_FMT, OBSIDIAN_VAULT_DIR, ALLOWED_FILENAME_CHARS, MAX_PATH_LENGTH, ARCHIVE_DIR
+
 logger = L.get_module_logger('utilities')
 def debug(text: str): logger.debug(text)
 def info(text: str): logger.info(text)
