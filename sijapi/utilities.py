@@ -12,11 +12,12 @@ from dateutil import parser
 from pathlib import Path
 import filetype
 from PyPDF2 import PdfReader
+from better_profanity import profanity
 from pdfminer.high_level import extract_text as pdfminer_extract_text
 import pytesseract
 from pdf2image import convert_from_path
 from datetime import datetime, date, time
-from typing import Optional, Union, Tuple
+from typing import Optional, Union, Tuple, List
 import asyncio
 from PIL import Image
 import pandas as pd
@@ -28,7 +29,7 @@ from sshtunnel import SSHTunnelForwarder
 from fastapi import Depends, HTTPException, Request, UploadFile
 from fastapi.security.api_key import APIKeyHeader
 
-from sijapi import L, API, YEAR_FMT, MONTH_FMT, DAY_FMT, DAY_SHORT_FMT, OBSIDIAN_VAULT_DIR, ALLOWED_FILENAME_CHARS, MAX_PATH_LENGTH, ARCHIVE_DIR
+from sijapi import L, API, Archivist, YEAR_FMT, MONTH_FMT, DAY_FMT, DAY_SHORT_FMT, OBSIDIAN_VAULT_DIR, ALLOWED_FILENAME_CHARS, MAX_PATH_LENGTH, ARCHIVE_DIR
 
 logger = L.get_module_logger('utilities')
 def debug(text: str): logger.debug(text)
@@ -63,33 +64,56 @@ def validate_api_key(request: Request, api_key: str = Depends(api_key_header)):
     raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
 
-def assemble_archive_path(filename: str, extension: str = ".md", date_time: datetime = datetime.now(), subdir: str = None) -> Tuple[Path, Path]:
+def assemble_archive_path(filename: str, extension: str = None, date_time: datetime = datetime.now(), subdir: str = None) -> Tuple[Path, Path]:
     year = date_time.strftime(YEAR_FMT)
     month = date_time.strftime(MONTH_FMT)
     day = date_time.strftime(DAY_FMT)
     day_short = date_time.strftime(DAY_SHORT_FMT)
     timestamp = date_time.strftime("%H%M%S")
-
-    # Ensure the extension is preserved
-    base_name, ext = os.path.splitext(filename)
-    extension = ext if ext else extension
-
+    
+    # Handle extension priority
+    base_name, original_ext = os.path.splitext(filename)
+    
+    if extension is not None:
+        # Use the provided extension parameter
+        final_extension = extension if extension.startswith('.') else f'.{extension}'
+    elif original_ext:
+        # Use the original file extension if present
+        final_extension = original_ext
+    else:
+        # Default to ".md" if no extension is provided or present
+        final_extension = ".md"
+    
     # Initial sanitization
     sanitized_base = sanitize_filename(base_name, '')
-    filename = f"{day_short} {timestamp} {sanitized_base}{extension}"
-
+    filename = f"{day_short} {timestamp} {sanitized_base}{final_extension}"
+    
     relative_path = Path(year) / month / day / filename
-    absolute_path = ARCHIVE_DIR / relative_path
-
+    absolute_path = Archivist.dir / relative_path
+    
     # Ensure the total path length doesn't exceed MAX_PATH_LENGTH
-    while len(str(absolute_path)) > MAX_PATH_LENGTH:
-        # Truncate the sanitized_base, not the full filename
+    while len(str(absolute_path)) > MAX_PATH_LENGTH and len(sanitized_base) > 0:
         sanitized_base = sanitized_base[:-1]
-        filename = f"{day_short} {timestamp} {sanitized_base}{extension}"
+        filename = f"{day_short} {timestamp} {sanitized_base}{final_extension}"
         relative_path = Path(year) / month / day / filename
         absolute_path = ARCHIVE_DIR / relative_path
-
+    
+    # If we've exhausted sanitized_base and the path is still too long
+    if len(str(absolute_path)) > MAX_PATH_LENGTH:
+        # Use a hash of the original filename to ensure uniqueness
+        hash_suffix = hashlib.md5(base_name.encode()).hexdigest()[:8]
+        filename = f"{day_short} {timestamp} {hash_suffix}{final_extension}"
+        relative_path = Path(year) / month / day / filename
+        absolute_path = ARCHIVE_DIR / relative_path
+    
+    # Final check and truncation if necessary
+    if len(str(absolute_path)) > MAX_PATH_LENGTH:
+        overflow = len(str(absolute_path)) - MAX_PATH_LENGTH
+        absolute_path = Path(str(absolute_path)[:-overflow])
+        relative_path = Path(str(relative_path)[:-overflow])
+    
     return absolute_path, relative_path
+
 
 
 def assemble_journal_path(date_time: datetime, subdir: str = None, filename: str = None, extension: str = None, no_timestamp: bool = False) -> Tuple[Path, Path]:
@@ -159,6 +183,21 @@ def f(file):
 
     with open(file_path, 'rb') as thefile:
         return thefile
+
+            
+def contains_profanity(url: str, content: str, threshold: float = 0.2, custom_words: Optional[List[str]] = None) -> bool:
+    custom_words = custom_words or []
+    if any(word.lower() in url.lower() for word in custom_words):
+        info(f"Blacklisted word in {url}")
+        return True
+
+    # Check content for profanity
+    profanity.load_censor_words(custom_words)
+    word_list = content.split()
+    content_profanity_count = sum(1 for word in word_list if profanity.contains_profanity(word))
+    content_profanity_ratio = content_profanity_count / len(word_list) if word_list else 0
+    debug(f"Profanity ratio for {url}: {content_profanity_ratio}")
+    return content_profanity_ratio >= threshold
 
 
 def get_extension(file):
