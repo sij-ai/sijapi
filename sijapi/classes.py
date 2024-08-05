@@ -29,6 +29,7 @@ from .logs import Logger
 L = Logger("classes", "classes")
 logger = L.get_module_logger("classes")
 
+# Logging functions
 def debug(text: str): logger.debug(text)
 def info(text: str): logger.info(text)
 def warn(text: str): logger.warning(text)
@@ -81,7 +82,7 @@ class Configuration(BaseModel):
             instance = cls.create_dynamic_model(**resolved_data)
             instance._dir_config = dir_config or instance
             return instance
-        
+
         except Exception as e:
             err(f"Error loading configuration: {str(e)}")
             raise
@@ -137,7 +138,7 @@ class Configuration(BaseModel):
             elif len(parts) == 2 and parts[0] == 'ENV':
                 replacement = os.getenv(parts[1], '')
             else:
-                replacement = value 
+                replacement = value
 
             value = value.replace('{{' + match + '}}', str(replacement))
 
@@ -314,7 +315,7 @@ class APIConfig(BaseModel):
     async def get_online_hosts(self) -> List[Dict[str, Any]]:
         current_time = time.time()
         cache_key = "online_hosts"
-        
+
         if cache_key in self.online_hosts_cache:
             cached_hosts, cache_time = self.online_hosts_cache[cache_key]
             if current_time - cache_time < self.online_hosts_cache_ttl:
@@ -322,7 +323,7 @@ class APIConfig(BaseModel):
 
         online_hosts = []
         local_ts_id = os.environ.get('TS_ID')
-        
+
         for pool_entry in self.POOL:
             if pool_entry['ts_id'] != local_ts_id:
                 pool_key = f"{pool_entry['ts_ip']}:{pool_entry['db_port']}"
@@ -331,7 +332,7 @@ class APIConfig(BaseModel):
                         continue
                     else:
                         del self.offline_servers[pool_key]
-                
+
                 conn = await self.get_connection(pool_entry)
                 if conn is not None:
                     online_hosts.append(pool_entry)
@@ -343,16 +344,16 @@ class APIConfig(BaseModel):
     async def get_connection(self, pool_entry: Dict[str, Any] = None):
         if pool_entry is None:
             pool_entry = self.local_db
-        
+
         pool_key = f"{pool_entry['ts_ip']}:{pool_entry['db_port']}"
-        
+
         # Check if the server is marked as offline
         if pool_key in self.offline_servers:
             if time.time() - self.offline_servers[pool_key] < self.offline_timeout:
                 return None
             else:
                 del self.offline_servers[pool_key]
-        
+
         if pool_key not in self.db_pools:
             try:
                 self.db_pools[pool_key] = await asyncpg.create_pool(
@@ -385,7 +386,7 @@ class APIConfig(BaseModel):
     async def initialize_sync(self):
         local_ts_id = os.environ.get('TS_ID')
         online_hosts = await self.get_online_hosts()
-        
+
         for pool_entry in online_hosts:
             if pool_entry['ts_id'] == local_ts_id:
                 continue  # Skip local database
@@ -393,29 +394,29 @@ class APIConfig(BaseModel):
                 conn = await self.get_connection(pool_entry)
                 if conn is None:
                     continue  # Skip this database if connection failed
-                
+
                 debug(f"Starting sync initialization for {pool_entry['ts_ip']}...")
-                
+
                 # Check PostGIS installation
                 postgis_installed = await self.check_postgis(conn)
                 if not postgis_installed:
                     warn(f"PostGIS is not installed on {pool_entry['ts_id']} ({pool_entry['ts_ip']}). Some spatial operations may fail.")
-                
+
                 tables = await conn.fetch("""
-                    SELECT tablename FROM pg_tables 
+                    SELECT tablename FROM pg_tables
                     WHERE schemaname = 'public'
                 """)
-                
+
                 for table in tables:
                     table_name = table['tablename']
                     await self.ensure_sync_columns(conn, table_name)
-                
+
                 debug(f"Sync initialization complete for {pool_entry['ts_ip']}. All tables now have necessary sync columns and triggers.")
-                    
+
             except Exception as e:
                 err(f"Error initializing sync for {pool_entry['ts_ip']}: {str(e)}")
                 err(f"Traceback: {traceback.format_exc()}")
-    
+
     def _schedule_sync_task(self, table_name: str, pk_value: Any, version: int, server_id: str):
         # Use a background task manager to handle syncing
         task_key = f"{table_name}:{pk_value}" if pk_value else table_name
@@ -439,20 +440,20 @@ class APIConfig(BaseModel):
             if not primary_key:
                 # Add an id column as primary key if it doesn't exist
                 await conn.execute(f"""
-                    ALTER TABLE "{table_name}" 
+                    ALTER TABLE "{table_name}"
                     ADD COLUMN IF NOT EXISTS id SERIAL PRIMARY KEY;
                 """)
                 primary_key = 'id'
 
             # Ensure version column exists
             await conn.execute(f"""
-                ALTER TABLE "{table_name}" 
+                ALTER TABLE "{table_name}"
                 ADD COLUMN IF NOT EXISTS version INTEGER DEFAULT 1;
             """)
 
             # Ensure server_id column exists
             await conn.execute(f"""
-                ALTER TABLE "{table_name}" 
+                ALTER TABLE "{table_name}"
                 ADD COLUMN IF NOT EXISTS server_id TEXT DEFAULT '{os.environ.get('TS_ID')}';
             """)
 
@@ -487,7 +488,7 @@ class APIConfig(BaseModel):
 
             debug(f"Successfully ensured sync columns and trigger for table {table_name}")
             return primary_key
-        
+
         except Exception as e:
             err(f"Error ensuring sync columns for table {table_name}: {str(e)}")
             err(f"Traceback: {traceback.format_exc()}")
@@ -497,7 +498,7 @@ class APIConfig(BaseModel):
         if conn is None:
             debug(f"Skipping offline server...")
             return None
-        
+
         try:
             result = await conn.fetchval("SELECT PostGIS_version();")
             if result:
@@ -509,7 +510,7 @@ class APIConfig(BaseModel):
         except Exception as e:
             err(f"Error checking PostGIS: {str(e)}")
             return False
-        
+
 
     async def pull_changes(self, source_pool_entry, batch_size=10000):
         if source_pool_entry['ts_id'] == os.environ.get('TS_ID'):
@@ -538,10 +539,10 @@ class APIConfig(BaseModel):
                 return 0
 
             tables = await source_conn.fetch("""
-                SELECT tablename FROM pg_tables 
+                SELECT tablename FROM pg_tables
                 WHERE schemaname = 'public'
             """)
-            
+
             for table in tables:
                 table_name = table['tablename']
                 try:
@@ -550,7 +551,7 @@ class APIConfig(BaseModel):
                     else:
                         primary_key = await self.ensure_sync_columns(dest_conn, table_name)
                         last_synced_version = await self.get_last_synced_version(dest_conn, table_name, source_id)
-                        
+
                         while True:
                             changes = await source_conn.fetch(f"""
                                 SELECT * FROM "{table_name}"
@@ -558,16 +559,16 @@ class APIConfig(BaseModel):
                                 ORDER BY version ASC
                                 LIMIT $3
                             """, last_synced_version, source_id, batch_size)
-                            
+
                             if not changes:
                                 break  # No more changes for this table
-                            
+
                             changes_count = await self.apply_batch_changes(dest_conn, table_name, changes, primary_key)
                             total_changes += changes_count
-                            
+
                             if changes_count > 0:
                                 info(f"Synced batch for {table_name}: {changes_count} changes. Total so far: {total_changes}")
-                            
+
                             last_synced_version = changes[-1]['version']  # Update last synced version
 
                 except Exception as e:
@@ -599,7 +600,7 @@ class APIConfig(BaseModel):
         if conn is None:
             debug(f"Skipping offline server...")
             return 0
-        
+
         if table_name in self.SPECIAL_TABLES:
             debug(f"Skipping get_last_synced_version because {table_name} is special.")
             return 0  # Special handling for tables without version column
@@ -623,15 +624,15 @@ class APIConfig(BaseModel):
         local_ts_id = os.environ.get('TS_ID')
         online_hosts = await self.get_online_hosts()
         num_online_hosts = len(online_hosts)
-        
+
         if num_online_hosts > 0:
             online_ts_ids = [host['ts_id'] for host in online_hosts if host['ts_id'] != local_ts_id]
             crit(f"Online hosts: {', '.join(online_ts_ids)}")
-            
+
             for pool_entry in online_hosts:
                 if pool_entry['ts_id'] == local_ts_id:
                     continue  # Skip local database
-                
+
                 try:
                     conn = await self.get_connection(pool_entry)
                     if conn is None:
@@ -639,14 +640,14 @@ class APIConfig(BaseModel):
                         continue
 
                     tables = await conn.fetch("""
-                        SELECT tablename FROM pg_tables 
+                        SELECT tablename FROM pg_tables
                         WHERE schemaname = 'public'
                     """)
-                    
+
                     for table in tables:
                         table_name = table['tablename']
                         if table_name in self.SPECIAL_TABLES:
-                            continue 
+                            continue
                         try:
                             result = await conn.fetchrow(f"""
                                 SELECT MAX(version) as max_version, server_id
@@ -684,7 +685,7 @@ class APIConfig(BaseModel):
                 most_recent_source = next(host for host in online_hosts if host['ts_id'] != local_ts_id)
             else:
                 crit("No other online hosts available for sync.")
-        
+
         return most_recent_source
 
 
@@ -737,7 +738,7 @@ class APIConfig(BaseModel):
             try:
                 # Execute the query
                 result = await conn.fetch(query, *args)
-                
+
                 if not result:
                     continue
 
@@ -846,9 +847,9 @@ class APIConfig(BaseModel):
                         columns = updated_row.keys()
                         placeholders = [f'${i+1}' for i in range(len(columns))]
                         primary_key = self.get_primary_key(table_name)
-                        
+
                         remote_version = await remote_conn.fetchval(f"""
-                            SELECT version FROM "{table_name}" 
+                            SELECT version FROM "{table_name}"
                             WHERE "{primary_key}" = $1
                         """, updated_row[primary_key])
 
@@ -920,17 +921,17 @@ class APIConfig(BaseModel):
             if all_rows:
                 columns = list(all_rows[0].keys())
                 placeholders = [f'${i+1}' for i in range(len(columns))]
-                
+
                 insert_query = f"""
                     INSERT INTO "{table_name}" ({', '.join(f'"{col}"' for col in columns)})
                     VALUES ({', '.join(placeholders)})
                     ON CONFLICT DO NOTHING
                 """
-                
+
                 async with remote_conn.transaction():
                     for row in all_rows:
                         await remote_conn.execute(insert_query, *row.values())
-                
+
                 return True
             else:
                 debug(f"No rows to push for table {table_name}")
@@ -976,7 +977,7 @@ class APIConfig(BaseModel):
         try:
             columns = list(changes[0].keys())
             placeholders = [f'${i+1}' for i in range(len(columns))]
-            
+
             if primary_key:
                 insert_query = f"""
                     INSERT INTO "{table_name}" ({', '.join(f'"{col}"' for col in columns)})
@@ -1057,7 +1058,7 @@ class APIConfig(BaseModel):
                             proj4text = $4::text
                         WHERE srid = $5::integer
                     """
-                    await dest_conn.execute(update_query, 
+                    await dest_conn.execute(update_query,
                         source_entry['auth_name'],
                         source_entry['auth_srid'],
                         source_entry['srtext'],
@@ -1080,7 +1081,7 @@ class APIConfig(BaseModel):
         # You might want to cache this information for performance
         # For now, we'll assume it's always 'id', but you should implement proper logic here
         return 'id'
-    
+
 
     async def add_primary_keys_to_local_tables(self):
         conn = await self.get_connection()
@@ -1091,10 +1092,10 @@ class APIConfig(BaseModel):
 
         try:
             tables = await conn.fetch("""
-                SELECT tablename FROM pg_tables 
+                SELECT tablename FROM pg_tables
                 WHERE schemaname = 'public'
             """)
-            
+
             for table in tables:
                 table_name = table['tablename']
                 if table_name not in self.SPECIAL_TABLES:
@@ -1104,7 +1105,7 @@ class APIConfig(BaseModel):
 
     async def add_primary_keys_to_remote_tables(self):
         online_hosts = await self.get_online_hosts()
-        
+
         for pool_entry in online_hosts:
             conn = await self.get_connection(pool_entry)
             if conn is None:
@@ -1114,10 +1115,10 @@ class APIConfig(BaseModel):
             try:
                 info(f"Adding primary keys to existing tables on {pool_entry['ts_id']}...")
                 tables = await conn.fetch("""
-                    SELECT tablename FROM pg_tables 
+                    SELECT tablename FROM pg_tables
                     WHERE schemaname = 'public'
                 """)
-                
+
                 for table in tables:
                     table_name = table['tablename']
                     if table_name not in self.SPECIAL_TABLES:
@@ -1140,7 +1141,7 @@ class APIConfig(BaseModel):
         close_tasks = []
         for pool_key, pool in self.db_pools.items():
             close_tasks.append(self.close_pool_with_timeout(pool, pool_key))
-        
+
         await asyncio.gather(*close_tasks)
         self.db_pools.clear()
         info("All database connection pools closed.")

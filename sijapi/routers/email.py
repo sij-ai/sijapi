@@ -1,5 +1,5 @@
 '''
-Uses IMAP and SMTP login credentials to monitor an inbox and summarize incoming emails that match certain criteria and save the Text-To-Speech converted summaries into a specified "podcast" folder. 
+Uses IMAP and SMTP login credentials to monitor an inbox and summarize incoming emails that match certain criteria and save the Text-To-Speech converted summaries into a specified "podcast" folder.
 '''
 #routers/email.py
 
@@ -55,9 +55,9 @@ def get_smtp_connection(autoresponder: AutoResponder):
     context = ssl.create_default_context()
     context.check_hostname = False
     context.verify_mode = ssl.CERT_NONE
-    
+
     smtp_config = autoresponder.smtp
-    
+
     if smtp_config.encryption == 'SSL':
         try:
             debug(f"Attempting SSL connection to {smtp_config.host}:{smtp_config.port}")
@@ -73,6 +73,7 @@ def get_smtp_connection(autoresponder: AutoResponder):
             except Exception as e:
                 err(f"STARTTLS connection failed: {str(e)}")
                 raise
+
     elif smtp_config.encryption == 'STARTTLS':
         try:
             debug(f"Attempting STARTTLS connection to {smtp_config.host}:{smtp_config.port}")
@@ -82,6 +83,7 @@ def get_smtp_connection(autoresponder: AutoResponder):
         except Exception as e:
             err(f"STARTTLS connection failed: {str(e)}")
             raise
+
     else:
         try:
             debug(f"Attempting unencrypted connection to {smtp_config.host}:{smtp_config.port}")
@@ -128,8 +130,6 @@ async def send_response(to_email: str, subject: str, body: str, profile: AutoRes
                 err(f"Error closing SMTP connection: {str(e)}")
 
 
-
-
 def clean_email_content(html_content):
     soup = BeautifulSoup(html_content, "html.parser")
     return re.sub(r'[ \t\r\n]+', ' ', soup.get_text()).strip()
@@ -141,11 +141,11 @@ async def extract_attachments(attachments) -> List[str]:
         attachment_name = attachment.get('filename', 'tempfile.txt')
         _, ext = os.path.splitext(attachment_name)
         ext = ext.lower() if ext else '.txt'
-        
+
         with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp_file:
             tmp_file.write(attachment['content'].getvalue())
             tmp_file_path = tmp_file.name
-        
+
         try:
             attachment_text = await extract_text(tmp_file_path)
             attachment_texts.append(attachment_text)
@@ -154,6 +154,7 @@ async def extract_attachments(attachments) -> List[str]:
                 os.remove(tmp_file_path)
 
     return attachment_texts
+
 
 async def process_account_archival(account: EmailAccount):
     summarized_log = EMAIL_LOGS / account.name / "summarized.txt"
@@ -177,7 +178,7 @@ async def process_account_archival(account: EmailAccount):
                             recipients=recipients,
                             subject=message.subject,
                             body=clean_email_content(message.body['html'][0]) if message.body['html'] else clean_email_content(message.body['plain'][0]) or "",
-                            attachments=message.attachments 
+                            attachments=message.attachments
                         )
                         md_path, md_relative = assemble_journal_path(this_email.datetime_received, "Emails", this_email.subject, ".md")
                         md_summary = await summarize_single_email(this_email, account.podcast) if account.summarize == True else None
@@ -192,8 +193,9 @@ async def process_account_archival(account: EmailAccount):
                     #     debug(f"Skipping {uid_str} because it was already processed.")
         except Exception as e:
             err(f"An error occurred during summarization for account {account.name}: {e}")
-        
+
         await asyncio.sleep(account.refresh)
+
 
 async def summarize_single_email(this_email: IncomingEmail, podcast: bool = False):
     tts_path, tts_relative = assemble_journal_path(this_email.datetime_received, "Emails", this_email.subject, ".wav")
@@ -212,6 +214,7 @@ async def summarize_single_email(this_email: IncomingEmail, podcast: bool = Fals
 
     return md_summary
 
+
 async def archive_single_email(this_email: IncomingEmail, summary: str = None):
     try:
         markdown_content = f'''---
@@ -219,14 +222,14 @@ date: {this_email.datetime_received.strftime('%Y-%m-%d')}
 tags:
 - email
 ---
-|     |     |     | 
-| --: | :--: |  :--: | 
+|     |     |     |
+| --: | :--: |  :--: |
 |  *received* | **{this_email.datetime_received.strftime('%B %d, %Y at %H:%M:%S %Z')}**    |    |
 |  *from* | **[[{this_email.sender}]]**    |    |
 |  *to* | {', '.join([f'**[[{recipient.email}]]**' if not recipient.name else f'**[[{recipient.name}|{recipient.email}]]**' for recipient in this_email.recipients])}   |    |
 |  *subject* | **{this_email.subject}**    |    |
 '''
-    
+
         if summary:
             markdown_content += summary
 
@@ -235,11 +238,12 @@ tags:
 {this_email.body}
 '''
         return markdown_content
-    
+
     except Exception as e:
         err(f"Exception: {e}")
         return False
-    
+
+
 async def save_email(md_path, md_content):
     try:
         with open(md_path, 'w', encoding='utf-8') as md_file:
@@ -250,6 +254,7 @@ async def save_email(md_path, md_content):
     except Exception as e:
         err(f"Failed to save email: {e}")
         return False
+
 
 def get_matching_autoresponders(this_email: IncomingEmail, account: EmailAccount) -> List[AutoResponder]:
     debug(f"Called get_matching_autoresponders for email \"{this_email.subject},\" account name \"{account.name}\"")
@@ -294,13 +299,14 @@ async def process_account_autoresponding(account: EmailAccount):
 
         except Exception as e:
             err(f"An error occurred during auto-responding for account {account.name}: {e}")
-        
+
         await asyncio.sleep(account.refresh)
+
 
 async def autorespond_single_email(message, uid_str: str, account: EmailAccount, log_file: Path):
     this_email = await create_incoming_email(message)
     debug(f"Evaluating {this_email.subject} for autoresponse-worthiness...")
-    
+
     matching_profiles = get_matching_autoresponders(this_email, account)
     debug(f"Matching profiles: {matching_profiles}")
 
@@ -319,6 +325,7 @@ async def autorespond_single_email(message, uid_str: str, account: EmailAccount,
         else:
             warn(f"Unable to generate auto-response for {this_email.subject}")
 
+
 async def generate_response(this_email: IncomingEmail, profile: AutoResponder, account: EmailAccount) -> Optional[str]:
     info(f"Generating auto-response to {this_email.subject} with profile: {profile.name}")
 
@@ -335,16 +342,16 @@ Body: {this_email.body}
 Respond on behalf of {account.fullname}, who is unable to respond personally because {profile.context}. Keep the response {profile.style} and to the point, but responsive to the sender's inquiry. Do not mention or recite this context information in your response.
     '''
     sys_prompt = f"You are an AI assistant helping {account.fullname} with email responses. {account.fullname} is described as: {account.bio}"
-    
+
     try:
         response = await llm.query_ollama(usr_prompt, sys_prompt, profile.ollama_model, 400)
         debug(f"query_ollama response: {response}")
-        
+
         if isinstance(response, dict) and "message" in response and "content" in response["message"]:
             response = response["message"]["content"]
-        
+
         return response + "\n\n"
-        
+
     except Exception as e:
         err(f"Error generating auto-response: {str(e)}")
         return None
@@ -363,21 +370,25 @@ async def create_incoming_email(message) -> IncomingEmail:
         attachments=message.attachments
     )
 
+
 async def load_processed_uids(filename: Path) -> Set[str]:
     if filename.exists():
         async with aiofiles.open(filename, 'r') as f:
             return set(line.strip().split(':')[-1] for line in await f.readlines())
     return set()
 
+
 async def save_processed_uid(filename: Path, account_name: str, uid: str):
     async with aiofiles.open(filename, 'a') as f:
         await f.write(f"{account_name}:{uid}\n")
+
 
 async def process_all_accounts():
     email_accounts = load_email_accounts(EMAIL_CONFIG)
     summarization_tasks = [asyncio.create_task(process_account_archival(account)) for account in email_accounts]
     autoresponding_tasks = [asyncio.create_task(process_account_autoresponding(account)) for account in email_accounts]
     await asyncio.gather(*summarization_tasks, *autoresponding_tasks)
+
 
 @email.on_event("startup")
 async def startup_event():

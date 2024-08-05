@@ -11,7 +11,7 @@ from hypercorn.config import Config as HypercornConfig
 import sys
 import os
 import traceback
-import asyncio 
+import asyncio
 import httpx
 import argparse
 import json
@@ -56,7 +56,7 @@ async def lifespan(app: FastAPI):
     try:
         # Initialize sync structures on all databases
         await API.initialize_sync()
-        
+
     except Exception as e:
         crit(f"Error during startup: {str(e)}")
         crit(f"Traceback: {traceback.format_exc()}")
@@ -136,13 +136,13 @@ async def pull_changes():
         await API.add_primary_keys_to_local_tables()
         await API.add_primary_keys_to_remote_tables()
         try:
-            
+
             source = await API.get_most_recent_source()
-            
+
             if source:
                 # Pull changes from the source
                 total_changes = await API.pull_changes(source)
-                
+
                 return JSONResponse(content={
                     "status": "success",
                     "message": f"Pull complete. Total changes: {total_changes}",
@@ -154,12 +154,12 @@ async def pull_changes():
                     "status": "info",
                     "message": "No instances with more recent data found or all instances are offline."
                 })
-        
+
         except Exception as e:
             err(f"Error during pull: {str(e)}")
             err(f"Traceback: {traceback.format_exc()}")
             raise HTTPException(status_code=500, detail=f"Error during pull: {str(e)}")
-        
+
     except Exception as e:
             err(f"Error while ensuring primary keys to tables: {str(e)}")
             err(f"Traceback: {traceback.format_exc()}")
