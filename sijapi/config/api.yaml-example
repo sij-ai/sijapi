@@ -16,10 +16,11 @@ PUBLIC:
 
 TRUSTED_SUBNETS:
   - 127.0.0.1/32
-  - 10.0.0.0/24
-  - 192.168.0.0/24
+  - 10.13.37.0/24
+  - 100.64.64.0/24
 
 MODULES:
+  archivist: on
   asr: on
   cal: on
   cf: off
@@ -84,13 +85,15 @@ POOL:
     conda_env: 'myenv'
   
 EXTENSIONS:
+  pgp: on
+  archivist: on
   courtlistener: off
   macnotify: on
   shellfish: on
+  
+TZ: "America/Los_Angeles"
 
-TZ: 'UTC'
-
-KEYS: ['{{ SECRET.GLOBAL_API_KEYS }}']
+KEYS: ["{{ SECRET.GLOBAL_API_KEYS }}"]
 
 GARBAGE:
   COLLECTION_INTERVAL: 60 * 60

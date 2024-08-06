@@ -40,6 +40,7 @@ os.makedirs(ALERTS_DIR, exist_ok=True)
 REQUESTS_DIR = LOGS_DIR / "requests"
 os.makedirs(REQUESTS_DIR, exist_ok=True)
 REQUESTS_LOG_PATH = LOGS_DIR / "requests.log"
+BLOCKLISTS_DIR = DATA_DIR / "blocklists"
 
 # LOCATE AND WEATHER LOCALIZATIONS
 USER_FULLNAME = os.getenv('USER_FULLNAME')

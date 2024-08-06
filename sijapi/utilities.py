@@ -13,6 +13,7 @@ from pathlib import Path
 import filetype
 from PyPDF2 import PdfReader
 from better_profanity import profanity
+from adblockparser import AdblockRules
 from pdfminer.high_level import extract_text as pdfminer_extract_text
 import pytesseract
 from pdf2image import convert_from_path
@@ -184,20 +185,46 @@ def f(file):
     with open(file_path, 'rb') as thefile:
         return thefile
 
-            
-def contains_profanity(url: str, content: str, threshold: float = 0.2, custom_words: Optional[List[str]] = None) -> bool:
-    custom_words = custom_words or []
-    if any(word.lower() in url.lower() for word in custom_words):
-        info(f"Blacklisted word in {url}")
-        return True
 
-    # Check content for profanity
+def is_ad_or_tracker(url: str, rules: AdblockRules) -> bool:
+    parsed_url = urlparse(url)
+    return rules.should_block(url, { 'domain': parsed_url.netloc })
+
+            
+def contains_blacklisted_word(text: str, blacklist: List[str]) -> bool:
+        return any(word.lower() in text.lower() for word in blacklist)
+    
+    
+def contains_profanity(content: str, threshold: float = 0.01, custom_words: Optional[List[str]] = None) -> bool:
+    custom_words = custom_words or []
+    
+    # Combine the profanity library's word list with custom words
     profanity.load_censor_words(custom_words)
+    
     word_list = content.split()
     content_profanity_count = sum(1 for word in word_list if profanity.contains_profanity(word))
     content_profanity_ratio = content_profanity_count / len(word_list) if word_list else 0
-    debug(f"Profanity ratio for {url}: {content_profanity_ratio}")
+    
+    debug(f"Profanity ratio for content: {content_profanity_ratio}")
     return content_profanity_ratio >= threshold
+
+
+def load_filter_lists(blocklists_dir: Path):
+        rules = []
+        for file_path in blocklists_dir.glob('*.txt'):
+            try:
+                with open(file_path, 'r', encoding='utf-8') as file:
+                    rules.extend(file.read().splitlines())
+                logging.info(f"Loaded blocklist: {file_path.name}")
+            except Exception as e:
+                logging.error(f"Error loading blocklist {file_path.name}: {str(e)}")
+        return rules
+    
+    
+def initialize_adblock_rules(blocklists_dir: Path):
+    rules = load_filter_lists(blocklists_dir)
+    logging.info(f"Initialized AdblockRules with {len(rules)} rules")
+    return AdblockRules(rules)
 
 
 def get_extension(file):
@@ -519,3 +546,31 @@ async def run_ssh_command(server, command):
     except Exception as e:
         err(f"SSH command failed for server {server.id}: {str(e)}")
         raise
+
+
+async def html_to_markdown(url: str = None, source: str = None) -> Optional[str]:
+        if source:
+            html_content = source
+        elif url:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url) as response:
+                    html_content = await response.text()
+        else:
+            err(f"Unable to convert nothing to markdown.")
+            return None
+        
+        # Use readability to extract the main content
+        doc = Document(html_content)
+        cleaned_html = doc.summary()
+        
+        # Parse the cleaned HTML with BeautifulSoup for any additional processing
+        soup = BeautifulSoup(cleaned_html, 'html.parser')
+        
+        # Remove any remaining unwanted elements
+        for element in soup(['script', 'style']):
+            element.decompose()
+        
+        # Convert to markdown
+        markdown_content = md(str(soup), heading_style="ATX")
+        
+        return markdown_content

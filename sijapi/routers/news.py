@@ -25,7 +25,7 @@ from urllib3.util.retry import Retry
 from fastapi import APIRouter, BackgroundTasks, UploadFile, Form, HTTPException, Query, Path as FastAPIPath
 from pathlib import Path
 from sijapi import L, News, Archivist, OBSIDIAN_VAULT_DIR, OBSIDIAN_RESOURCES_DIR, DEFAULT_11L_VOICE, DEFAULT_VOICE
-from sijapi.utilities import sanitize_filename, assemble_journal_path, assemble_archive_path, contains_profanity
+from sijapi.utilities import htmp_to_markdown, sanitize_filename, assemble_journal_path, assemble_archive_path, contains_profanity, is_ad_or_tracker
 from sijapi.routers import gis, llm, tts, note
 
 news = APIRouter()
@@ -179,6 +179,7 @@ async def download_and_save_article(article, site_name, earliest_date, bg_tasks:
         err(f"Error processing article from {article.url}: {str(e)}")
         return False
 
+
 async def process_news_site(site, bg_tasks: BackgroundTasks):
     info(f"Downloading articles from {site.name}...")
     
@@ -251,15 +252,6 @@ async def clip_get(
 
 
 
-@news.post("/archive")
-async def archive_post(
-    url: Optional[str] = Form(None),
-    source: Optional[str] = Form(None),
-    title: Optional[str] = Form(None),
-    encoding: str = Form('utf-8')
-):
-    markdown_filename = await process_archive(url, title, encoding, source)
-    return {"message": "Clip saved successfully", "markdown_filename": markdown_filename}
 
 
 async def parse_article(url: str, source: Optional[str] = None) -> Article:
@@ -302,77 +294,6 @@ async def parse_article(url: str, source: Optional[str] = None) -> Article:
     return article
 
 
-async def html_to_markdown(url: str = None, source: str = None) -> Optional[str]:
-    if source:
-        html_content = source
-    elif url:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url) as response:
-                html_content = await response.text()
-    else:
-        err(f"Unable to convert nothing to markdown.")
-        return None
-
-    # Use readability to extract the main content
-    doc = Document(html_content)
-    cleaned_html = doc.summary()
-
-    # Parse the cleaned HTML with BeautifulSoup for any additional processing
-    soup = BeautifulSoup(cleaned_html, 'html.parser')
-
-    # Remove any remaining unwanted elements
-    for element in soup(['script', 'style']):
-        element.decompose()
-
-    # Convert to markdown
-    markdown_content = md(str(soup), heading_style="ATX")
-
-    return markdown_content
-
-
-
-async def process_archive(
-    url: str,
-    title: Optional[str] = None,
-    encoding: str = 'utf-8',
-    source: Optional[str] = None,
-) -> Optional[Path]:
-    timestamp = dt_datetime.now().strftime('%b %d, %Y at %H:%M')
-    readable_title = title if title else f"{url} - {timestamp}"
-    
-    content = await html_to_markdown(url, source)
-    if content is None:
-        raise HTTPException(status_code=400, detail="Failed to convert content to markdown")
-    
-    if contains_profanity(url, content, 0.2, Archivist.blacklist):
-        info(f"Not archiving {url} due to profanity")
-        return None
-    
-    try:
-        markdown_path, relative_path = assemble_archive_path(filename=readable_title, extension=".md")
-    except Exception as e:
-        warn(f"Failed to assemble archive path for {url}: {str(e)}")
-        return None
-    
-    markdown_content = f"---\n"
-    markdown_content += f"title: \"{readable_title}\"\n"
-    markdown_content += f"added: {timestamp}\n"
-    markdown_content += f"url: \"{url}\"\n"
-    markdown_content += f"date: \"{dt_datetime.now().strftime('%Y-%m-%d')}\"\n"
-    markdown_content += f"---\n\n"
-    markdown_content += f"# {readable_title}\n\n"
-    markdown_content += f"Clipped from [{url}]({url}) on {timestamp}\n\n"
-    markdown_content += content
-    
-    try:
-        markdown_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(markdown_path, 'w', encoding=encoding) as md_file:
-            md_file.write(markdown_content)
-        debug(f"Successfully saved to {markdown_path}")
-        return markdown_path
-    except Exception as e:
-        warn(f"Failed to write markdown file: {str(e)}")
-        return None
 
 
 
