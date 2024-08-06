@@ -29,9 +29,8 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from datetime import datetime as dt_datetime
 from better_profanity import profanity
-from sijapi.classes import L, API, Archivist
 from sijapi.utilities import html_to_markdown, sanitize_filename, assemble_journal_path, assemble_archive_path, contains_profanity, is_ad_or_tracker, initialize_adblock_rules, contains_blacklisted_word
-from sijapi import L, Archivist, BLOCKLISTS_DIR, OBSIDIAN_VAULT_DIR, OBSIDIAN_RESOURCES_DIR, DEFAULT_11L_VOICE, DEFAULT_VOICE
+from sijapi import L, API, Archivist, BLOCKLISTS_DIR, OBSIDIAN_VAULT_DIR, OBSIDIAN_RESOURCES_DIR, DEFAULT_11L_VOICE, DEFAULT_VOICE
 
 archivist = APIRouter()
 

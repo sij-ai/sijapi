@@ -25,7 +25,7 @@ from urllib3.util.retry import Retry
 from fastapi import APIRouter, BackgroundTasks, UploadFile, Form, HTTPException, Query, Path as FastAPIPath
 from pathlib import Path
 from sijapi import L, News, Archivist, OBSIDIAN_VAULT_DIR, OBSIDIAN_RESOURCES_DIR, DEFAULT_11L_VOICE, DEFAULT_VOICE
-from sijapi.utilities import htmp_to_markdown, sanitize_filename, assemble_journal_path, assemble_archive_path, contains_profanity, is_ad_or_tracker
+from sijapi.utilities import html_to_markdown, sanitize_filename, assemble_journal_path, assemble_archive_path, contains_profanity, is_ad_or_tracker
 from sijapi.routers import gis, llm, tts, note
 
 news = APIRouter()

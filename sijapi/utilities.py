@@ -27,6 +27,7 @@ from scipy.spatial import cKDTree
 from dateutil.parser import parse as dateutil_parse
 from docx import Document
 from sshtunnel import SSHTunnelForwarder
+from urllib.parse import urlparse
 from fastapi import Depends, HTTPException, Request, UploadFile
 from fastapi.security.api_key import APIKeyHeader
 
@@ -215,15 +216,15 @@ def load_filter_lists(blocklists_dir: Path):
             try:
                 with open(file_path, 'r', encoding='utf-8') as file:
                     rules.extend(file.read().splitlines())
-                logging.info(f"Loaded blocklist: {file_path.name}")
+                info(f"Loaded blocklist: {file_path.name}")
             except Exception as e:
-                logging.error(f"Error loading blocklist {file_path.name}: {str(e)}")
+                err(f"Error loading blocklist {file_path.name}: {str(e)}")
         return rules
     
     
 def initialize_adblock_rules(blocklists_dir: Path):
     rules = load_filter_lists(blocklists_dir)
-    logging.info(f"Initialized AdblockRules with {len(rules)} rules")
+    info(f"Initialized AdblockRules with {len(rules)} rules")
     return AdblockRules(rules)
 
 
