@@ -26,6 +26,10 @@ import ipaddress
 from scipy.spatial import cKDTree
 from dateutil.parser import parse as dateutil_parse
 from docx import Document
+import aiohttp
+from bs4 import BeautifulSoup
+from readability import Document as ReadabilityDocument
+from markdownify import markdownify as md
 from sshtunnel import SSHTunnelForwarder
 from urllib.parse import urlparse
 from fastapi import Depends, HTTPException, Request, UploadFile
@@ -550,28 +554,28 @@ async def run_ssh_command(server, command):
 
 
 async def html_to_markdown(url: str = None, source: str = None) -> Optional[str]:
-        if source:
-            html_content = source
-        elif url:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url) as response:
-                    html_content = await response.text()
-        else:
-            err(f"Unable to convert nothing to markdown.")
-            return None
-        
-        # Use readability to extract the main content
-        doc = Document(html_content)
-        cleaned_html = doc.summary()
-        
-        # Parse the cleaned HTML with BeautifulSoup for any additional processing
-        soup = BeautifulSoup(cleaned_html, 'html.parser')
-        
-        # Remove any remaining unwanted elements
-        for element in soup(['script', 'style']):
-            element.decompose()
-        
-        # Convert to markdown
-        markdown_content = md(str(soup), heading_style="ATX")
-        
-        return markdown_content
+    if source:
+        html_content = source
+    elif url:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as response:
+                html_content = await response.text()
+    else:
+        err(f"Unable to convert nothing to markdown.")
+        return None
+    
+    # Use readability to extract the main content
+    doc = ReadabilityDocument(html_content)
+    cleaned_html = doc.summary()
+    
+    # Parse the cleaned HTML with BeautifulSoup for any additional processing
+    soup = BeautifulSoup(cleaned_html, 'html.parser')
+    
+    # Remove any remaining unwanted elements
+    for element in soup(['script', 'style']):
+        element.decompose()
+    
+    # Convert to markdown
+    markdown_content = md(str(soup), heading_style="ATX")
+    
+    return markdown_content
