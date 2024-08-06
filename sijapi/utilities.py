@@ -522,6 +522,10 @@ def resize_and_convert_image(image_path, max_size=2160, quality=80):
     return img_byte_arr
 
 
+def index_to_braille(v1a, v1b, v2a, v2b, v3a, v3b):
+    return (v1a * 1 + v1b * 8 + v2a * 2 + v2b * 16 + v3a * 4 + v3b * 32)
+
+
 def load_geonames_data(path: str):
     columns = ['geonameid', 'name', 'asciiname', 'alternatenames',
                'latitude', 'longitude', 'feature_class', 'feature_code',
