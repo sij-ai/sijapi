@@ -1,0 +1,6 @@
+dir: "~/.private/archive/"
+blacklist:
+  - "http://10.64.64.10"
+  - "http://10.64.64.11"
+  - "blacklisted_word"
+  - "another_blacklisted_word"
