@@ -834,57 +834,39 @@ class APIConfig(BaseModel):
 
     async def execute_write_query(self, query: str, *args, table_name: str):
         local_ts_id = os.environ.get('TS_ID')
-        online_hosts = await self.get_online_hosts()
+        conn = await self.get_connection(self.local_db)
+        if conn is None:
+            err(f"Unable to connect to local database. Write operation failed.")
+            return []
         
-        for pool_entry in online_hosts:
-            if pool_entry['ts_id'] != local_ts_id:
-                continue  # Only write to the local database
+        try:
+            # Remove any formatting from the query
+            query = ' '.join(query.split())
         
-            conn = await self.get_connection(pool_entry)
-            if conn is None:
-                err(f"Unable to connect to local database {pool_entry['ts_id']}. Write operation failed.")
-                return []
-        
-            try:
-                if table_name in self.SPECIAL_TABLES:
-                    result = await self._execute_special_table_write(conn, query, *args, table_name=table_name)
-                else:
-                    # Remove newlines and extra spaces from the query
-                    query = query.replace('\n', ' ').replace('    ', ' ').strip()
-                    
-                    # Prepare the INSERT ... ON CONFLICT ... query
-                    insert_cols = ', '.join(col.strip() for col in query.split('(')[1].split(')')[0].split(','))
-                    update_cols = ', '.join([f'{col.strip()} = EXCLUDED.{col.strip()}' for col in query.split('(')[1].split(')')[0].split(',') if col.strip() not in ['id', 'version', 'server_id']])
-                    
-                    modified_query = f"""
-                    WITH new_version AS (
-                        SELECT COALESCE(MAX(version), 0) + 1 as next_version 
-                        FROM {table_name}
-                        WHERE id = (SELECT id FROM {table_name} WHERE {insert_cols.split(',')[0].strip()} = $1 FOR UPDATE)
-                    )
-                    INSERT INTO {table_name} ({insert_cols}, version, server_id)
-                    VALUES ({', '.join(f'${i+1}' for i in range(len(args)))}, (SELECT next_version FROM new_version), '{local_ts_id}')
-                    ON CONFLICT (id) DO UPDATE SET
-                    {update_cols},
-                    version = (SELECT next_version FROM new_version),
-                    server_id = '{local_ts_id}'
-                    WHERE {table_name}.version < (SELECT next_version FROM new_version)
-                    OR ({table_name}.version = (SELECT next_version FROM new_version) AND {table_name}.server_id < '{local_ts_id}')
-                    RETURNING id, version
-                    """
-                    
-                    result = await conn.fetch(modified_query, *args)
+            # Add version and server_id to the query
+            columns = query.split('(')[1].split(')')[0]
+            values = query.split('VALUES')[1].split('RETURNING')[0]
             
-                return result
-            except Exception as e:
-                err(f"Error executing write query on {pool_entry['ts_id']}: {str(e)}")
-                err(f"Query: {query}")
-                err(f"Args: {args}")
-                err(f"Traceback: {traceback.format_exc()}")
-            finally:
-                await conn.close()
+            modified_query = f"""
+            INSERT INTO {table_name} ({columns}, version, server_id)
+            VALUES {values[:-1]}, (SELECT COALESCE(MAX(version), 0) + 1 FROM {table_name}), '{local_ts_id}')
+            ON CONFLICT (id) DO UPDATE SET
+            version = {table_name}.version + 1,
+            server_id = EXCLUDED.server_id
+            RETURNING id, version
+            """
         
-        return []
+            result = await conn.fetch(modified_query, *args)
+            return result
+        except Exception as e:
+            err(f"Error executing write query: {str(e)}")
+            err(f"Query: {modified_query}")
+            err(f"Args: {args}")
+            err(f"Traceback: {traceback.format_exc()}")
+            return []
+        finally:
+            await conn.close()
+
 
 
     
