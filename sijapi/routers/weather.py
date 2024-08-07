@@ -198,20 +198,8 @@ async def store_weather_to_db(date_time: dt_datetime, weather_data: dict):
         ]
     
         daily_weather_query = '''
-        INSERT INTO dailyweather (
-            location, sunrise, sunriseepoch, sunset, sunsetepoch, description,
-            tempmax, tempmin, uvindex, winddir, windspeed, icon, last_updated,
-            datetime, datetimeepoch, temp, feelslikemax, feelslikemin, feelslike,
-            dew, humidity, precip, precipprob, precipcover, preciptype,
-            snow, snowdepth, windgust, pressure, cloudcover, visibility,
-            solarradiation, solarenergy, severerisk, moonphase, conditions,
-            stations, source
-        ) VALUES (
-            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
-            $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28,
-            $29, $30, $31, $32, $33, $34, $35, $36, $37, $38
-        ) RETURNING id
-        '''
+        INSERT INTO dailyweather (location, sunrise, sunriseepoch, sunset, sunsetepoch, description, tempmax, tempmin, uvindex, winddir, windspeed, icon, last_updated, datetime, datetimeepoch, temp, feelslikemax, feelslikemin, feelslike, dew, humidity, precip, precipprob, precipcover, preciptype, snow, snowdepth, windgust, pressure, cloudcover, visibility, solarradiation, solarenergy, severerisk, moonphase, conditions, stations, source) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38) RETURNING id
+        '''.replace('\n', ' ').replace('    ', ' ').strip()
     
         daily_weather_result = await API.execute_write_query(daily_weather_query, *daily_weather_params, table_name="dailyweather")
     
