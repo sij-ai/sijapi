@@ -164,20 +164,20 @@ async def store_weather_to_db(date_time: dt_datetime, weather_data: dict):
         location_point = f"POINTZ({longitude} {latitude} {elevation})" if elevation else None
     
         debug(f"Uncorrected datetimes: datetime={day_data.get('datetime')}, sunrise={day_data.get('sunrise')}, sunset={day_data.get('sunset')}")
-        day_data['datetime'] = await gis.dt(day_data.get('datetimeEpoch'))
-        day_data['sunrise'] = await gis.dt(day_data.get('sunriseEpoch'))
-        day_data['sunset'] = await gis.dt(day_data.get('sunsetEpoch'))
-        debug(f"Corrected datetimes: datetime={day_data['datetime']}, sunrise={day_data['sunrise']}, sunset={day_data['sunset']}")
+        datetime_utc = await gis.dt(day_data.get('datetimeEpoch'))
+        sunrise_utc = await gis.dt(day_data.get('sunriseEpoch'))
+        sunset_utc = await gis.dt(day_data.get('sunsetEpoch'))
+        debug(f"Corrected datetimes: datetime={datetime_utc}, sunrise={sunrise_utc}, sunset={sunset_utc}")
     
         daily_weather_params = [
             location_point,
-            day_data['sunrise'], day_data.get('sunriseEpoch'),
-            day_data['sunset'], day_data.get('sunsetEpoch'),
+            sunrise_utc, day_data.get('sunriseEpoch'),
+            sunset_utc, day_data.get('sunsetEpoch'),
             day_data.get('description'), day_data.get('tempmax'),
             day_data.get('tempmin'), day_data.get('uvindex'),
             day_data.get('winddir'), day_data.get('windspeed'),
             day_data.get('icon'), dt_datetime.now(tz),
-            day_data['datetime'], day_data.get('datetimeEpoch'),
+            datetime_utc, day_data.get('datetimeEpoch'),
             day_data.get('temp'), day_data.get('feelslikemax'),
             day_data.get('feelslikemin'), day_data.get('feelslike'),
             day_data.get('dew'), day_data.get('humidity'),
@@ -195,7 +195,7 @@ async def store_weather_to_db(date_time: dt_datetime, weather_data: dict):
     
         daily_weather_query = 'INSERT INTO dailyweather DEFAULT VALUES'
         daily_weather_result = await API.execute_write_query(daily_weather_query, *daily_weather_params, table_name="dailyweather")
-        
+    
         if not daily_weather_result:
             raise ValueError("Failed to insert daily weather data: no result returned")
         
@@ -253,7 +253,7 @@ async def store_weather_to_db(date_time: dt_datetime, weather_data: dict):
         err(f"Error in weather storage: {e}")
         err(f"Traceback: {traceback.format_exc()}")
         return "FAILURE"
-
+Wh
 
    
 
