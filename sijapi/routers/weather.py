@@ -49,6 +49,9 @@ async def get_refreshed_weather(
         debug(f"Passing date_time {date_time.strftime('%Y-%m-%d %H:%M:%S')}, {lat}/{lon} into get_weather")
         day = await get_weather(date_time, lat, lon, force_refresh=True)
         
+        if day is None:
+            raise HTTPException(status_code=404, detail="No weather data found for the given date and location")
+        
         # Convert the day object to a JSON-serializable format
         day_dict = {k: str(v) if isinstance(v, (dt_datetime, date)) else v for k, v in day.items()}
         return JSONResponse(content={"weather": day_dict}, status_code=200)
@@ -64,15 +67,16 @@ async def get_refreshed_weather(
 
 
 async def get_weather(date_time: dt_datetime, latitude: float, longitude: float, force_refresh: bool = False):
-    daily_weather_data = None
     fetch_new_data = force_refresh
-    
+    daily_weather_data = None
+
     if not force_refresh:
         try:
             daily_weather_data = await get_weather_from_db(date_time, latitude, longitude)
             if daily_weather_data:
                 debug(f"Daily weather data from db: {daily_weather_data}")
-                last_updated = await gis.dt(str(daily_weather_data['DailyWeather'].get('last_updated')))
+                last_updated = str(daily_weather_data['DailyWeather'].get('last_updated'))
+                last_updated = await gis.dt(last_updated)
                 stored_loc_data = unhexlify(daily_weather_data['DailyWeather'].get('location'))
                 stored_loc = loads(stored_loc_data)
                 stored_lat, stored_lon, stored_ele = stored_loc.y, stored_loc.x, stored_loc.z
@@ -81,9 +85,7 @@ async def get_weather(date_time: dt_datetime, latitude: float, longitude: float,
                 request_haversine = haversine(latitude, longitude, stored_lat, stored_lon)
                 debug(f"\nINFO:\nlast updated {last_updated}\nstored lat: {stored_lat} - requested lat: {latitude}\nstored lon: {stored_lon} - requested lon: {longitude}\nHaversine: {request_haversine}")
                 
-                if (last_updated and date_time <= dt_datetime.now(TZ) and 
-                    last_updated > date_time and request_haversine < 8 and 
-                    hourly_weather and len(hourly_weather) > 0):
+                if last_updated and (date_time <= dt_datetime.now(TZ) and last_updated > date_time and request_haversine < 8) and hourly_weather and len(hourly_weather) > 0:
                     debug(f"Using existing data")
                     fetch_new_data = False
                 else:
@@ -91,7 +93,7 @@ async def get_weather(date_time: dt_datetime, latitude: float, longitude: float,
         except Exception as e:
             err(f"Error checking existing weather data: {e}")
             fetch_new_data = True
-    
+
     if fetch_new_data:
         debug(f"Fetching new weather data")
         request_date_str = date_time.strftime("%Y-%m-%d")
@@ -105,7 +107,7 @@ async def get_weather(date_time: dt_datetime, latitude: float, longitude: float,
                     store_result = await store_weather_to_db(date_time, weather_data)
                     if store_result != "SUCCESS":
                         raise HTTPException(status_code=500, detail=f"Failed to store weather data: {store_result}")
-    
+
                     daily_weather_data = await get_weather_from_db(date_time, latitude, longitude)
                     if daily_weather_data is None:
                         raise HTTPException(status_code=500, detail="Weather data was not properly stored.")
@@ -115,12 +117,14 @@ async def get_weather(date_time: dt_datetime, latitude: float, longitude: float,
             raise
         except Exception as e:
             err(f"Exception during API call or data storage: {e}")
+            err(f"Traceback: {traceback.format_exc()}")
             raise HTTPException(status_code=500, detail=f"Error fetching or storing weather data: {str(e)}")
-    
+
     if daily_weather_data is None:
         raise HTTPException(status_code=404, detail="No weather data found")
-    
+
     return daily_weather_data
+
 
 
 
@@ -272,19 +276,20 @@ async def get_weather_from_db(date_time: dt_datetime, latitude: float, longitude
             ORDER BY ST_Distance(DW.location, ST_MakePoint($4, $5)::geography) ASC
             LIMIT 1
         '''
-
+    
         daily_weather_records = await API.execute_read_query(daily_query, query_date, longitude, latitude, longitude, latitude, table_name='dailyweather')
-
+    
         if not daily_weather_records:
             debug(f"No daily weather data retrieved from database.")
             return None
-
+    
         daily_weather_data = daily_weather_records[0]  # Get the first (and only) record
         
         # Query to get hourly weather data
         hourly_query = '''
             SELECT HW.* FROM hourlyweather HW
             WHERE HW.daily_weather_id = $1
+            ORDER BY HW.datetime ASC
         '''
         
         hourly_weather_records = await API.execute_read_query(hourly_query, daily_weather_data['id'], table_name='hourlyweather')
@@ -294,8 +299,10 @@ async def get_weather_from_db(date_time: dt_datetime, latitude: float, longitude
             'HourlyWeather': hourly_weather_records,
         }
         
+        debug(f"Retrieved weather data for {date_time.date()}")
         return day
     except Exception as e:
         err(f"Unexpected error occurred in get_weather_from_db: {e}")
         err(f"Traceback: {traceback.format_exc()}")
         return None
+
