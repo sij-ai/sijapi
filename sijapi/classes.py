@@ -849,40 +849,28 @@ class APIConfig(BaseModel):
                 if table_name in self.SPECIAL_TABLES:
                     result = await self._execute_special_table_write(conn, query, *args, table_name=table_name)
                 else:
-                    # Get table columns
-                    columns = await self.get_table_columns(conn, table_name)
-                    
-                    # Remove 'id', 'version', and 'server_id' from the columns list
-                    insert_cols = [col for col in columns if col not in ['id', 'version', 'server_id']]
-                    
                     # Prepare the INSERT ... ON CONFLICT ... query
-                    placeholders = [f'${i+1}' for i in range(len(args))]
-                    insert_cols_str = ', '.join(insert_cols)
-                    insert_vals = ', '.join(placeholders[:len(insert_cols)])
-                    update_cols = ', '.join([f"{col} = EXCLUDED.{col}" for col in insert_cols])
+                    insert_cols = ', '.join(f'"{col}"' for col in query.split('(')[1].split(')')[0].split(','))
+                    update_cols = ', '.join([f'"{col}" = EXCLUDED."{col}"' for col in query.split('(')[1].split(')')[0].split(',') if col.strip() not in ['id', 'version', 'server_id']])
                     
-                    query = f"""
+                    modified_query = f"""
                     WITH new_version AS (
                         SELECT COALESCE(MAX(version), 0) + 1 as next_version 
                         FROM {table_name}
-                        WHERE id = (SELECT id FROM {table_name} WHERE {insert_cols[0]} = $1 FOR UPDATE)
+                        WHERE id = (SELECT id FROM {table_name} WHERE {insert_cols.split(',')[0]} = $1 FOR UPDATE)
                     )
-                    INSERT INTO {table_name} ({insert_cols_str}, version, server_id)
-                    VALUES ({insert_vals}, (SELECT next_version FROM new_version), ${len(args)+1})
+                    INSERT INTO {table_name} ({insert_cols}, version, server_id)
+                    VALUES ({', '.join(f'${i+1}' for i in range(len(args)))}, (SELECT next_version FROM new_version), '{local_ts_id}')
                     ON CONFLICT (id) DO UPDATE SET
                     {update_cols},
                     version = (SELECT next_version FROM new_version),
-                    server_id = ${len(args)+1}
+                    server_id = '{local_ts_id}'
                     WHERE {table_name}.version < (SELECT next_version FROM new_version)
-                    OR ({table_name}.version = (SELECT next_version FROM new_version) AND {table_name}.server_id < ${len(args)+1})
+                    OR ({table_name}.version = (SELECT next_version FROM new_version) AND {table_name}.server_id < '{local_ts_id}')
                     RETURNING id, version
                     """
                     
-                    # Add server_id to args
-                    args = list(args)
-                    args.append(local_ts_id)
-                    
-                    result = await conn.fetch(query, *args)
+                    result = await conn.fetch(modified_query, *args)
         
                 return result
             except Exception as e:
@@ -894,6 +882,7 @@ class APIConfig(BaseModel):
                 await conn.close()
         
         return []
+
 
     
     async def get_table_columns(self, conn, table_name: str) -> List[str]:
