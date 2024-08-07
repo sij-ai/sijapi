@@ -198,15 +198,28 @@ async def store_weather_to_db(date_time: dt_datetime, weather_data: dict):
         ]
     
         daily_weather_query = '''
-        INSERT INTO dailyweather (location, sunrise, sunriseepoch, sunset, sunsetepoch, description, tempmax, tempmin, uvindex, winddir, windspeed, icon, last_updated, datetime, datetimeepoch, temp, feelslikemax, feelslikemin, feelslike, dew, humidity, precip, precipprob, precipcover, preciptype, snow, snowdepth, windgust, pressure, cloudcover, visibility, solarradiation, solarenergy, severerisk, moonphase, conditions, stations, source) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38) RETURNING id
-        '''.replace('\n', ' ').replace('    ', ' ').strip()
-    
+        INSERT INTO dailyweather (
+            location, sunrise, sunriseepoch, sunset, sunsetepoch, description,
+            tempmax, tempmin, uvindex, winddir, windspeed, icon, last_updated,
+            datetime, datetimeepoch, temp, feelslikemax, feelslikemin, feelslike,
+            dew, humidity, precip, precipprob, precipcover, preciptype,
+            snow, snowdepth, windgust, pressure, cloudcover, visibility,
+            solarradiation, solarenergy, severerisk, moonphase, conditions,
+            stations, source
+        ) VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
+            $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28,
+            $29, $30, $31, $32, $33, $34, $35, $36, $37, $38
+        ) RETURNING id
+        '''
+        
         daily_weather_result = await API.execute_write_query(daily_weather_query, *daily_weather_params, table_name="dailyweather")
-    
+        
         if not daily_weather_result:
             raise ValueError("Failed to insert daily weather data: no result returned")
         
         daily_weather_id = daily_weather_result[0]['id']
+        
         debug(f"Inserted daily weather data with id: {daily_weather_id}")
     
         if 'hours' in day_data:
@@ -270,7 +283,6 @@ async def store_weather_to_db(date_time: dt_datetime, weather_data: dict):
         err(f"Error in weather storage: {e}")
         err(f"Traceback: {traceback.format_exc()}")
         return "FAILURE"
-
 
 
 async def get_weather_from_db(date_time: dt_datetime, latitude: float, longitude: float):
