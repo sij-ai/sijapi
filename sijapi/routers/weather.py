@@ -279,44 +279,44 @@ async def store_weather_to_db(date_time: dt_datetime, weather_data: dict):
         return "FAILURE"
 
 
-    async def get_weather_from_db(date_time: dt_datetime, latitude: float, longitude: float):
-        debug(f"Using {date_time.strftime('%Y-%m-%d %H:%M:%S')} as our datetime in get_weather_from_db.")
-        query_date = date_time.date()
-        try:
-            # Query to get daily weather data
-            daily_query = '''
-                SELECT * FROM dailyweather
-                WHERE DATE(datetime) = $1
-                AND ST_DWithin(location::geography, ST_MakePoint($2,$3)::geography, 8046.72) 
-                ORDER BY ST_Distance(location, ST_MakePoint($4, $5)::geography) ASC
-                LIMIT 1
-            '''
-        
-            daily_weather_records = await API.execute_read_query(daily_query, query_date, longitude, latitude, longitude, latitude, table_name='dailyweather')
-        
-            if not daily_weather_records:
-                debug(f"No daily weather data retrieved from database.")
-                return None
-        
-            daily_weather_data = daily_weather_records[0]
-            
-            # Query to get hourly weather data
-            hourly_query = '''
-                SELECT * FROM hourlyweather
-                WHERE daily_weather_id = $1
-                ORDER BY datetime ASC
-            '''
-            
-            hourly_weather_records = await API.execute_read_query(hourly_query, daily_weather_data['id'], table_name='hourlyweather')
-            
-            day = {
-                'DailyWeather': daily_weather_data,
-                'HourlyWeather': hourly_weather_records,
-            }
-            
-            debug(f"Retrieved weather data for {date_time.date()}")
-            return day
-        except Exception as e:
-            err(f"Unexpected error occurred in get_weather_from_db: {e}")
-            err(f"Traceback: {traceback.format_exc()}")
+async def get_weather_from_db(date_time: dt_datetime, latitude: float, longitude: float):
+    debug(f"Using {date_time.strftime('%Y-%m-%d %H:%M:%S')} as our datetime in get_weather_from_db.")
+    query_date = date_time.date()
+    try:
+        # Query to get daily weather data
+        daily_query = '''
+            SELECT * FROM dailyweather
+            WHERE DATE(datetime) = $1
+            AND ST_DWithin(location::geography, ST_MakePoint($2,$3)::geography, 8046.72) 
+            ORDER BY ST_Distance(location, ST_MakePoint($4, $5)::geography) ASC
+            LIMIT 1
+        '''
+    
+        daily_weather_records = await API.execute_read_query(daily_query, query_date, longitude, latitude, longitude, latitude, table_name='dailyweather')
+    
+        if not daily_weather_records:
+            debug(f"No daily weather data retrieved from database.")
             return None
+    
+        daily_weather_data = daily_weather_records[0]
+        
+        # Query to get hourly weather data
+        hourly_query = '''
+            SELECT * FROM hourlyweather
+            WHERE daily_weather_id = $1
+            ORDER BY datetime ASC
+        '''
+        
+        hourly_weather_records = await API.execute_read_query(hourly_query, daily_weather_data['id'], table_name='hourlyweather')
+        
+        day = {
+            'DailyWeather': daily_weather_data,
+            'HourlyWeather': hourly_weather_records,
+        }
+        
+        debug(f"Retrieved weather data for {date_time.date()}")
+        return day
+    except Exception as e:
+        err(f"Unexpected error occurred in get_weather_from_db: {e}")
+        err(f"Traceback: {traceback.format_exc()}")
+        return None
