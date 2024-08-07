@@ -836,18 +836,23 @@ class APIConfig(BaseModel):
         conn = await self.get_connection()
         if conn is None:
             raise ConnectionError("Failed to connect to local database")
-
+        
         try:
             if table_name in self.SPECIAL_TABLES:
                 return await self._execute_special_table_write(conn, query, *args, table_name=table_name)
-
+        
             primary_key = await self.ensure_sync_columns(conn, table_name)
-
-            result = await conn.execute(query, *args)
-
+        
+            if query.strip().upper().startswith("INSERT") and "RETURNING" in query.upper():
+                # For INSERT queries with RETURNING clause, use fetch to get the returned values
+                result = await conn.fetch(query, *args)
+            else:
+                # For other queries, use execute
+                result = await conn.execute(query, *args)
+        
             asyncio.create_task(self._sync_changes(table_name, primary_key))
-
-            return []
+        
+            return result
         finally:
             await conn.close()
 
