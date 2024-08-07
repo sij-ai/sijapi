@@ -849,15 +849,18 @@ class APIConfig(BaseModel):
                 if table_name in self.SPECIAL_TABLES:
                     result = await self._execute_special_table_write(conn, query, *args, table_name=table_name)
                 else:
+                    # Remove newlines and extra spaces from the query
+                    query = query.replace('\n', ' ').replace('    ', ' ').strip()
+                    
                     # Prepare the INSERT ... ON CONFLICT ... query
-                    insert_cols = ', '.join(f'"{col}"' for col in query.split('(')[1].split(')')[0].split(','))
-                    update_cols = ', '.join([f'"{col}" = EXCLUDED."{col}"' for col in query.split('(')[1].split(')')[0].split(',') if col.strip() not in ['id', 'version', 'server_id']])
+                    insert_cols = ', '.join(col.strip() for col in query.split('(')[1].split(')')[0].split(','))
+                    update_cols = ', '.join([f'{col.strip()} = EXCLUDED.{col.strip()}' for col in query.split('(')[1].split(')')[0].split(',') if col.strip() not in ['id', 'version', 'server_id']])
                     
                     modified_query = f"""
                     WITH new_version AS (
                         SELECT COALESCE(MAX(version), 0) + 1 as next_version 
                         FROM {table_name}
-                        WHERE id = (SELECT id FROM {table_name} WHERE {insert_cols.split(',')[0]} = $1 FOR UPDATE)
+                        WHERE id = (SELECT id FROM {table_name} WHERE {insert_cols.split(',')[0].strip()} = $1 FOR UPDATE)
                     )
                     INSERT INTO {table_name} ({insert_cols}, version, server_id)
                     VALUES ({', '.join(f'${i+1}' for i in range(len(args)))}, (SELECT next_version FROM new_version), '{local_ts_id}')
@@ -871,7 +874,7 @@ class APIConfig(BaseModel):
                     """
                     
                     result = await conn.fetch(modified_query, *args)
-        
+            
                 return result
             except Exception as e:
                 err(f"Error executing write query on {pool_entry['ts_id']}: {str(e)}")
