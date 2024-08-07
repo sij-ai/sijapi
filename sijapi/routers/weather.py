@@ -199,68 +199,68 @@ async def store_weather_to_db(date_time: dt_datetime, weather_data: dict):
             RETURNING id
             '''
         
-            daily_weather_id = await API.execute_write_query(daily_weather_query, *daily_weather_params, table_name="dailyweather")
-            debug(f"Inserted daily weather data with id: {daily_weather_id}")
+        daily_weather_id = await API.execute_write_query(daily_weather_query, *daily_weather_params, table_name="dailyweather")
+        debug(f"Inserted daily weather data with id: {daily_weather_id}")
+    
+        if 'hours' in day_data:
+            debug(f"Processing {len(day_data['hours'])} hourly records")
+            for hour_data in day_data['hours']:
+                try:
+                    hour_data['datetime'] = await gis.dt(hour_data.get('datetimeEpoch'))
+                    hour_preciptype_array = hour_data.get('preciptype', []) or []
+                    hour_stations_array = hour_data.get('stations', []) or []
+                    hourly_weather_params = [
+                        daily_weather_id,  # Use the daily weather id as a foreign key
+                        hour_data['datetime'],
+                        hour_data.get('datetimeEpoch'),
+                        hour_data['temp'],
+                        hour_data['feelslike'],
+                        hour_data['humidity'],
+                        hour_data['dew'],
+                        hour_data['precip'],
+                        hour_data['precipprob'],
+                        hour_preciptype_array,
+                        hour_data['snow'],
+                        hour_data['snowdepth'],
+                        hour_data['windgust'],
+                        hour_data['windspeed'],
+                        hour_data['winddir'],
+                        hour_data['pressure'],
+                        hour_data['cloudcover'],
+                        hour_data['visibility'],
+                        hour_data['solarradiation'],
+                        hour_data['solarenergy'],
+                        hour_data['uvindex'],
+                        hour_data.get('severerisk', 0),
+                        hour_data['conditions'],
+                        hour_data['icon'],
+                        hour_stations_array,
+                        hour_data.get('source', ''),
+                    ]
+    
+                    # Check for None values and replace with appropriate defaults
+                    hourly_weather_params = ['' if v is None else v for v in hourly_weather_params]
+    
+                    hourly_weather_query = '''
+                    INSERT INTO hourlyweather (daily_weather_id, datetime, datetimeepoch, temp, feelslike, humidity, dew, precip, precipprob,
+                    preciptype, snow, snowdepth, windgust, windspeed, winddir, pressure, cloudcover, visibility, solarradiation, solarenergy,
+                    uvindex, severerisk, conditions, icon, stations, source)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)
+                    '''
+                    await API.execute_write_query(hourly_weather_query, *hourly_weather_params, table_name="hourlyweather")
+                    debug(f"Inserted hourly weather data for {hour_data['datetime']}")
+                except Exception as e:
+                    err(f"Error processing hourly data: {e}")
+                    err(f"Problematic hour_data: {hour_data}")
+                    raise
+    
+        debug("Successfully stored weather data")
+        return "SUCCESS"
         
-            if 'hours' in day_data:
-                debug(f"Processing {len(day_data['hours'])} hourly records")
-                for hour_data in day_data['hours']:
-                    try:
-                        hour_data['datetime'] = await gis.dt(hour_data.get('datetimeEpoch'))
-                        hour_preciptype_array = hour_data.get('preciptype', []) or []
-                        hour_stations_array = hour_data.get('stations', []) or []
-                        hourly_weather_params = [
-                            daily_weather_id,  # Use the daily weather id as a foreign key
-                            hour_data['datetime'],
-                            hour_data.get('datetimeEpoch'),
-                            hour_data['temp'],
-                            hour_data['feelslike'],
-                            hour_data['humidity'],
-                            hour_data['dew'],
-                            hour_data['precip'],
-                            hour_data['precipprob'],
-                            hour_preciptype_array,
-                            hour_data['snow'],
-                            hour_data['snowdepth'],
-                            hour_data['windgust'],
-                            hour_data['windspeed'],
-                            hour_data['winddir'],
-                            hour_data['pressure'],
-                            hour_data['cloudcover'],
-                            hour_data['visibility'],
-                            hour_data['solarradiation'],
-                            hour_data['solarenergy'],
-                            hour_data['uvindex'],
-                            hour_data.get('severerisk', 0),
-                            hour_data['conditions'],
-                            hour_data['icon'],
-                            hour_stations_array,
-                            hour_data.get('source', ''),
-                        ]
-        
-                        # Check for None values and replace with appropriate defaults
-                        hourly_weather_params = ['' if v is None else v for v in hourly_weather_params]
-        
-                        hourly_weather_query = '''
-                        INSERT INTO hourlyweather (daily_weather_id, datetime, datetimeepoch, temp, feelslike, humidity, dew, precip, precipprob,
-                        preciptype, snow, snowdepth, windgust, windspeed, winddir, pressure, cloudcover, visibility, solarradiation, solarenergy,
-                        uvindex, severerisk, conditions, icon, stations, source)
-                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)
-                        '''
-                        await API.execute_write_query(hourly_weather_query, *hourly_weather_params, table_name="hourlyweather")
-                        debug(f"Inserted hourly weather data for {hour_data['datetime']}")
-                    except Exception as e:
-                        err(f"Error processing hourly data: {e}")
-                        err(f"Problematic hour_data: {hour_data}")
-                        raise
-        
-            debug("Successfully stored weather data")
-            return "SUCCESS"
-            
-        except Exception as e:
-            err(f"Error in weather storage: {e}")
-            err(f"Traceback: {traceback.format_exc()}")
-            return "FAILURE"
+    except Exception as e:
+        err(f"Error in weather storage: {e}")
+        err(f"Traceback: {traceback.format_exc()}")
+        return "FAILURE"
 
    
 
