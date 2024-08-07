@@ -852,19 +852,22 @@ class APIConfig(BaseModel):
                     # Get table columns
                     columns = await self.get_table_columns(conn, table_name)
                     
+                    # Remove 'id', 'version', and 'server_id' from the columns list
+                    insert_cols = [col for col in columns if col not in ['id', 'version', 'server_id']]
+                    
                     # Prepare the INSERT ... ON CONFLICT ... query
                     placeholders = [f'${i+1}' for i in range(len(args))]
-                    insert_cols = ', '.join(columns[1:])  # Exclude 'id' column
-                    insert_vals = ', '.join(placeholders)
-                    update_cols = ', '.join([f"{col} = EXCLUDED.{col}" for col in columns[1:] if col not in ['id', 'version', 'server_id']])
+                    insert_cols_str = ', '.join(insert_cols)
+                    insert_vals = ', '.join(placeholders[:len(insert_cols)])
+                    update_cols = ', '.join([f"{col} = EXCLUDED.{col}" for col in insert_cols])
                     
                     query = f"""
                     WITH new_version AS (
                         SELECT COALESCE(MAX(version), 0) + 1 as next_version 
                         FROM {table_name}
-                        WHERE id = (SELECT id FROM {table_name} WHERE {columns[1]} = $1 FOR UPDATE)
+                        WHERE id = (SELECT id FROM {table_name} WHERE {insert_cols[0]} = $1 FOR UPDATE)
                     )
-                    INSERT INTO {table_name} ({insert_cols}, version, server_id)
+                    INSERT INTO {table_name} ({insert_cols_str}, version, server_id)
                     VALUES ({insert_vals}, (SELECT next_version FROM new_version), ${len(args)+1})
                     ON CONFLICT (id) DO UPDATE SET
                     {update_cols},
