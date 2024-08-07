@@ -212,49 +212,48 @@ async def store_weather_to_db(date_time: dt_datetime, weather_data: dict):
         '''
     
         daily_weather_result = await API.execute_write_query(daily_weather_query, *daily_weather_params, table_name="dailyweather")
+            
+            if not daily_weather_result:
+                raise ValueError("Failed to insert daily weather data: no result returned")
+            
+            daily_weather_id = daily_weather_result[0]['id']
+            debug(f"Inserted daily weather data with id: {daily_weather_id}")
         
-        if not daily_weather_result:
-            raise ValueError("Failed to insert daily weather data: no result returned")
-        
-        daily_weather_id = daily_weather_result[0]['id']
-        
-        debug(f"Inserted daily weather data with id: {daily_weather_id}")
-    
-        if 'hours' in day_data:
-            debug(f"Processing {len(day_data['hours'])} hourly records")
-            for hour_data in day_data['hours']:
-                try:
+            # Hourly weather insertion
+            if 'hours' in day_data:
+                debug(f"Processing {len(day_data['hours'])} hourly records")
+                for hour_data in day_data['hours']:
                     hour_preciptype_array = hour_data.get('preciptype', []) or []
                     hour_stations_array = hour_data.get('stations', []) or []
                     hourly_weather_params = [
                         daily_weather_id,
                         await gis.dt(hour_data.get('datetimeEpoch')),
                         hour_data.get('datetimeEpoch'),
-                        hour_data['temp'],
-                        hour_data['feelslike'],
-                        hour_data['humidity'],
-                        hour_data['dew'],
-                        hour_data['precip'],
-                        hour_data['precipprob'],
+                        hour_data.get('temp'),
+                        hour_data.get('feelslike'),
+                        hour_data.get('humidity'),
+                        hour_data.get('dew'),
+                        hour_data.get('precip'),
+                        hour_data.get('precipprob'),
                         hour_preciptype_array,
-                        hour_data['snow'],
-                        hour_data['snowdepth'],
-                        hour_data['windgust'],
-                        hour_data['windspeed'],
-                        hour_data['winddir'],
-                        hour_data['pressure'],
-                        hour_data['cloudcover'],
-                        hour_data['visibility'],
-                        hour_data['solarradiation'],
-                        hour_data['solarenergy'],
-                        hour_data['uvindex'],
+                        hour_data.get('snow'),
+                        hour_data.get('snowdepth'),
+                        hour_data.get('windgust'),
+                        hour_data.get('windspeed'),
+                        hour_data.get('winddir'),
+                        hour_data.get('pressure'),
+                        hour_data.get('cloudcover'),
+                        hour_data.get('visibility'),
+                        hour_data.get('solarradiation'),
+                        hour_data.get('solarenergy'),
+                        hour_data.get('uvindex'),
                         hour_data.get('severerisk', 0),
-                        hour_data['conditions'],
-                        hour_data['icon'],
+                        hour_data.get('conditions'),
+                        hour_data.get('icon'),
                         hour_stations_array,
                         hour_data.get('source', '')
                     ]
-    
+        
                     hourly_weather_query = '''
                     INSERT INTO hourlyweather (
                         daily_weather_id, datetime, datetimeepoch, temp, feelslike, 
@@ -268,60 +267,56 @@ async def store_weather_to_db(date_time: dt_datetime, weather_data: dict):
                     ) RETURNING id
                     '''
                     hourly_result = await API.execute_write_query(hourly_weather_query, *hourly_weather_params, table_name="hourlyweather")
-                    debug(f"Inserted hourly weather data for {hour_data.get('datetimeEpoch')}")
-                except Exception as e:
-                    err(f"Error processing hourly data: {e}")
-                    err(f"Problematic hour_data: {hour_data}")
-                    raise
-    
-        debug("Successfully stored weather data")
-        return "SUCCESS"
+                    if not hourly_result:
+                        warn(f"Failed to insert hourly weather data for {hour_data.get('datetimeEpoch')}")
+                    else:
+                        debug(f"Inserted hourly weather data with id: {hourly_result[0]['id']}")
         
-    except Exception as e:
-        err(f"Error in weather storage: {e}")
-        err(f"Traceback: {traceback.format_exc()}")
-        return "FAILURE"
+            return "SUCCESS"
+        except Exception as e:
+            err(f"Error in weather storage: {e}")
+            err(f"Traceback: {traceback.format_exc()}")
+            return "FAILURE"
 
 
-async def get_weather_from_db(date_time: dt_datetime, latitude: float, longitude: float):
-    debug(f"Using {date_time.strftime('%Y-%m-%d %H:%M:%S')} as our datetime in get_weather_from_db.")
-    query_date = date_time.date()
-    try:
-        # Query to get daily weather data
-        daily_query = '''
-            SELECT DW.* FROM dailyweather DW
-            WHERE DW.datetime::date = $1
-            AND ST_DWithin(DW.location::geography, ST_MakePoint($2,$3)::geography, 8046.72) 
-            ORDER BY ST_Distance(DW.location, ST_MakePoint($4, $5)::geography) ASC
-            LIMIT 1
-        '''
-    
-        daily_weather_records = await API.execute_read_query(daily_query, query_date, longitude, latitude, longitude, latitude, table_name='dailyweather')
-    
-        if not daily_weather_records:
-            debug(f"No daily weather data retrieved from database.")
+    async def get_weather_from_db(date_time: dt_datetime, latitude: float, longitude: float):
+        debug(f"Using {date_time.strftime('%Y-%m-%d %H:%M:%S')} as our datetime in get_weather_from_db.")
+        query_date = date_time.date()
+        try:
+            # Query to get daily weather data
+            daily_query = '''
+                SELECT * FROM dailyweather
+                WHERE DATE(datetime) = $1
+                AND ST_DWithin(location::geography, ST_MakePoint($2,$3)::geography, 8046.72) 
+                ORDER BY ST_Distance(location, ST_MakePoint($4, $5)::geography) ASC
+                LIMIT 1
+            '''
+        
+            daily_weather_records = await API.execute_read_query(daily_query, query_date, longitude, latitude, longitude, latitude, table_name='dailyweather')
+        
+            if not daily_weather_records:
+                debug(f"No daily weather data retrieved from database.")
+                return None
+        
+            daily_weather_data = daily_weather_records[0]
+            
+            # Query to get hourly weather data
+            hourly_query = '''
+                SELECT * FROM hourlyweather
+                WHERE daily_weather_id = $1
+                ORDER BY datetime ASC
+            '''
+            
+            hourly_weather_records = await API.execute_read_query(hourly_query, daily_weather_data['id'], table_name='hourlyweather')
+            
+            day = {
+                'DailyWeather': daily_weather_data,
+                'HourlyWeather': hourly_weather_records,
+            }
+            
+            debug(f"Retrieved weather data for {date_time.date()}")
+            return day
+        except Exception as e:
+            err(f"Unexpected error occurred in get_weather_from_db: {e}")
+            err(f"Traceback: {traceback.format_exc()}")
             return None
-    
-        daily_weather_data = daily_weather_records[0]  # Get the first (and only) record
-        
-        # Query to get hourly weather data
-        hourly_query = '''
-            SELECT HW.* FROM hourlyweather HW
-            WHERE HW.daily_weather_id = $1
-            ORDER BY HW.datetime ASC
-        '''
-        
-        hourly_weather_records = await API.execute_read_query(hourly_query, daily_weather_data['id'], table_name='hourlyweather')
-        
-        day = {
-            'DailyWeather': daily_weather_data,
-            'HourlyWeather': hourly_weather_records,
-        }
-        
-        debug(f"Retrieved weather data for {date_time.date()}")
-        return day
-    except Exception as e:
-        err(f"Unexpected error occurred in get_weather_from_db: {e}")
-        err(f"Traceback: {traceback.format_exc()}")
-        return None
-
