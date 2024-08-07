@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 from asyncpg.cursor import Cursor
 from httpx import AsyncClient
 from typing import Dict
-from datetime import datetime as dt_datetime
+from datetime import datetime as dt_datetime, date as dt_date
 from shapely.wkb import loads
 from binascii import unhexlify
 from sijapi import L, VISUALCROSSING_API_KEY, TZ, API, GEO
@@ -25,6 +25,7 @@ def info(text: str): logger.info(text)
 def warn(text: str): logger.warning(text)
 def err(text: str): logger.error(text)
 def crit(text: str): logger.critical(text)
+
 
 @weather.get("/weather/refresh", response_class=JSONResponse)
 async def get_refreshed_weather(
@@ -53,7 +54,15 @@ async def get_refreshed_weather(
             raise HTTPException(status_code=404, detail="No weather data found for the given date and location")
         
         # Convert the day object to a JSON-serializable format
-        day_dict = {k: str(v) if isinstance(v, (dt_datetime, date)) else v for k, v in day.items()}
+        day_dict = {}
+        for k, v in day.items():
+            if k == 'DailyWeather':
+                day_dict[k] = {kk: vv.isoformat() if isinstance(vv, (dt_datetime, dt_date)) else vv for kk, vv in v.items()}
+            elif k == 'HourlyWeather':
+                day_dict[k] = [{kk: vv.isoformat() if isinstance(vv, (dt_datetime, dt_date)) else vv for kk, vv in hour.items()} for hour in v]
+            else:
+                day_dict[k] = v.isoformat() if isinstance(v, (dt_datetime, dt_date)) else v
+
         return JSONResponse(content={"weather": day_dict}, status_code=200)
 
     except HTTPException as e:
