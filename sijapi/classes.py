@@ -833,40 +833,35 @@ class APIConfig(BaseModel):
 
 
     async def execute_write_query(self, query: str, *args, table_name: str):
-        local_ts_id = os.environ.get('TS_ID')
         conn = await self.get_connection(self.local_db)
         if conn is None:
             err(f"Unable to connect to local database. Write operation failed.")
             return []
         
         try:
-            # Remove any formatting from the query
-            query = ' '.join(query.split())
-        
-            # Add version and server_id to the query
-            columns = query.split('(')[1].split(')')[0]
-            values = query.split('VALUES')[1].split('RETURNING')[0]
+            # Execute the original query
+            result = await conn.fetch(query, *args)
             
-            modified_query = f"""
-            INSERT INTO {table_name} ({columns}, version, server_id)
-            VALUES {values[:-1]}, (SELECT COALESCE(MAX(version), 0) + 1 FROM {table_name}), '{local_ts_id}')
-            ON CONFLICT (id) DO UPDATE SET
-            version = {table_name}.version + 1,
-            server_id = EXCLUDED.server_id
-            RETURNING id, version
-            """
-        
-            result = await conn.fetch(modified_query, *args)
+            if result:
+                # Update version and server_id
+                update_query = f"""
+                UPDATE {table_name}
+                SET version = COALESCE(version, 0) + 1,
+                    server_id = $1
+                WHERE id = $2
+                RETURNING id, version
+                """
+                update_result = await conn.fetch(update_query, os.environ.get('TS_ID'), result[0]['id'])
+                return update_result
             return result
         except Exception as e:
             err(f"Error executing write query: {str(e)}")
-            err(f"Query: {modified_query}")
+            err(f"Query: {query}")
             err(f"Args: {args}")
             err(f"Traceback: {traceback.format_exc()}")
             return []
         finally:
             await conn.close()
-
 
 
     

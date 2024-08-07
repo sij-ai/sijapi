@@ -139,11 +139,9 @@ async def get_weather(date_time: dt_datetime, latitude: float, longitude: float,
 
 
 async def store_weather_to_db(date_time: dt_datetime, weather_data: dict):
-    debug(f"Starting store_weather_to_db for datetime: {date_time.strftime('%Y-%m-%d %H:%M:%S')}")
     try:
         day_data = weather_data.get('days', [{}])[0]
-        debug(f"RAW DAY_DATA: {day_data}")
-    
+        
         preciptype_array = day_data.get('preciptype', []) or []
         stations_array = day_data.get('stations', []) or []
     
@@ -212,7 +210,7 @@ async def store_weather_to_db(date_time: dt_datetime, weather_data: dict):
             $29, $30, $31, $32, $33, $34, $35, $36, $37, $38
         ) RETURNING id
         '''
-        
+    
         daily_weather_result = await API.execute_write_query(daily_weather_query, *daily_weather_params, table_name="dailyweather")
         
         if not daily_weather_result:
