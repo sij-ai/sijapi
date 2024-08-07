@@ -5,6 +5,7 @@ Uses the VisualCrossing API and Postgres/PostGIS to source local weather forecas
 
 import asyncio
 import traceback
+import os
 from fastapi import APIRouter, HTTPException, Query
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse
