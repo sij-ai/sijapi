@@ -844,17 +844,23 @@ class APIConfig(BaseModel):
             primary_key = await self.ensure_sync_columns(conn, table_name)
         
             if query.strip().upper().startswith("INSERT") and "RETURNING" in query.upper():
-                # For INSERT queries with RETURNING clause, use fetch to get the returned values
                 result = await conn.fetch(query, *args)
             else:
-                # For other queries, use execute
                 result = await conn.execute(query, *args)
         
+            # Schedule the sync task
             asyncio.create_task(self._sync_changes(table_name, primary_key))
         
             return result
+        except Exception as e:
+            err(f"Error executing write query on table {table_name}: {str(e)}")
+            err(f"Query: {query}")
+            err(f"Args: {args}")
+            err(f"Traceback: {traceback.format_exc()}")
+            raise
         finally:
             await conn.close()
+
 
 
     async def _run_sync_tasks(self, tasks):
