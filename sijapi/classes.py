@@ -849,22 +849,26 @@ class APIConfig(BaseModel):
                 if table_name in self.SPECIAL_TABLES:
                     result = await self._execute_special_table_write(conn, query, *args, table_name=table_name)
                 else:
-                    # Modify the query to be an UPSERT operation
-                    if query.strip().upper().startswith("INSERT"):
-                        table_columns = await self.get_table_columns(conn, table_name)
-                        primary_key = await self.get_primary_key(conn, table_name)
-                        
-                        if primary_key and len(table_columns) == len(args):
-                            set_clause = ", ".join([f"{col} = EXCLUDED.{col}" for col in table_columns if col != primary_key])
-                            query = f"""
-                            INSERT INTO {table_name} ({', '.join(table_columns)})
-                            VALUES ({', '.join(f'${i+1}' for i in range(len(args)))})
-                            ON CONFLICT ({primary_key}) DO UPDATE SET
-                            {set_clause}
-                            """
-                        else:
-                            err(f"Column count mismatch for table {table_name}. Columns: {len(table_columns)}, Values: {len(args)}")
-                            return []
+                    # Get table columns
+                    columns = await self.get_table_columns(conn, table_name)
+                    
+                    # Prepare the INSERT ... ON CONFLICT ... query
+                    placeholders = [f'${i+1}' for i in range(len(args))]
+                    insert_cols = ', '.join(columns[1:])  # Exclude 'id' column
+                    insert_vals = ', '.join(placeholders)
+                    update_cols = ', '.join([f"{col} = EXCLUDED.{col}" for col in columns[1:] if col not in ['id', 'version', 'server_id']])
+                    
+                    query = f"""
+                    INSERT INTO {table_name} ({insert_cols})
+                    VALUES ({insert_vals})
+                    ON CONFLICT (id) DO UPDATE SET
+                    {update_cols},
+                    version = {table_name}.version + 1,
+                    server_id = EXCLUDED.server_id
+                    WHERE {table_name}.version < EXCLUDED.version
+                    OR ({table_name}.version = EXCLUDED.version AND {table_name}.server_id < EXCLUDED.server_id)
+                    RETURNING id, version
+                    """
                     
                     result = await conn.fetch(query, *args)
     
@@ -888,6 +892,7 @@ class APIConfig(BaseModel):
         """
         columns = await conn.fetch(query, table_name)
         return [col['column_name'] for col in columns]
+
     
     async def get_primary_key(self, conn, table_name: str) -> str:
         query = """

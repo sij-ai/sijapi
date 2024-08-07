@@ -168,8 +168,8 @@ async def store_weather_to_db(date_time: dt_datetime, weather_data: dict):
         day_data['sunset'] = await gis.dt(day_data.get('sunsetEpoch'))
         debug(f"Corrected datetimes: datetime={day_data['datetime']}, sunrise={day_data['sunrise']}, sunset={day_data['sunset']}")
     
-        
         daily_weather_params = [
+            location_point,
             day_data.get('sunrise'), day_data.get('sunriseEpoch'),
             day_data.get('sunset'), day_data.get('sunsetEpoch'),
             day_data.get('description'), day_data.get('tempmax'),
@@ -188,10 +188,12 @@ async def store_weather_to_db(date_time: dt_datetime, weather_data: dict):
             day_data.get('solarradiation'), day_data.get('solarenergy'),
             day_data.get('severerisk', 0), day_data.get('moonphase'),
             day_data.get('conditions'), stations_array, day_data.get('source'),
-            location_point
+            os.environ.get('TS_ID')  # server_id
         ]
-        
-        daily_weather_query = 'INSERT INTO dailyweather DEFAULT VALUES'  
+    
+        debug(f"Prepared daily_weather_params: {daily_weather_params}")
+    
+        daily_weather_query = 'INSERT INTO dailyweather DEFAULT VALUES'
         daily_weather_result = await API.execute_write_query(daily_weather_query, *daily_weather_params, table_name="dailyweather")
         
         if not daily_weather_result:
@@ -234,18 +236,10 @@ async def store_weather_to_db(date_time: dt_datetime, weather_data: dict):
                         hour_data['icon'],
                         hour_stations_array,
                         hour_data.get('source', ''),
+                        os.environ.get('TS_ID')  # server_id
                     ]
     
-                    hourly_weather_query = '''
-                    INSERT INTO hourlyweather (
-                        daily_weather_id, datetime, datetimeepoch, temp, feelslike, 
-                        humidity, dew, precip, precipprob, preciptype, snow, snowdepth, 
-                        windgust, windspeed, winddir, pressure, cloudcover, visibility, 
-                        solarradiation, solarenergy, uvindex, severerisk, conditions, 
-                        icon, stations, source
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 
-                              $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)
-                    '''
+                    hourly_weather_query = 'INSERT INTO hourlyweather DEFAULT VALUES'
                     hourly_result = await API.execute_write_query(hourly_weather_query, *hourly_weather_params, table_name="hourlyweather")
                     debug(f"Inserted hourly weather data for {hour_datetime}")
                 except Exception as e:
