@@ -862,16 +862,16 @@ class APIConfig(BaseModel):
                     WITH new_version AS (
                         SELECT COALESCE(MAX(version), 0) + 1 as next_version 
                         FROM {table_name}
-                        WHERE id = (SELECT id FROM {table_name} WHERE {columns[1]} = ${1} FOR UPDATE)
+                        WHERE id = (SELECT id FROM {table_name} WHERE {columns[1]} = $1 FOR UPDATE)
                     )
                     INSERT INTO {table_name} ({insert_cols}, version, server_id)
-                    VALUES ({insert_vals}, (SELECT next_version FROM new_version), ${{len(args)+1}})
+                    VALUES ({insert_vals}, (SELECT next_version FROM new_version), ${len(args)+1})
                     ON CONFLICT (id) DO UPDATE SET
                     {update_cols},
                     version = (SELECT next_version FROM new_version),
-                    server_id = ${{len(args)+1}}
+                    server_id = ${len(args)+1}
                     WHERE {table_name}.version < (SELECT next_version FROM new_version)
-                    OR ({table_name}.version = (SELECT next_version FROM new_version) AND {table_name}.server_id < ${{len(args)+1}})
+                    OR ({table_name}.version = (SELECT next_version FROM new_version) AND {table_name}.server_id < ${len(args)+1})
                     RETURNING id, version
                     """
                     
