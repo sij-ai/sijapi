@@ -253,9 +253,7 @@ async def store_weather_to_db(date_time: dt_datetime, weather_data: dict):
         err(f"Error in weather storage: {e}")
         err(f"Traceback: {traceback.format_exc()}")
         return "FAILURE"
-Wh
 
-   
 
 async def get_weather_from_db(date_time: dt_datetime, latitude: float, longitude: float):
     debug(f"Using {date_time.strftime('%Y-%m-%d %H:%M:%S')} as our datetime in get_weather_from_db.")
