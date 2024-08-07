@@ -129,3 +129,5 @@ websockets
 whisper
 whisperplus
 youtube_dl
+better_profanity
+adblockparser
