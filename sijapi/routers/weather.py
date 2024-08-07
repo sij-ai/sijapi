@@ -171,13 +171,13 @@ async def store_weather_to_db(date_time: dt_datetime, weather_data: dict):
     
         daily_weather_params = [
             location_point,
-            day_data.get('sunrise'), day_data.get('sunriseEpoch'),
-            day_data.get('sunset'), day_data.get('sunsetEpoch'),
+            day_data['sunrise'], day_data.get('sunriseEpoch'),
+            day_data['sunset'], day_data.get('sunsetEpoch'),
             day_data.get('description'), day_data.get('tempmax'),
             day_data.get('tempmin'), day_data.get('uvindex'),
             day_data.get('winddir'), day_data.get('windspeed'),
             day_data.get('icon'), dt_datetime.now(tz),
-            day_data.get('datetime'), day_data.get('datetimeEpoch'),
+            day_data['datetime'], day_data.get('datetimeEpoch'),
             day_data.get('temp'), day_data.get('feelslikemax'),
             day_data.get('feelslikemin'), day_data.get('feelslike'),
             day_data.get('dew'), day_data.get('humidity'),
@@ -188,8 +188,7 @@ async def store_weather_to_db(date_time: dt_datetime, weather_data: dict):
             day_data.get('cloudcover'), day_data.get('visibility'),
             day_data.get('solarradiation'), day_data.get('solarenergy'),
             day_data.get('severerisk', 0), day_data.get('moonphase'),
-            day_data.get('conditions'), stations_array, day_data.get('source'),
-            os.environ.get('TS_ID')  # server_id
+            day_data.get('conditions'), stations_array, day_data.get('source')
         ]
     
         debug(f"Prepared daily_weather_params: {daily_weather_params}")
@@ -236,8 +235,7 @@ async def store_weather_to_db(date_time: dt_datetime, weather_data: dict):
                         hour_data['conditions'],
                         hour_data['icon'],
                         hour_stations_array,
-                        hour_data.get('source', ''),
-                        os.environ.get('TS_ID')  # server_id
+                        hour_data.get('source', '')
                     ]
     
                     hourly_weather_query = 'INSERT INTO hourlyweather DEFAULT VALUES'
@@ -255,6 +253,7 @@ async def store_weather_to_db(date_time: dt_datetime, weather_data: dict):
         err(f"Error in weather storage: {e}")
         err(f"Traceback: {traceback.format_exc()}")
         return "FAILURE"
+
 
    
 

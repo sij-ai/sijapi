@@ -839,12 +839,12 @@ class APIConfig(BaseModel):
         for pool_entry in online_hosts:
             if pool_entry['ts_id'] != local_ts_id:
                 continue  # Only write to the local database
-    
+        
             conn = await self.get_connection(pool_entry)
             if conn is None:
                 err(f"Unable to connect to local database {pool_entry['ts_id']}. Write operation failed.")
                 return []
-    
+        
             try:
                 if table_name in self.SPECIAL_TABLES:
                     result = await self._execute_special_table_write(conn, query, *args, table_name=table_name)
@@ -859,19 +859,28 @@ class APIConfig(BaseModel):
                     update_cols = ', '.join([f"{col} = EXCLUDED.{col}" for col in columns[1:] if col not in ['id', 'version', 'server_id']])
                     
                     query = f"""
-                    INSERT INTO {table_name} ({insert_cols})
-                    VALUES ({insert_vals})
+                    WITH new_version AS (
+                        SELECT COALESCE(MAX(version), 0) + 1 as next_version 
+                        FROM {table_name}
+                        WHERE id = (SELECT id FROM {table_name} WHERE {columns[1]} = ${1} FOR UPDATE)
+                    )
+                    INSERT INTO {table_name} ({insert_cols}, version, server_id)
+                    VALUES ({insert_vals}, (SELECT next_version FROM new_version), ${{len(args)+1}})
                     ON CONFLICT (id) DO UPDATE SET
                     {update_cols},
-                    version = {table_name}.version + 1,
-                    server_id = EXCLUDED.server_id
-                    WHERE {table_name}.version < EXCLUDED.version
-                    OR ({table_name}.version = EXCLUDED.version AND {table_name}.server_id < EXCLUDED.server_id)
+                    version = (SELECT next_version FROM new_version),
+                    server_id = ${{len(args)+1}}
+                    WHERE {table_name}.version < (SELECT next_version FROM new_version)
+                    OR ({table_name}.version = (SELECT next_version FROM new_version) AND {table_name}.server_id < ${{len(args)+1}})
                     RETURNING id, version
                     """
                     
+                    # Add server_id to args
+                    args = list(args)
+                    args.append(local_ts_id)
+                    
                     result = await conn.fetch(query, *args)
-    
+        
                 return result
             except Exception as e:
                 err(f"Error executing write query on {pool_entry['ts_id']}: {str(e)}")
@@ -880,8 +889,9 @@ class APIConfig(BaseModel):
                 err(f"Traceback: {traceback.format_exc()}")
             finally:
                 await conn.close()
-    
+        
         return []
+
     
     async def get_table_columns(self, conn, table_name: str) -> List[str]:
         query = """
