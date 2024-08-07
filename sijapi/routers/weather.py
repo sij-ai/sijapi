@@ -118,7 +118,7 @@ async def get_weather(date_time: dt_datetime, latitude: float, longitude: float,
 
 
 async def store_weather_to_db(date_time: dt_datetime, weather_data: dict):
-    warn(f"Using {date_time.strftime('%Y-%m-%d %H:%M:%S')} as our datetime in store_weather_to_db")
+    debug(f"Using {date_time.strftime('%Y-%m-%d %H:%M:%S')} as our datetime in store_weather_to_db")
     try:
         day_data = weather_data.get('days')[0]
         debug(f"RAW DAY_DATA: {day_data}")
@@ -127,7 +127,7 @@ async def store_weather_to_db(date_time: dt_datetime, weather_data: dict):
         stations_array = day_data.get('stations', []) or []
 
         date_str = date_time.strftime("%Y-%m-%d")
-        warn(f"Using {date_str} in our query in store_weather_to_db.")
+        debug(f"Using {date_str} in our query in store_weather_to_db.")
 
         # Get location details from weather data if available
         longitude = weather_data.get('longitude')
@@ -245,7 +245,7 @@ async def store_weather_to_db(date_time: dt_datetime, weather_data: dict):
    
 
 async def get_weather_from_db(date_time: dt_datetime, latitude: float, longitude: float):
-    warn(f"Using {date_time.strftime('%Y-%m-%d %H:%M:%S')} as our datetime in get_weather_from_db.")
+    debug(f"Using {date_time.strftime('%Y-%m-%d %H:%M:%S')} as our datetime in get_weather_from_db.")
     query_date = date_time.date()
     try:
         # Query to get daily weather data

@@ -307,7 +307,7 @@ async def build_daily_note(date_time: dt_datetime, lat: float = None, lon: float
 Obsidian helper. Takes a datetime and creates a new daily note. Note: it uses the sijapi configuration file to place the daily note and does NOT presently interface with Obsidian's daily note or periodic notes extensions. It is your responsibility to ensure they match.
     '''
     absolute_path, _ = assemble_journal_path(date_time)
-    warn(f"Using {date_time.strftime('%Y-%m-%d %H:%M:%S')} as our datetime in build_daily_note.")
+    debug(f"Using {date_time.strftime('%Y-%m-%d %H:%M:%S')} as our datetime in build_daily_note.")
     formatted_day = date_time.strftime("%A %B %d, %Y")  # Monday May 27, 2024 formatting
     day_before = (date_time - timedelta(days=1)).strftime("%Y-%m-%d %A")  # 2024-05-26 Sunday formatting
     day_after = (date_time + timedelta(days=1)).strftime("%Y-%m-%d %A")  # 2024-05-28 Tuesday formatting
@@ -549,7 +549,7 @@ async def note_weather_get(
     force_refresh_weather = refresh == "True"
     try:
         date_time = dt_datetime.now() if date == "0" else await gis.dt(date)
-        warn(f"Using {date_time.strftime('%Y-%m-%d %H:%M:%S')} as our dt_datetime in note_weather_get.")
+        debug(f"Using {date_time.strftime('%Y-%m-%d %H:%M:%S')} as our dt_datetime in note_weather_get.")
         debug(f"date: {date} .. date_time: {date_time}")
         content = await update_dn_weather(date_time, force_refresh_weather) #, lat, lon)
         return JSONResponse(content={"forecast": content}, status_code=200)
@@ -565,7 +565,7 @@ async def note_weather_get(
 @note.post("/update/note/{date}")
 async def post_update_daily_weather_and_calendar_and_timeslips(date: str, refresh: str="False") -> PlainTextResponse:
     date_time = await gis.dt(date)
-    warn(f"Using {date_time.strftime('%Y-%m-%d %H:%M:%S')} as our dt_datetime in post_update_daily_weather_and_calendar_and_timeslips.")
+    debug(f"Using {date_time.strftime('%Y-%m-%d %H:%M:%S')} as our dt_datetime in post_update_daily_weather_and_calendar_and_timeslips.")
     force_refresh_weather = refresh == "True"
     await update_dn_weather(date_time, force_refresh_weather)
     await update_daily_note_events(date_time)
@@ -574,7 +574,7 @@ async def post_update_daily_weather_and_calendar_and_timeslips(date: str, refres
 
 
 async def update_dn_weather(date_time: dt_datetime, force_refresh: bool = False, lat: float = None, lon: float = None):
-    warn(f"Using {date_time.strftime('%Y-%m-%d %H:%M:%S')} as our datetime in update_dn_weather.")
+    debug(f"Using {date_time.strftime('%Y-%m-%d %H:%M:%S')} as our datetime in update_dn_weather.")
     try:
         if lat and lon:
             place = await GEO.code((lat, lon))
