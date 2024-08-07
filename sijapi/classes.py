@@ -766,20 +766,20 @@ class APIConfig(BaseModel):
         results = []
         max_version = -1
         latest_result = None
-
+        
         for pool_entry in online_hosts:
             conn = await self.get_connection(pool_entry)
             if conn is None:
                 warn(f"Unable to connect to {pool_entry['ts_id']}. Skipping read.")
                 continue
-
+        
             try:
                 # Execute the query
                 result = await conn.fetch(query, *args)
-
+                
                 if not result:
                     continue
-
+        
                 # Check version if it's not a special table
                 if table_name not in self.SPECIAL_TABLES:
                     try:
@@ -800,33 +800,37 @@ class APIConfig(BaseModel):
                                 max_version = version
                                 latest_result = result
                         else:
-                            debug(f"No data in table {table_name} for {pool_entry['ts_id']}")
+                            debug(f"No version data in table {table_name} for {pool_entry['ts_id']}")
+                            if latest_result is None:
+                                latest_result = result
                     except asyncpg.exceptions.UndefinedColumnError:
-                        warn(f"Version or server_id column does not exist in table {table_name} for {pool_entry['ts_id']}. Skipping version check.")
+                        warn(f"Version column does not exist in table {table_name} for {pool_entry['ts_id']}. Using result without version check.")
                         if latest_result is None:
                             latest_result = result
                 else:
                     # For special tables, just use the first result
                     if latest_result is None:
                         latest_result = result
-
+        
                 results.append((pool_entry['ts_id'], result))
-
+        
             except Exception as e:
                 err(f"Error executing read query on {pool_entry['ts_id']}: {str(e)}")
                 err(f"Traceback: {traceback.format_exc()}")
             finally:
                 await conn.close()
-
+        
         if not latest_result:
             warn(f"No results found for query on table {table_name}")
             return []
-
+        
         # Log results from all databases
         for ts_id, result in results:
             info(f"Read result from {ts_id}: {result}")
-
+        
         return [dict(r) for r in latest_result]  # Convert Record objects to dictionaries
+
+
 
     async def execute_write_query(self, query: str, *args, table_name: str):
         conn = await self.get_connection()
