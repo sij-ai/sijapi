@@ -526,6 +526,14 @@ def index_to_braille(v1a, v1b, v2a, v2b, v3a, v3b):
     return (v1a * 1 + v1b * 8 + v2a * 2 + v2b * 16 + v3a * 4 + v3b * 32)
 
 
+def flag_emoji(country_code):
+    if country_code:
+        offset = 127397
+        flag = ''.join([chr(ord(char) + offset) for char in country_code.upper()])
+        return flag
+    return flag_emoji('us')  # American flag for no VPN
+
+
 def load_geonames_data(path: str):
     columns = ['geonameid', 'name', 'asciiname', 'alternatenames',
                'latitude', 'longitude', 'feature_class', 'feature_code',
