@@ -117,28 +117,30 @@ async def http_exception_handler(request: Request, exc: HTTPException):
     err(f"Request: {request.method} {request.url}")
     return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
 
+
 @app.middleware("http")
 async def handle_exception_middleware(request: Request, call_next):
     try:
         response = await call_next(request)
-    except RuntimeError as exc:
-        if str(exc) == "Response content longer than Content-Length":
-            # Update the Content-Length header to match the actual response content length
-            response.headers["Content-Length"] = str(len(response.body))
-        else:
-            raise
-    return response
+        return response
+    except Exception as exc:
+        err(f"Unhandled exception in request: {request.method} {request.url}")
+        err(f"Exception: {str(exc)}")
+        err(f"Traceback: {traceback.format_exc()}")
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Internal Server Error"}
+        )
 
 
 @app.post("/sync/pull")
 async def pull_changes():
+    info(f"Received request to /sync/pull")
     try:
         await API.add_primary_keys_to_local_tables()
         await API.add_primary_keys_to_remote_tables()
         try:
-
             source = await API.get_most_recent_source()
-
             if source:
                 # Pull changes from the source
                 total_changes = await API.pull_changes(source)
@@ -156,9 +158,12 @@ async def pull_changes():
                 })
 
         except Exception as e:
-            err(f"Error during pull: {str(e)}")
+            err(f"Error in /sync/pull: {str(e)}")
             err(f"Traceback: {traceback.format_exc()}")
             raise HTTPException(status_code=500, detail=f"Error during pull: {str(e)}")
+            
+        finally:
+            info(f"Finished processing /sync/pull request")
 
     except Exception as e:
             err(f"Error while ensuring primary keys to tables: {str(e)}")

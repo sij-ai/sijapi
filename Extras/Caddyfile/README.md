@@ -1,0 +1,1 @@
+This is a sample Caddyfile for a load-balancing reverse-proxy setup with HTTPS, Cloudflare DNS challenge handling, API key handling (and specified endpoints exempt from key requirement), and a second domain with special handling for certain endpoints (e.g. /s for the URL shortener, /pgp for public PGP key)
