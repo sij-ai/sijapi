@@ -125,11 +125,11 @@ async def hook_alert(request: Request):
 async def notify(alert: str):
     fail = True
     try:
-        if API.EXTENSIONS.shellfish == "on" or API.EXTENSIONS.shellfish == True:
+        if API.EXTENSIONS.shellfish == True:
             await notify_shellfish(alert)
             fail = False
 
-        if API.EXTENSIONS.macnotify == "on" or API.EXTENSIONS.macnotify == True:
+        if API.EXTENSIONS.macnotify == True:
             if TS_ID == MAC_ID:
                 await notify_local(alert)
                 fail = False
@@ -165,7 +165,7 @@ async def notify_remote(host: str, message: str, username: str = None, password:
     ssh.close()
 
 
-if API.EXTENSIONS.shellfish == "on" or API.EXTENSIONS.shellfish == True:
+if API.EXTENSIONS.shellfish == True:
     async def notify_shellfish(alert: str):
         key = "d7e810e7601cd296a05776c169b4fe97a6a5ee1fd46abe38de54f415732b3f4b"
         user = "WuqPwm1VpGijF4U5AnIKzqNMVWGioANTRjJoonPm"
@@ -250,7 +250,7 @@ if API.EXTENSIONS.shellfish == "on" or API.EXTENSIONS.shellfish == True:
         return result.stdout
 
 
-if API.EXTENSIONS.courtlistener == "on" or API.EXTENSIONS.courtlistener == True:
+if API.EXTENSIONS.courtlistener == True:
     with open(CASETABLE_PATH, 'r') as file:
         CASETABLE = json.load(file)
 
