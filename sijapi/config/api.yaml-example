@@ -51,10 +51,13 @@ POOL:
     ssh_port: 22
     ssh_user: sshuser
     ssh_pass: 'password456'
-    path: '~/projects/myapi'
+    path: '/Users/sij/workshop/sijapi'
     tmux: '/opt/homebrew/bin/tmux'
-    conda: '~/miniforge3/bin/mamba'
-    conda_env: 'myenv'
+    tailscale: '/usr/local/bin/tailscale'
+    conda: '/Users/sij/miniforge3/bin/mamba'
+    conda_env: '/Users/sij/miniforge3/envs/sijapi'
+    vitals: '/Users/sij/workshop/scripts/gitea/pathScripts/vitals'
+    vpn: '/Users/sij/workshop/scripts/gitea/pathScripts/vpn'
   - ts_id: 'server2'
     ts_ip: '192.168.0.11'
     app_port: 4444
@@ -65,10 +68,13 @@ POOL:
     ssh_port: 22
     ssh_user: sshuser
     ssh_pass: 'password456'
-    path: '~/projects/myapi'
-    tmux: '/usr/bin/tmux'
-    conda: '~/miniforge3/bin/mamba'
-    conda_env: 'myenv'
+    path: '/Users/sij/workshop/sijapi'
+    tmux: '/opt/homebrew/bin/tmux'
+    tailscale: '/usr/local/bin/tailscale'
+    conda: '/Users/sij/miniforge3/bin/mamba'
+    conda_env: '/Users/sij/miniforge3/envs/sijapi'
+    vitals: '/Users/sij/workshop/scripts/gitea/pathScripts/vitals'
+    vpn: '/Users/sij/workshop/scripts/gitea/pathScripts/vpn'
   - ts_id: 'server3'
     ts_ip: '192.168.0.12'
     app_port: 4444
@@ -79,10 +85,13 @@ POOL:
     ssh_port: 22
     ssh_user: sshuser
     ssh_pass: 'password456'
-    path: '~/projects/myapi'
-    tmux: '/usr/bin/tmux'
-    conda: '~/miniforge3/bin/mamba'
-    conda_env: 'myenv'
+    path: '/Users/sij/workshop/sijapi'
+    tmux: '/opt/homebrew/bin/tmux'
+    tailscale: '/usr/local/bin/tailscale'
+    conda: '/Users/sij/miniforge3/bin/mamba'
+    conda_env: '/Users/sij/miniforge3/envs/sijapi'
+    vitals: '/Users/sij/workshop/scripts/gitea/pathScripts/vitals'
+    vpn: '/Users/sij/workshop/scripts/gitea/pathScripts/vpn'
   
 EXTENSIONS:
   pgp: on
@@ -91,9 +100,12 @@ EXTENSIONS:
   macnotify: on
   shellfish: on
   
-TZ: "America/Los_Angeles"
+TZ: 'America/Los_Angeles'
 
-KEYS: ["{{ SECRET.GLOBAL_API_KEYS }}"]
+KEYS:
+  - 'sk-YOUR_FIRST_API_KEY'
+  - 'sk-YOUR_SECOND_API_KEY'
+  - 'sk-YOUR_THIRD_API_KEY'
 
 GARBAGE:
   COLLECTION_INTERVAL: 60 * 60
