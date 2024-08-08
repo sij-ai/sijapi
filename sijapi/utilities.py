@@ -11,13 +11,21 @@ import paramiko
 from dateutil import parser
 from pathlib import Path
 import filetype
+import shutil
+import uuid
+import hashlib
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+from urllib.parse import urlparse
 from PyPDF2 import PdfReader
 from better_profanity import profanity
 from adblockparser import AdblockRules
 from pdfminer.high_level import extract_text as pdfminer_extract_text
 import pytesseract
+from readability import Document
 from pdf2image import convert_from_path
-from datetime import datetime, date, time
+from datetime import datetime as dt_datetime, date, time
 from typing import Optional, Union, Tuple, List
 import asyncio
 from PIL import Image
@@ -70,7 +78,8 @@ def validate_api_key(request: Request, api_key: str = Depends(api_key_header)):
     raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
 
-def assemble_archive_path(filename: str, extension: str = None, date_time: datetime = datetime.now(), subdir: str = None) -> Tuple[Path, Path]:
+def assemble_archive_path(filename: str, extension: str = None, date_time: dt_datetime = None, subdir: str = None) -> Tuple[Path, Path]:
+    date_time = date_time or dt_datetime.now()
     year = date_time.strftime(YEAR_FMT)
     month = date_time.strftime(MONTH_FMT)
     day = date_time.strftime(DAY_FMT)
@@ -122,7 +131,7 @@ def assemble_archive_path(filename: str, extension: str = None, date_time: datet
 
 
 
-def assemble_journal_path(date_time: datetime, subdir: str = None, filename: str = None, extension: str = None, no_timestamp: bool = False) -> Tuple[Path, Path]:
+def assemble_journal_path(date_time: dt_datetime, subdir: str = None, filename: str = None, extension: str = None, no_timestamp: bool = False) -> Tuple[Path, Path]:
     '''
     Obsidian helper. Takes a datetime and optional subdirectory name, filename, and extension.
     If an extension is provided, it ensures the path is to a file with that extension.
@@ -300,7 +309,7 @@ def str_to_bool(value: str) -> bool:
     """
 
 def get_timestamp():
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    return dt_datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
 async def extract_text(file_path: str) -> str:
@@ -476,10 +485,10 @@ HOURLY_COLUMNS_MAPPING = {
 def convert_to_12_hour_format(datetime_obj_or_str):
     if isinstance(datetime_obj_or_str, str):
         try:
-            datetime_obj = datetime.strptime(datetime_obj_or_str, "%Y-%m-%d %H:%M:%S")
+            datetime_obj = dt_datetime.strptime(datetime_obj_or_str, "%Y-%m-%d %H:%M:%S")
         except ValueError:
             try:
-                datetime_obj = datetime.strptime(datetime_obj_or_str, "%H:%M:%S")
+                datetime_obj = dt_datetime.strptime(datetime_obj_or_str, "%H:%M:%S")
             except ValueError:
                 return "Invalid datetime string format"
     elif isinstance(datetime_obj_or_str, time):
@@ -520,6 +529,53 @@ def resize_and_convert_image(image_path, max_size=2160, quality=80):
         img_byte_arr = img_byte_arr.getvalue()
 
     return img_byte_arr
+
+
+def download_file(url, folder):
+    os.makedirs(folder, exist_ok=True)
+    filename = str(uuid.uuid4()) + os.path.splitext(urlparse(url).path)[-1]
+    filepath = os.path.join(folder, filename)
+    
+    session = requests.Session()
+    retries = Retry(total=5, backoff_factor=1, status_forcelist=[502, 503, 504])
+    session.mount('http://', HTTPAdapter(max_retries=retries))
+    session.mount('https://', HTTPAdapter(max_retries=retries))
+
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'
+    }
+
+    try:
+        response = session.get(url, headers=headers, timeout=10)
+        if response.status_code == 200:
+            if 'image' in response.headers.get('Content-Type', ''):
+                with open(filepath, 'wb') as f:
+                    f.write(response.content)
+            else:
+                err(f"Failed to download image: {url}, invalid content type: {response.headers.get('Content-Type')}")
+                return None
+        else:
+            err(f"Failed to download image: {url}, status code: {response.status_code}")
+            return None
+    except Exception as e:
+        err(f"Failed to download image: {url}, error: {str(e)}")
+        return None
+    return filename
+
+
+def copy_file(local_path, folder):
+    os.makedirs(folder, exist_ok=True)
+    filename = os.path.basename(local_path)
+    destination_path = os.path.join(folder, filename)
+    shutil.copy(local_path, destination_path)
+    return filename
+
+
+async def save_file(file: UploadFile, folder: Path) -> Path:
+    file_path = folder / f"{dt_datetime.now().strftime('%Y%m%d_%H%M%S')}_{file.filename}"
+    with open(file_path, 'wb') as f:
+        shutil.copyfileobj(file.file, f)
+    return file_path
 
 
 def index_to_braille(v1a, v1b, v2a, v2b, v3a, v3b):
