@@ -143,7 +143,7 @@ async def generate_speech(
         title = title if title else "TTS audio"
         output_path = output_dir / f"{dt_datetime.now().strftime('%Y%m%d%H%M%S')} {title}.wav"
         
-        if model == "eleven_turbo_v2" and API.EXTENSIONS.elevenlabs == True:
+        if model == "eleven_turbo_v2" and API.EXTENSIONS.elevenlabs:
             info("Using ElevenLabs.")
             audio_file_path = await elevenlabs_tts(model, text, voice, title, output_dir)
         elif API.EXTENSIONS.xtts:
@@ -185,10 +185,10 @@ async def generate_speech(
 
 
 async def get_model(voice: str = None, voice_file: UploadFile = None):
-    if (voice_file or (voice and await select_voice(voice))) and API.EXTENSIONS.xtts == True:
+    if (voice_file or (voice and await select_voice(voice))) and API.EXTENSIONS.xtts:
         return "xtts"
     
-    elif voice and await determine_voice_id(voice) and API.EXTENSIONS.elevenlabs == True:
+    elif voice and await determine_voice_id(voice) and API.EXTENSIONS.elevenlabs:
         return "eleven_turbo_v2"
     
     else:
