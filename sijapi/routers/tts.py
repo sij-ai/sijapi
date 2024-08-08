@@ -27,7 +27,7 @@ import tempfile
 import random
 import re
 import os
-from sijapi import L, DEFAULT_VOICE, TTS_SEGMENTS_DIR, VOICE_DIR, PODCAST_DIR, TTS_OUTPUT_DIR, ELEVENLABS_API_KEY
+from sijapi import L, Dir, DEFAULT_VOICE, TTS_SEGMENTS_DIR, VOICE_DIR, PODCAST_DIR, TTS_OUTPUT_DIR, ELEVENLABS_API_KEY
 from sijapi.utilities import sanitize_filename
 
 ### INITIALIZATIONS ###
@@ -160,7 +160,7 @@ async def generate_speech(
             warn(f"No file exists at {audio_file_path}")
 
         if podcast:
-            podcast_path = Path(PODCAST_DIR) / Path(audio_file_path).name
+            podcast_path = Path(Dir.PODCAST) / Path(audio_file_path).name
             
             shutil.copy(str(audio_file_path), str(podcast_path))
             if podcast_path.exists():
@@ -369,7 +369,7 @@ async def local_tts(
 
     # Export the combined audio in a separate thread
     if podcast:
-        podcast_file_path = Path(PODCAST_DIR) / file_path.name
+        podcast_file_path = Path(Dir.PODCAST) / file_path.name
         await asyncio.to_thread(combined_audio.export, podcast_file_path, format="wav")
     
     await asyncio.to_thread(combined_audio.export, file_path, format="wav")
@@ -463,7 +463,7 @@ def copy_to_podcast_dir(file_path):
         file_name = Path(file_path).name
         
         # Construct the destination path in the PODCAST_DIR
-        destination_path = Path(PODCAST_DIR) / file_name
+        destination_path = Path(Dir.PODCAST) / file_name
         
         # Copy the file to the PODCAST_DIR
         shutil.copy(file_path, destination_path)
