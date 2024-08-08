@@ -147,6 +147,7 @@ async def generate_speech(
         
         if model == "eleven_turbo_v2":
             info("Using ElevenLabs.")
+            voice = determine_voice_id(voice)
             audio_file_path = await elevenlabs_tts(model, text, voice, title, output_dir)
         else:  # if model == "xtts":
             info("Using XTTS2")
@@ -182,6 +183,7 @@ async def get_model(voice: str = None, voice_file: UploadFile = None):
 async def determine_voice_id(voice_name: str) -> str:
     debug(f"Searching for voice id for {voice_name}")
     
+    # Todo: move this to tts.yaml
     hardcoded_voices = {
         "alloy": "E3A1KVbKoWSIKSZwSUsW",
         "echo": "b42GBisbu9r5m5n6pHF7",
@@ -192,7 +194,8 @@ async def determine_voice_id(voice_name: str) -> str:
         "Luna": "6TayTBKLMOsghG7jYuMX",
         "Sangye": "E7soeOyjpmuZFurvoxZ2",
         "Herzog": "KAX2Y6tTs0oDWq7zZXW7",
-        "Attenborough": "b42GBisbu9r5m5n6pHF7"
+        "Attenborough": "b42GBisbu9r5m5n6pHF7",
+        "Victoria": "7UBkHqZOtFRLq6cSMQQg"
     }
 
     if voice_name in hardcoded_voices:
@@ -212,6 +215,7 @@ async def determine_voice_id(voice_name: str) -> str:
                 for voice in voices_data:
                     if voice_name == voice["voice_id"] or voice_name == voice["name"]:
                         return voice["voice_id"]
+                    
         except Exception as e:
             err(f"Error determining voice ID: {str(e)}")
 
