@@ -53,13 +53,19 @@ def is_local_tmux_session_running(session_name):
     except subprocess.CalledProcessError:
         return False
 
-def start_local_server(server):
+def start_local_server(server, pull=False, push=False):
     try:
         if is_local_tmux_session_running('sijapi'):
             logging.info("Local sijapi tmux session is already running.")
             return
 
-        command = f"{server['tmux']} new-session -d -s sijapi 'cd {server['path']} && {server['conda_env']}/bin/python -m sijapi'"
+        git_command = ""
+        if pull:
+            git_command = "git pull &&"
+        elif push:
+            git_command = "git add -A . && git commit -m \"auto-update\" && git push origin --force &&"
+
+        command = f"{server['tmux']} new-session -d -s sijapi 'cd {server['path']} && {git_command} {server['conda_env']}/bin/python -m sijapi'"
         logging.info(f"Executing local command: {command}")
         result = subprocess.run(command, shell=True, check=True, capture_output=True, text=True)
         logging.info(f"Successfully started sijapi session on local machine")
@@ -68,7 +74,7 @@ def start_local_server(server):
         logging.error(f"Failed to start sijapi session on local machine. Error: {e}")
         logging.error(f"Error output: {e.stderr}")
 
-def start_remote_server(server):
+def start_remote_server(server, pull=False, push=False):
     ssh = paramiko.SSHClient()
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
@@ -86,7 +92,13 @@ def start_remote_server(server):
             logging.info(f"sijapi session already exists on {server['ts_id']}")
             return
 
-        command = f"{server['tmux']} new-session -d -s sijapi 'cd {server['path']} && {server['conda_env']}/bin/python -m sijapi'"
+        git_command = ""
+        if pull:
+            git_command = "git pull &&"
+        elif push:
+            git_command = "git add -A . && git commit -m \"auto-update\" && git push origin --force &&"
+
+        command = f"{server['tmux']} new-session -d -s sijapi 'cd {server['path']} && {git_command} {server['conda_env']}/bin/python -m sijapi'"
         status, output, error = execute_ssh_command(ssh, command)
 
         if status == 0:
@@ -145,6 +157,8 @@ def main():
     parser.add_argument('--kill', action='store_true', help='Kill the local sijapi tmux session')
     parser.add_argument('--restart', action='store_true', help='Restart the local sijapi tmux session')
     parser.add_argument('--all', action='store_true', help='Apply the action to all servers')
+    parser.add_argument('--pull', action='store_true', help='Pull latest changes before starting the server')
+    parser.add_argument('--push', action='store_true', help='Push changes before starting the server')
 
     args = parser.parse_args()
 
@@ -159,31 +173,36 @@ def main():
             kill_local_server()
         sys.exit(0)
 
-    if args.restart:
+    if args.restart or args.pull or args.push:
         if args.all:
             for server in pool:
                 if server['ts_id'] == local_ts_id:
                     kill_local_server()
-                    start_local_server(server)
+                    start_local_server(server, pull=args.pull, push=args.push)
                 else:
                     kill_remote_server(server)
-                    start_remote_server(server)
+                    start_remote_server(server, pull=args.pull, push=args.push)
         else:
             kill_local_server()
             local_server = next(server for server in pool if server['ts_id'] == local_ts_id)
-            start_local_server(local_server)
+            start_local_server(local_server, pull=args.pull, push=args.push)
         sys.exit(0)
 
-    # If no specific arguments, run the original script
+    # If no specific arguments, run the default behavior
+    local_server = next(server for server in pool if server['ts_id'] == local_ts_id)
+    if not check_server(local_server['ts_ip'], local_server['app_port'], local_server['ts_id']):
+        logging.info(f"Local server {local_server['ts_id']} is not responding correctly. Attempting to start...")
+        kill_local_server()
+        start_local_server(local_server, push=True)
+
     for server in pool:
-        if check_server(server['ts_ip'], server['app_port'], server['ts_id']):
-            logging.info(f"{server['ts_id']} is running and responding correctly.")
-        else:
-            logging.info(f"{server['ts_id']} is not responding correctly. Attempting to start...")
-            if server['ts_id'] == local_ts_id:
-                start_local_server(server)
+        if server['ts_id'] != local_ts_id:
+            if not check_server(server['ts_ip'], server['app_port'], server['ts_id']):
+                logging.info(f"{server['ts_id']} is not responding correctly. Attempting to start...")
+                kill_remote_server(server)
+                start_remote_server(server, pull=True)
             else:
-                start_remote_server(server)
+                logging.info(f"{server['ts_id']} is running and responding correctly.")
 
         time.sleep(1)
 
