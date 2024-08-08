@@ -147,7 +147,7 @@ async def generate_speech(
         
         if model == "eleven_turbo_v2":
             info("Using ElevenLabs.")
-            voice = determine_voice_id(voice)
+            voice = await determine_voice_id(voice)
             audio_file_path = await elevenlabs_tts(model, text, voice, title, output_dir)
         else:  # if model == "xtts":
             info("Using XTTS2")
