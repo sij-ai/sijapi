@@ -224,8 +224,12 @@ async def determine_voice_id(voice_name: str) -> str:
 
 
 async def elevenlabs_tts(model: str, input_text: str, voice: str, title: str = None, output_dir: str = None):
-
-    if API.EXTENSIONS.elevenlabs:
+    # Debug logging
+    L.debug(f"API.EXTENSIONS: {API.EXTENSIONS}")
+    L.debug(f"API.EXTENSIONS.elevenlabs: {getattr(API.EXTENSIONS, 'elevenlabs', None)}")
+    L.debug(f"Tts config: {Tts}")
+    
+    if getattr(API.EXTENSIONS, 'elevenlabs', False):
         voice_id = await determine_voice_id(voice)
     
         url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
@@ -233,9 +237,10 @@ async def elevenlabs_tts(model: str, input_text: str, voice: str, title: str = N
             "text": input_text,
             "model_id": model
         }
+        # Make sure this is the correct way to access the API key
         headers = {"Content-Type": "application/json", "xi-api-key": Tts.elevenlabs.api_key}
         try:
-            async with httpx.AsyncClient(timeout=httpx.Timeout(300.0)) as client:  # 5 minutes timeout
+            async with httpx.AsyncClient(timeout=httpx.Timeout(300.0)) as client:
                 response = await client.post(url, json=payload, headers=headers)
                 output_dir = output_dir if output_dir else TTS_OUTPUT_DIR
                 title = title if title else dt_datetime.now().strftime("%Y%m%d%H%M%S")
@@ -244,18 +249,17 @@ async def elevenlabs_tts(model: str, input_text: str, voice: str, title: str = N
                 if response.status_code == 200:            
                     with open(file_path, "wb") as audio_file:
                         audio_file.write(response.content)
-                    # info(f"file_path: {file_path}")
                     return file_path
                 else:
                     raise HTTPException(status_code=response.status_code, detail="Error from ElevenLabs API")
                 
         except Exception as e:
-            err(f"Error from Elevenlabs API: {e}")
-            raise HTTPException(status_code=response.status_code, detail="Error from ElevenLabs API")
+            L.error(f"Error from Elevenlabs API: {e}")
+            raise HTTPException(status_code=500, detail=f"Error from ElevenLabs API: {str(e)}")
     
     else:
-        warn(f"elevenlabs_tts called but ElevenLabs module disabled in config/api.yaml!")
-
+        L.warn(f"elevenlabs_tts called but ElevenLabs module is not enabled in config.")
+        raise HTTPException(status_code=400, detail="ElevenLabs TTS is not enabled")
 
 
 
