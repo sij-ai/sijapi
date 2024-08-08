@@ -6,7 +6,7 @@ chat:
 vision:
   model: llava-llama3
 summary:
-  model: dolphin-llama3:8b-256k
+  model: 'command-r:latest'
   chunk-size: 16384
   chunk-overlap: 256
   length-ratio: 4

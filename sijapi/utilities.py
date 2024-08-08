@@ -52,31 +52,6 @@ def warn(text: str): logger.warning(text)
 def err(text: str): logger.error(text)
 def crit(text: str): logger.critical(text)
 
-api_key_header = APIKeyHeader(name="Authorization", auto_error=False)
-
-def validate_api_key(request: Request, api_key: str = Depends(api_key_header)):
-    if request.url.path in API.PUBLIC:
-        return
-
-    client_ip = ipaddress.ip_address(request.client.host)
-    trusted_subnets = [ipaddress.ip_network(subnet) for subnet in API.TRUSTED_SUBNETS]
-    if any(client_ip in subnet for subnet in trusted_subnets):
-        return
-
-    # Check header-based API key
-    if api_key:
-        if api_key.lower().startswith("bearer "):
-            api_key = api_key.lower().split("bearer ")[-1]
-        if api_key in API.KEYS:
-            return
-
-    # Check query-based API key
-    api_key_query = request.query_params.get("api_key")
-    if api_key_query in API.KEYS:
-        return
-
-    raise HTTPException(status_code=401, detail="Invalid or missing API key")
-
 
 def assemble_archive_path(filename: str, extension: str = None, date_time: dt_datetime = None, subdir: str = None) -> Tuple[Path, Path]:
     date_time = date_time or dt_datetime.now()
