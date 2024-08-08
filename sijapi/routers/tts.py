@@ -26,7 +26,7 @@ import tempfile
 import random
 import re
 import os
-from sijapi import L, API, Dir, Tts, TTS_SEGMENTS_DIR, VOICE_DIR, TTS_OUTPUT_DIR, ELEVENLABS_API_KEY
+from sijapi import L, API, Dir, Tts, TTS_SEGMENTS_DIR, VOICE_DIR, TTS_OUTPUT_DIR
 from sijapi.utilities import sanitize_filename
 
 ### INITIALIZATIONS ###
@@ -49,7 +49,7 @@ async def list_wav_files():
 async def list_11l_voices():
     formatted_list = ""
     url = "https://api.elevenlabs.io/v1/voices"
-    headers = {"xi-api-key": ELEVENLABS_API_KEY}
+    headers = {"xi-api-key": Tts.elevenlabs.api_key}
     async with httpx.AsyncClient() as client:
         try:
             response = await client.get(url, headers=headers)
@@ -146,7 +146,7 @@ async def generate_speech(
         if model == "eleven_turbo_v2" and API.EXTENSIONS.elevenlabs == True:
             info("Using ElevenLabs.")
             audio_file_path = await elevenlabs_tts(model, text, voice, title, output_dir)
-        elif API.EXTENSIONS.xtts == True:
+        elif API.EXTENSIONS.xtts:
             info("Using XTTS2")
             audio_file_path = await local_tts(text, speed, voice, voice_file, podcast, bg_tasks, title, output_path)
         else:
@@ -205,7 +205,7 @@ async def determine_voice_id(voice_name: str) -> str:
 
     debug(f"Requested voice not among the voices specified in config/tts.yaml. Checking with 11L next.")
     url = "https://api.elevenlabs.io/v1/voices"
-    headers = {"xi-api-key": ELEVENLABS_API_KEY}
+    headers = {"xi-api-key": Tts.elevenlabs.api_key}
     async with httpx.AsyncClient() as client:
         try:
             response = await client.get(url, headers=headers)
@@ -225,7 +225,7 @@ async def determine_voice_id(voice_name: str) -> str:
 
 async def elevenlabs_tts(model: str, input_text: str, voice: str, title: str = None, output_dir: str = None):
 
-    if API.EXTENSIONS.elevenlabs == True:
+    if API.EXTENSIONS.elevenlabs:
         voice_id = await determine_voice_id(voice)
     
         url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
@@ -233,7 +233,7 @@ async def elevenlabs_tts(model: str, input_text: str, voice: str, title: str = N
             "text": input_text,
             "model_id": model
         }
-        headers = {"Content-Type": "application/json", "xi-api-key": ELEVENLABS_API_KEY}
+        headers = {"Content-Type": "application/json", "xi-api-key": Tts.elevenlabs.api_key}
         try:
             async with httpx.AsyncClient(timeout=httpx.Timeout(300.0)) as client:  # 5 minutes timeout
                 response = await client.post(url, json=payload, headers=headers)
@@ -318,7 +318,7 @@ async def local_tts(
     output_path: Optional[Path] = None
 ) -> str:
 
-    if API.EXTENSIONS.xtts == True:
+    if API.EXTENSIONS.xtts:
         from TTS.api import TTS
         
         if output_path:
@@ -396,7 +396,7 @@ async def stream_tts(text_content: str, speed: float, voice: str, voice_file) ->
 
 async def generate_tts(text: str, speed: float, voice_file_path: str) -> str:
     
-    if API.EXTENSIONS.xtts == True:
+    if API.EXTENSIONS.xtts:
         from TTS.api import TTS
         
         output_dir = tempfile.mktemp(suffix=".wav", dir=tempfile.gettempdir())
@@ -418,7 +418,7 @@ async def get_audio_stream(model: str, input_text: str, voice: str):
         "text": input_text,
         "model_id": "eleven_turbo_v2"
     }
-    headers = {"Content-Type": "application/json", "xi-api-key": ELEVENLABS_API_KEY}
+    headers = {"Content-Type": "application/json", "xi-api-key": Tts.elevenlabs.api_key}
     response = requests.post(url, json=payload, headers=headers)
 
     if response.status_code == 200:
