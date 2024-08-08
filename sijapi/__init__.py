@@ -29,6 +29,7 @@ News = Configuration.load('news', 'secrets')
 Archivist = Configuration.load('archivist')
 Scrape = Configuration.load('scrape', 'secrets', Dir)
 Serve = Configuration.load('serve')
+Tts = Configuration.load('tts')
 
 # Directories & general paths
 ROUTER_DIR = BASE_DIR / "routers"
