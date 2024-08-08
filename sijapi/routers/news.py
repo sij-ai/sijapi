@@ -183,7 +183,7 @@ async def process_and_save_article(
                     await save_markdown_file(markdown_filename, markdown_content)
 
                     # Add to daily note
-                    await note.add_to_daily_note(relative_path)
+                    # await note.add_to_daily_note(relative_path)
 
                     return f"Successfully saved: {relative_path}"
                 
