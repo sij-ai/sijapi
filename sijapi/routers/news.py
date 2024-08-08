@@ -65,7 +65,7 @@ async def generate_summary(text: str) -> str:
     summary = await llm.summarize_text(text, "Summarize the provided text. Respond with the summary and nothing else.")
     return summary.replace('\n', ' ')
 
-async def handle_tts(bg_tasks: BackgroundTasks, article: Article, title: str, tts_mode: str, voice: str, summary: str) -> Optional[str]:
+async def handle_tts(bg_tasks: BackgroundTasks, article: Article, title: str, tts_mode: str, voice: str, summary: str, model: str = "eleven_turbo_v2") -> Optional[str]:
     if tts_mode in ["full", "content"]:
         tts_text = article.text
     elif tts_mode in ["summary", "excerpt"]:
@@ -79,12 +79,13 @@ async def handle_tts(bg_tasks: BackgroundTasks, article: Article, title: str, tt
             bg_tasks=bg_tasks,
             text=tts_text,
             voice=voice,
-            model="xtts",
+            model=model,
             podcast=True,
             title=audio_filename,
             output_dir=Path(OBSIDIAN_VAULT_DIR) / OBSIDIAN_RESOURCES_DIR
         )
         return f"![[{Path(audio_path).name}]]"
+
     except HTTPException as e:
         err(f"Failed to generate TTS: {str(e)}")
         return None
@@ -181,9 +182,6 @@ async def process_and_save_article(
 
                     # Save markdown file
                     await save_markdown_file(markdown_filename, markdown_content)
-
-                    # Add to daily note
-                    # await note.add_to_daily_note(relative_path)
 
                     return f"Successfully saved: {relative_path}"
                 
