@@ -158,33 +158,46 @@ async def process_and_save_article(
     voice: str = DEFAULT_VOICE,
     site_name: Optional[str] = None
 ) -> str:
+    
     try:
         # Fetch and parse article
         article = await fetch_and_parse_article(url)
+
+        try:        
+            # Generate title and file paths
+            title = sanitize_filename(title or article.title or f"Untitled - {dt_datetime.now().strftime('%Y-%m-%d')}")
+            markdown_filename, relative_path = assemble_journal_path(dt_datetime.now(), subdir="Articles", filename=title, extension=".md")
+
+            # Generate summary
+            summary = await generate_summary(article.text)
+
+            try:
+                # Handle TTS
+                audio_link = await handle_tts(bg_tasks, article, title, tts_mode, voice, summary)
+
+                try:
+                    # Generate markdown content
+                    markdown_content = generate_markdown_content(article, title, summary, audio_link, site_name)
+
+                    # Save markdown file
+                    await save_markdown_file(markdown_filename, markdown_content)
+
+                    # Add to daily note
+                    await note.add_to_daily_note(relative_path)
+
+                    return f"Successfully saved: {relative_path}"
+                
+                except Exception as e:
+                    err(f"Failed to handle final markdown content preparation and/or saving to daily note; {e}")
+            
+            except Exception as e:
+                err(f"Failed to handle TTS: {e}")
         
-        # Generate title and file paths
-        title = sanitize_filename(title or article.title or f"Untitled - {dt_datetime.now().strftime('%Y-%m-%d')}")
-        markdown_filename, relative_path = assemble_journal_path(dt_datetime.now(), subdir="Articles", filename=title, extension=".md")
-
-        # Generate summary
-        summary = await generate_summary(article.text)
-
-        # Handle TTS
-        audio_link = await handle_tts(bg_tasks, article, title, tts_mode, voice, summary)
-
-        # Generate markdown content
-        markdown_content = generate_markdown_content(article, title, summary, audio_link, site_name)
-
-        # Save markdown file
-        await save_markdown_file(markdown_filename, markdown_content)
-
-        # Add to daily note
-        await note.add_to_daily_note(relative_path)
-
-        return f"Successfully saved: {relative_path}"
-
+        except Exception as e:
+            err(f"Failed to generate title, file paths, and summary: {e}")
+        
     except Exception as e:
-        err(f"Failed to process article {url}: {str(e)}")
+        err(f"Failed to fetch and parse article {url}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
