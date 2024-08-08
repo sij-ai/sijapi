@@ -24,12 +24,12 @@ HOST = f"{API.BIND}:{API.PORT}"
 LOCAL_HOSTS = [ipaddress.ip_address(localhost.strip()) for localhost in os.getenv('LOCAL_HOSTS', '127.0.0.1').split(',')] + ['localhost']
 SUBNET_BROADCAST = os.getenv("SUBNET_BROADCAST", '10.255.255.255')
 MAX_CPU_CORES = min(int(os.getenv("MAX_CPU_CORES", int(multiprocessing.cpu_count()/2))), multiprocessing.cpu_count())
-IMG = Configuration.load('img', 'secrets')
-News = Configuration.load('news', 'secrets')
-Archivist = Configuration.load('archivist')
+IMG = Configuration.load('img', 'secrets', Dir)
+News = Configuration.load('news', 'secrets', Dir)
+Archivist = Configuration.load('archivist', 'secrets', Dir)
 Scrape = Configuration.load('scrape', 'secrets', Dir)
-Serve = Configuration.load('serve')
-Tts = Configuration.load('tts')
+Serve = Configuration.load('serve', 'secrets', Dir)
+Tts = Configuration.load('tts', 'secrets', Dir)
 
 # Directories & general paths
 ROUTER_DIR = BASE_DIR / "routers"

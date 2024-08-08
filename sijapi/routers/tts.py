@@ -26,7 +26,7 @@ import tempfile
 import random
 import re
 import os
-from sijapi import L, Dir, Tts, DEFAULT_VOICE, TTS_SEGMENTS_DIR, VOICE_DIR, PODCAST_DIR, TTS_OUTPUT_DIR, ELEVENLABS_API_KEY
+from sijapi import L, API, Dir, Tts, TTS_SEGMENTS_DIR, VOICE_DIR, TTS_OUTPUT_DIR, ELEVENLABS_API_KEY
 from sijapi.utilities import sanitize_filename
 
 ### INITIALIZATIONS ###
@@ -274,6 +274,7 @@ async def get_voice_file_path(voice: str = None, voice_file: UploadFile = None) 
         debug(f"Looking for voice: {voice}")
         selected_voice = await select_voice(voice)
         return selected_voice
+        
     elif voice_file and isinstance(voice_file, UploadFile):
         VOICE_DIR.mkdir(exist_ok=True)
 
@@ -300,8 +301,8 @@ async def get_voice_file_path(voice: str = None, voice_file: UploadFile = None) 
         return str(new_file)
     
     else:
-        debug(f"{dt_datetime.now().strftime('%Y%m%d%H%M%S')}: No voice specified or file provided, using default voice: {DEFAULT_VOICE}")
-        selected_voice = await select_voice(DEFAULT_VOICE)
+        debug(f"No voice specified or file provided, using default voice: {Tts.xtts.default}")
+        selected_voice = await select_voice(Tts.xtts.default)
         return selected_voice
 
 
