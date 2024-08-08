@@ -1,10 +1,24 @@
 default: xtts
 email: xtts
-webclip: 11L
+webclip: elevenlabs
 rss: xtts
-podcast_dir: '{{ DIR.HOME }}/Library/Mobile Documents/iCloud~co~supertop~castro/Documents/Sideloads'
+
 xtts:
-  voice: joanne
+  default: joanne
+
 elevenlabs:
-  voice: luna
-  api_key: '{{ SECRET.ELEVENLABS_API_KEY }}'
+  default: Victoria
+  voices:
+    alloy: "E3A1KVbKoWSIKSZwSUsW"
+    echo: "b42GBisbu9r5m5n6pHF7"
+    fable: "KAX2Y6tTs0oDWq7zZXW7"
+    onyx: "clQb8NxY08xZ6mX6wCPE"
+    nova: "6TayTBKLMOsghG7jYuMX"
+    shimmer: "E7soeOyjpmuZFurvoxZ2"
+    Luna: "6TayTBKLMOsghG7jYuMX"
+    Sangye: "E7soeOyjpmuZFurvoxZ2"
+    Herzog: "KAX2Y6tTs0oDWq7zZXW7"
+    Attenborough: "b42GBisbu9r5m5n6pHF7"
+    Victoria: "7UBkHqZOtFRLq6cSMQQg"
+
+  api_key: "{{ SECRET.ELEVENLABS_API_KEY }}"

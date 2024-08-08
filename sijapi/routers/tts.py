@@ -27,7 +27,7 @@ import tempfile
 import random
 import re
 import os
-from sijapi import L, Dir, DEFAULT_VOICE, TTS_SEGMENTS_DIR, VOICE_DIR, PODCAST_DIR, TTS_OUTPUT_DIR, ELEVENLABS_API_KEY
+from sijapi import L, Dir, Tts, DEFAULT_VOICE, TTS_SEGMENTS_DIR, VOICE_DIR, PODCAST_DIR, TTS_OUTPUT_DIR, ELEVENLABS_API_KEY
 from sijapi.utilities import sanitize_filename
 
 ### INITIALIZATIONS ###
@@ -40,7 +40,6 @@ def err(text: str): logger.error(text)
 def crit(text: str): logger.critical(text)
 
 DEVICE = torch.device('cpu')
-MODEL_NAME = "tts_models/multilingual/multi-dataset/xtts_v2"
 
 @tts.get("/tts/local_voices", response_model=List[str])
 async def list_wav_files():
@@ -211,7 +210,7 @@ async def determine_voice_id(voice_name: str) -> str:
         "Victoria": "7UBkHqZOtFRLq6cSMQQg"
     }
 
-    if voice_name in hardcoded_voices:
+    if voice_name in Tts.elevenlabs.voices:
         voice_id = hardcoded_voices[voice_name]
         debug(f"Found voice ID - {voice_id}")
         return voice_id
@@ -232,7 +231,7 @@ async def determine_voice_id(voice_name: str) -> str:
         except Exception as e:
             err(f"Error determining voice ID: {str(e)}")
 
-    # as a last fallback, rely on David Attenborough
+    # as a last fallback, rely on David Attenborough; move this to tts.yaml
     return "b42GBisbu9r5m5n6pHF7"
 
 
@@ -339,7 +338,7 @@ async def local_tts(
     voice_file_path = await get_voice_file_path(voice, voice_file)
     
     # Initialize TTS model in a separate thread
-    XTTS = await asyncio.to_thread(TTS, model_name=MODEL_NAME)
+    XTTS = await asyncio.to_thread(TTS, model_name=Tts.xtts.model)
     await asyncio.to_thread(XTTS.to, DEVICE)
 
     segments = split_text(text_content)
@@ -397,7 +396,7 @@ async def stream_tts(text_content: str, speed: float, voice: str, voice_file) ->
 async def generate_tts(text: str, speed: float, voice_file_path: str) -> str:
     output_dir = tempfile.mktemp(suffix=".wav", dir=tempfile.gettempdir())
 
-    XTTS = TTS(model_name=MODEL_NAME).to(DEVICE)
+    XTTS = TTS(model_name=Tts.xtts.model).to(DEVICE)
     XTTS.tts_to_file(text=text, speed=speed, file_path=output_dir, speaker_wav=[voice_file_path], language="en")
 
     return output_dir
