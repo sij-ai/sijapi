@@ -154,12 +154,26 @@ async def generate_speech(
 
         if not audio_file_path:
             raise ValueError("TTS generation failed: audio_file_path is empty or None")
+        elif audio_file_path.exists():
+            info(f"Saved to {audio_file_path}")
+        else:
+            warn(f"No file exists at {audio_file_path}")
 
         if podcast:
             podcast_path = Path(PODCAST_DIR) / Path(audio_file_path).name
-            debug(f"Podcast path: {podcast_path}")
+            
             shutil.copy(str(audio_file_path), str(podcast_path))
-            bg_tasks.add_task(os.remove, str(audio_file_path))
+            if podcast_path.exists():
+                info(f"Saved to podcast path: {podcast_path}")
+            else:
+                warn(f"Podcast mode enabled, but failed to save to {podcast_path}")
+
+            if podcast_path != audio_file_path:
+                info(f"Podcast mode enabled, so we will remove {audio_file_path}")
+                bg_tasks.add_task(os.remove, str(audio_file_path))
+            else:
+                warn(f"Podcast path set to same as audio file path...")
+
             return str(podcast_path)
 
         return str(audio_file_path)
@@ -242,10 +256,11 @@ async def elevenlabs_tts(model: str, input_text: str, voice: str, title: str = N
             if response.status_code == 200:            
                 with open(file_path, "wb") as audio_file:
                     audio_file.write(response.content)
-                info(f"file_path: {file_path}")
+                # info(f"file_path: {file_path}")
                 return file_path
             else:
                 raise HTTPException(status_code=response.status_code, detail="Error from ElevenLabs API")
+            
     except Exception as e:
         err(f"Error from Elevenlabs API: {e}")
         raise HTTPException(status_code=response.status_code, detail="Error from ElevenLabs API")
