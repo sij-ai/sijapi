@@ -203,7 +203,7 @@ class DirConfig(BaseModel):
 
     @classmethod
     def load(cls, yaml_path: Union[str, Path]) -> 'DirConfig':
-        yaml_path = cls._resolve_path(yaml_path)
+        yaml_path = cls._resolve_path(yaml_path, 'config')
 
         try:
             with yaml_path.open('r') as file:
