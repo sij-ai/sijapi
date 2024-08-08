@@ -237,10 +237,16 @@ def sanitize_filename(text, extension: str = None, max_length: int = MAX_PATH_LE
     """Sanitize a string to be used as a safe filename while protecting the file extension."""
     debug(f"Filename before sanitization: {text}")
 
+    # Ensure text is a string
+    text = str(text)
+
     text = re.sub(r'\s+', ' ', text)
     sanitized = re.sub(ALLOWED_FILENAME_CHARS, '', text)
     sanitized = sanitized.strip()
-    base_name, extension = os.path.splitext(sanitized)
+    base_name, file_extension = os.path.splitext(sanitized)
+
+    # Use the provided extension if given, otherwise use the original
+    extension = extension or file_extension
 
     max_base_length = max_length - len(extension)
     if len(base_name) > max_base_length:
@@ -249,6 +255,7 @@ def sanitize_filename(text, extension: str = None, max_length: int = MAX_PATH_LE
 
     debug(f"Filename after sanitization: {final_filename}")
     return final_filename
+
 
 
 def check_file_name(file_name, max_length=255):
