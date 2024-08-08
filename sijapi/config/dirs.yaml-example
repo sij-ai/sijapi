@@ -1,5 +1,4 @@
-HOME: ~
-SIJAPI: "{{ HOME }}/workshop/sijapi"
-DATA: "{{ SIJAPI }}/data"
-CONFIG: "{{ SIJAPI }}/config"
-LOGS: "{{ SIJAPI }}/logs"
+DATA: "{{ BASE }}/data"
+CONFIG: "{{ BASE }}/config"
+LOGS: "{{ BASE }}/logs"
+PODCAST: '{{ HOME }}/Library/Mobile Documents/iCloud~co~supertop~castro/Documents/Sideloads'

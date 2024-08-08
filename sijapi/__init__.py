@@ -6,7 +6,7 @@ import multiprocessing
 from dotenv import load_dotenv
 from dateutil import tz
 from pathlib import Path
-from .classes import Geocoder, APIConfig, Configuration, Logger
+from .classes import Logger, Configuration, APIConfig, DirConfig, Geocoder
 
 # INITIALization
 BASE_DIR = Path(__file__).resolve().parent
@@ -19,8 +19,7 @@ L = Logger("Central", LOGS_DIR)
 
 # API essentials
 API = APIConfig.load('api', 'secrets')
-
-Dir = Configuration.load('dirs')
+Dir = DirConfig.load('dirs')
 HOST = f"{API.BIND}:{API.PORT}"
 LOCAL_HOSTS = [ipaddress.ip_address(localhost.strip()) for localhost in os.getenv('LOCAL_HOSTS', '127.0.0.1').split(',')] + ['localhost']
 SUBNET_BROADCAST = os.getenv("SUBNET_BROADCAST", '10.255.255.255')
