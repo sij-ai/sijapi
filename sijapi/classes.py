@@ -136,24 +136,15 @@ class Configuration(BaseModel):
             path = base_path / path
         return path
 
-    def resolve_placeholders(self, data: Any) -> Any:
-        if isinstance(data, dict):
-            return {k: self.resolve_placeholders(v) for k, v in data.items()}
-        elif isinstance(data, list):
-            return [self.resolve_placeholders(v) for v in data]
-        elif isinstance(data, str):
-            return self.resolve_string_placeholders(data)
-        else:
-            return data
 
     def resolve_placeholders(self, data: Any) -> Any:
         if isinstance(data, dict):
             resolved_data = {k: self.resolve_placeholders(v) for k, v in data.items()}
-            home = Path(resolved_data.get('HOME', self.HOME)).expanduser()
-            sijapi = home / "workshop" / "sijapi"
-            data_dir = sijapi / "data"
-            resolved_data['HOME'] = str(home)
-            resolved_data['SIJAPI'] = str(sijapi)
+            home_dir = Path(resolved_data.get('HOME', self.HOME)).expanduser()
+            base_dir = Path(__file__).parent.parent
+            data_dir = base_dir / "data"
+            resolved_data['HOME'] = str(home_dir)
+            resolved_data['BASE'] = str(base_dir)
             resolved_data['DATA'] = str(data_dir)
             return resolved_data
         elif isinstance(data, list):
@@ -203,6 +194,89 @@ class Configuration(BaseModel):
 
     class Config:
         extra = "allow"
+        arbitrary_types_allowed = True
+
+
+
+class DirConfig(BaseModel):
+    HOME: Path = Path.home()
+
+    @classmethod
+    def load(cls, yaml_path: Union[str, Path]) -> 'DirConfig':
+        yaml_path = cls._resolve_path(yaml_path)
+
+        try:
+            with yaml_path.open('r') as file:
+                config_data = yaml.safe_load(file)
+
+            print(f"Loaded configuration data from {yaml_path}")
+
+            # Ensure HOME is set
+            if 'HOME' not in config_data:
+                config_data['HOME'] = str(Path.home())
+                print(f"HOME was not in config, set to default: {config_data['HOME']}")
+
+            instance = cls.create_dynamic_model(**config_data)
+            resolved_data = instance.resolve_placeholders(config_data)
+            return cls.create_dynamic_model(**resolved_data)
+
+        except Exception as e:
+            print(f"Error loading configuration: {str(e)}")
+            raise
+
+    @classmethod
+    def _resolve_path(cls, path: Union[str, Path], default_dir: str) -> Path:
+        base_path = Path(__file__).parent.parent
+        path = Path(path)
+        if not path.suffix:
+            path = base_path / 'sijapi' / default_dir / f"{path.name}.yaml"
+        elif not path.is_absolute():
+            path = base_path / path
+        return path
+
+    def resolve_placeholders(self, data: Any) -> Any:
+        if isinstance(data, dict):
+            resolved_data = {k: self.resolve_placeholders(v) for k, v in data.items()}
+            home_dir = Path(resolved_data.get('HOME', self.HOME)).expanduser()
+            base_dir = Path(__file__).parent.parent
+            data_dir = base_dir / "data"
+            resolved_data['HOME'] = str(home_dir)
+            resolved_data['BASE'] = str(base_dir)
+            resolved_data['DATA'] = str(data_dir)
+            return resolved_data
+        elif isinstance(data, list):
+            return [self.resolve_placeholders(v) for v in data]
+        elif isinstance(data, str):
+            return self.resolve_string_placeholders(data)
+        else:
+            return data
+
+    def resolve_string_placeholders(self, value: str) -> Path:
+        pattern = r'\{\{\s*([^}]+)\s*\}\}'
+        matches = re.findall(pattern, value)
+
+        for match in matches:
+            if match == 'HOME':
+                replacement = str(self.HOME)
+            elif hasattr(self, match):
+                replacement = str(getattr(self, match))
+            else:
+                replacement = value
+
+            value = value.replace('{{' + match + '}}', replacement)
+
+        return Path(value).expanduser()
+
+    @classmethod
+    def create_dynamic_model(cls, **data):
+        DynamicModel = create_model(
+            f'Dynamic{cls.__name__}',
+            __base__=cls,
+            **{k: (Path, v) for k, v in data.items()}
+        )
+        return DynamicModel(**data)
+
+    class Config:
         arbitrary_types_allowed = True
 
 
