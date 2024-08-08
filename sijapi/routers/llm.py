@@ -13,7 +13,6 @@ import aiofiles
 import os 
 import re
 import glob
-import chromadb
 from openai import OpenAI
 import uuid
 import json
@@ -40,9 +39,7 @@ def warn(text: str): logger.warning(text)
 def err(text: str): logger.error(text)
 def crit(text: str): logger.critical(text)
 
-# Initialize chromadb client
-client = chromadb.Client()
-# OBSIDIAN_CHROMADB_COLLECTION = client.create_collection("obsidian")
+
 VISION_MODELS = ["llava-phi3", "moondream", "llava", "llava-llama3", "llava:34b", "llava:13b-v1.5-q8_0"]
 
 # Function to read all markdown files in the folder
