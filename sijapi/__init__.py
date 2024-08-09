@@ -119,7 +119,6 @@ TTS_OUTPUT_DIR = TTS_DIR / 'outputs'
 os.makedirs(TTS_OUTPUT_DIR, exist_ok=True)
 TTS_SEGMENTS_DIR = TTS_DIR / 'segments'
 os.makedirs(TTS_SEGMENTS_DIR, exist_ok=True)
-ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
 
 # Calendar & email account
 MS365_TOGGLE = True if os.getenv("MS365_TOGGLE") == "True" else False
