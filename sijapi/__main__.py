@@ -21,7 +21,7 @@ from dotenv import load_dotenv
 from pathlib import Path
 from datetime import datetime
 import argparse
-from . import L, API, ROUTER_DIR
+from . import L, API, Db, ROUTER_DIR
 
 parser = argparse.ArgumentParser(description='Personal API.')
 parser.add_argument('--log', type=str, default='INFO', help='Set overall log level (e.g., DEBUG, INFO, WARNING)')
@@ -55,7 +55,8 @@ async def lifespan(app: FastAPI):
 
     try:
         # Initialize sync structures on all databases
-        await API.initialize_sync()
+        # await API.initialize_sync()
+        await Db.initialize_engines()
 
     except Exception as e:
         crit(f"Error during startup: {str(e)}")
@@ -99,16 +100,18 @@ class SimpleAPIKeyMiddleware(BaseHTTPMiddleware):
                 api_key_header = request.headers.get("Authorization")
                 api_key_query = request.query_params.get("api_key")
                 
-                # Debug logging for API keys
-                debug(f"API.KEYS: {API.KEYS}")
+                # Convert API.KEYS to lowercase for case-insensitive comparison
+                api_keys_lower = [key.lower() for key in API.KEYS]
+                debug(f"API.KEYS (lowercase): {api_keys_lower}")
                 
                 if api_key_header:
                     api_key_header = api_key_header.lower().split("bearer ")[-1]
                     debug(f"API key provided in header: {api_key_header}")
                 if api_key_query:
+                    api_key_query = api_key_query.lower()
                     debug(f"API key provided in query: {api_key_query}")
                 
-                if api_key_header not in API.KEYS and api_key_query not in API.KEYS:
+                if api_key_header.lower() not in api_keys_lower and api_key_query.lower() not in api_keys_lower:
                     err(f"Invalid API key provided by a requester.")
                     if api_key_header:
                         debug(f"Invalid API key in header: {api_key_header}")
@@ -119,9 +122,9 @@ class SimpleAPIKeyMiddleware(BaseHTTPMiddleware):
                         content={"detail": "Invalid or missing API key"}
                     )
                 else:
-                    if api_key_header in API.KEYS:
+                    if api_key_header.lower() in api_keys_lower:
                         debug(f"Valid API key provided in header: {api_key_header}")
-                    if api_key_query in API.KEYS:
+                    if api_key_query and api_key_query.lower() in api_keys_lower:
                         debug(f"Valid API key provided in query: {api_key_query}")
         
         response = await call_next(request)

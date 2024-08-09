@@ -18,7 +18,7 @@ from dateutil.parser import parse as dateutil_parse
 from typing import Optional, List, Union
 from sijapi import L, API, Db, TZ, GEO
 from sijapi.classes import Location
-from sijapi.utilities import haversine, assemble_journal_path
+from sijapi.utilities import haversine, assemble_journal_path, json_serial
 
 gis = APIRouter()
 logger = L.get_module_logger("gis")
@@ -122,140 +122,7 @@ async def get_last_location() -> Optional[Location]:
     
     return None
 
-async def fetch_locations(start: Union[str, int, datetime], end: Union[str, int, datetime, None] = None) -> List[Location]:
-    start_datetime = await dt(start)
-    if end is None:
-        end_datetime = await dt(start_datetime.replace(hour=23, minute=59, second=59))
-    else:
-        end_datetime = await dt(end) if not isinstance(end, datetime) else end
 
-    if start_datetime.time() == datetime.min.time() and end_datetime.time() == datetime.min.time():
-        end_datetime = await dt(end_datetime.replace(hour=23, minute=59, second=59))
-
-    debug(f"Fetching locations between {start_datetime} and {end_datetime}")
-
-    query = '''
-        SELECT id, datetime,
-        ST_X(ST_AsText(location)::geometry) AS longitude,
-        ST_Y(ST_AsText(location)::geometry) AS latitude,
-        ST_Z(ST_AsText(location)::geometry) AS elevation,
-        city, state, zip, street,
-        action, device_type, device_model, device_name, device_os
-        FROM locations
-        WHERE datetime >= $1 AND datetime <= $2
-        ORDER BY datetime DESC
-    '''
-    
-    locations = await Db.execute_read(query, start_datetime.replace(tzinfo=None), end_datetime.replace(tzinfo=None))
-    
-    debug(f"Range locations query returned: {locations}")
-
-    if not locations and (end is None or start_datetime.date() == end_datetime.date()):
-        fallback_query = '''
-            SELECT id, datetime,
-            ST_X(ST_AsText(location)::geometry) AS longitude,
-            ST_Y(ST_AsText(location)::geometry) AS latitude,
-            ST_Z(ST_AsText(location)::geometry) AS elevation,
-            city, state, zip, street,
-            action, device_type, device_model, device_name, device_os
-            FROM locations
-            WHERE datetime < $1
-            ORDER BY datetime DESC
-            LIMIT 1
-        '''
-        location_data = await Db.execute_read(fallback_query, start_datetime.replace(tzinfo=None))
-        debug(f"Fallback query returned: {location_data}")
-        if location_data:
-            locations = location_data
-
-    debug(f"Locations found: {locations}")
-
-    # Sort location_data based on the datetime field in descending order
-    sorted_locations = sorted(locations, key=lambda x: x['datetime'], reverse=True)
-
-    # Create Location objects directly from the location data
-    location_objects = [
-        Location(
-            latitude=location['latitude'],
-            longitude=location['longitude'],
-            datetime=location['datetime'],
-            elevation=location.get('elevation'),
-            city=location.get('city'),
-            state=location.get('state'),
-            zip=location.get('zip'),
-            street=location.get('street'),
-            context={
-                'action': location.get('action'),
-                'device_type': location.get('device_type'),
-                'device_model': location.get('device_model'),
-                'device_name': location.get('device_name'),
-                'device_os': location.get('device_os')
-            }
-        ) for location in sorted_locations if location['latitude'] is not None and location['longitude'] is not None
-    ]
-
-    return location_objects if location_objects else []
-
-
-async def fetch_last_location_before(datetime: datetime) -> Optional[Location]:
-    try:
-        datetime = await dt(datetime)
-        
-        debug(f"Fetching last location before {datetime}")
-    
-        query = '''
-            SELECT id, datetime,
-                ST_X(ST_AsText(location)::geometry) AS longitude,
-                ST_Y(ST_AsText(location)::geometry) AS latitude,
-                ST_Z(ST_AsText(location)::geometry) AS elevation,
-                city, state, zip, street, country,
-                action
-            FROM locations
-            WHERE datetime < $1
-            ORDER BY datetime DESC
-            LIMIT 1
-        '''
-        
-        location_data = await Db.execute_read(query, datetime.replace(tzinfo=None))
-    
-        if location_data:
-            debug(f"Last location found: {location_data[0]}")
-            return Location(**location_data[0])
-        else:
-            debug("No location found before the specified datetime")
-            return None
-    except Exception as e:
-        error(f"Error fetching last location: {str(e)}")
-        return None
-
-
-
-@gis.get("/map", response_class=HTMLResponse)
-async def generate_map_endpoint(
-    start_date: Optional[str] = Query(None),
-    end_date: Optional[str] = Query(None),
-    max_points: int = Query(32767, description="Maximum number of points to display")
-):
-    try:
-        if start_date and end_date:
-            start_date = await dt(start_date)
-            end_date = await dt(end_date)
-        else:
-            start_date, end_date = await get_date_range()
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid date format")
-
-    info(f"Generating map for {start_date} to {end_date}")
-    html_content = await generate_map(start_date, end_date, max_points)
-    return HTMLResponse(content=html_content)
-
-async def get_date_range():
-    query = "SELECT MIN(datetime) as min_date, MAX(datetime) as max_date FROM locations"
-    row = await Db.execute_read(query, table_name="locations")
-    if row and row[0]['min_date'] and row[0]['max_date']:
-        return row[0]['min_date'], row[0]['max_date']
-    else:
-        return datetime(2022, 1, 1), datetime.now()
 
 async def generate_and_save_heatmap(
     start_date: Union[str, int, datetime],
@@ -424,6 +291,114 @@ map.on(L.Draw.Event.CREATED, function (event) {
     return m.get_root().render()
 
 
+async def fetch_locations(start: Union[str, int, datetime], end: Union[str, int, datetime, None] = None) -> List[Location]:
+    start_datetime = await dt(start)
+    if end is None:
+        end_datetime = await dt(start_datetime.replace(hour=23, minute=59, second=59))
+    else:
+        end_datetime = await dt(end) if not isinstance(end, datetime) else end
+
+    if start_datetime.time() == datetime.min.time() and end_datetime.time() == datetime.min.time():
+        end_datetime = await dt(end_datetime.replace(hour=23, minute=59, second=59))
+
+    debug(f"Fetching locations between {start_datetime} and {end_datetime}")
+
+    query = '''
+        SELECT id, datetime,
+        ST_X(ST_AsText(location)::geometry) AS longitude,
+        ST_Y(ST_AsText(location)::geometry) AS latitude,
+        ST_Z(ST_AsText(location)::geometry) AS elevation,
+        city, state, zip, street,
+        action, device_type, device_model, device_name, device_os
+        FROM locations
+        WHERE datetime >= :start_datetime AND datetime <= :end_datetime
+        ORDER BY datetime DESC
+    '''
+    
+    locations = await Db.execute_read(query, start_datetime=start_datetime.replace(tzinfo=None), end_datetime=end_datetime.replace(tzinfo=None))
+    
+    debug(f"Range locations query returned: {locations}")
+
+    if not locations and (end is None or start_datetime.date() == end_datetime.date()):
+        fallback_query = '''
+            SELECT id, datetime,
+            ST_X(ST_AsText(location)::geometry) AS longitude,
+            ST_Y(ST_AsText(location)::geometry) AS latitude,
+            ST_Z(ST_AsText(location)::geometry) AS elevation,
+            city, state, zip, street,
+            action, device_type, device_model, device_name, device_os
+            FROM locations
+            WHERE datetime < :start_datetime
+            ORDER BY datetime DESC
+            LIMIT 1
+        '''
+        location_data = await Db.execute_read(fallback_query, start_datetime=start_datetime.replace(tzinfo=None))
+        debug(f"Fallback query returned: {location_data}")
+        if location_data:
+            locations = location_data
+
+    debug(f"Locations found: {locations}")
+
+    # Sort location_data based on the datetime field in descending order
+    sorted_locations = sorted(locations, key=lambda x: x['datetime'], reverse=True)
+
+    # Create Location objects directly from the location data
+    location_objects = [
+        Location(
+            latitude=location['latitude'],
+            longitude=location['longitude'],
+            datetime=location['datetime'],
+            elevation=location.get('elevation'),
+            city=location.get('city'),
+            state=location.get('state'),
+            zip=location.get('zip'),
+            street=location.get('street'),
+            context={
+                'action': location.get('action'),
+                'device_type': location.get('device_type'),
+                'device_model': location.get('device_model'),
+                'device_name': location.get('device_name'),
+                'device_os': location.get('device_os')
+            }
+        ) for location in sorted_locations if location['latitude'] is not None and location['longitude'] is not None
+    ]
+
+    return location_objects if location_objects else []
+
+    
+async def fetch_last_location_before(datetime: datetime) -> Optional[Location]:
+    try:
+        datetime = await dt(datetime)
+        
+        debug(f"Fetching last location before {datetime}")
+    
+        query = '''
+            SELECT id, datetime,
+                ST_X(ST_AsText(location)::geometry) AS longitude,
+                ST_Y(ST_AsText(location)::geometry) AS latitude,
+                ST_Z(ST_AsText(location)::geometry) AS elevation,
+                city, state, zip, street, country,
+                action
+            FROM locations
+            WHERE datetime < :datetime
+            ORDER BY datetime DESC
+            LIMIT 1
+        '''
+        
+        location_data = await Db.execute_read(query, datetime=datetime.replace(tzinfo=None))
+    
+        if location_data:
+            debug(f"Last location found: {location_data[0]}")
+            return Location(**location_data[0])
+        else:
+            debug("No location found before the specified datetime")
+            return None
+    except Exception as e:
+        error(f"Error fetching last location: {str(e)}")
+        return None
+    
+    
+
 async def post_location(location: Location):
     try:
         context = location.context or {}
@@ -435,31 +410,23 @@ async def post_location(location: Location):
         
         # Parse and localize the datetime
         localized_datetime = await dt(location.datetime)
-
+    
         query = '''
             INSERT INTO locations (
                 datetime, location, city, state, zip, street, action, device_type, device_model, device_name, device_os,
                 class_, type, name, display_name, amenity, house_number, road, quarter, neighbourhood, 
                 suburb, county, country_code, country
             )
-            VALUES ($1, ST_SetSRID(ST_MakePoint($2, $3, $4), 4326), $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 
-                    $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)
+            VALUES (:datetime, ST_SetSRID(ST_MakePoint(:longitude, :latitude, :elevation), 4326), :city, :state, :zip, 
+                    :street, :action, :device_type, :device_model, :device_name, :device_os, :class_, :type, :name, 
+                    :display_name, :amenity, :house_number, :road, :quarter, :neighbourhood, :suburb, :county, 
+                    :country_code, :country)
         '''
         
-        await Db.execute_write(
-            query,
-            localized_datetime, location.longitude, location.latitude, location.elevation, location.city, location.state, 
-            location.zip, location.street, action, device_type, device_model, device_name, device_os, 
-            location.class_, location.type, location.name, location.display_name, 
-            location.amenity, location.house_number, location.road, location.quarter, location.neighbourhood, 
-            location.suburb, location.county, location.country_code, location.country
-        )
-            
-        info(f"Successfully posted location: {location.latitude}, {location.longitude}, {location.elevation} on {localized_datetime}")
-        return {
+        params = {
             'datetime': localized_datetime,
-            'latitude': location.latitude,
             'longitude': location.longitude,
+            'latitude': location.latitude,
             'elevation': location.elevation,
             'city': location.city,
             'state': location.state,
@@ -484,12 +451,34 @@ async def post_location(location: Location):
             'country_code': location.country_code,
             'country': location.country
         }
+        
+        await Db.execute_write(query, **params)
+            
+        info(f"Successfully posted location: {location.latitude}, {location.longitude}, {location.elevation} on {localized_datetime}")
+        
+        # Create a serializable version of params for the return value
+        serializable_params = {
+            k: v.isoformat() if isinstance(v, datetime) else v
+            for k, v in params.items()
+        }
+        return serializable_params
     except Exception as e:
         err(f"Error posting location {e}")
         err(traceback.format_exc())
         return None
 
 
+
+async def get_date_range():
+    query = "SELECT MIN(datetime) as min_date, MAX(datetime) as max_date FROM locations"
+    row = await Db.execute_read(query)
+    if row and row[0]['min_date'] and row[0]['max_date']:
+        return row[0]['min_date'], row[0]['max_date']
+    else:
+        return datetime(2022, 1, 1), datetime.now()
+
+
+    
 @gis.post("/locate")
 async def post_locate_endpoint(locations: Union[Location, List[Location]]):
     if isinstance(locations, Location):
@@ -532,8 +521,8 @@ async def post_locate_endpoint(locations: Union[Location, List[Location]]):
 
     return {"message": "Locations and weather updated", "results": responses}
 
-
-
+    
+    
 @gis.get("/locate", response_model=Location)
 async def get_last_location_endpoint() -> JSONResponse:
     this_location = await get_last_location()
@@ -544,8 +533,8 @@ async def get_last_location_endpoint() -> JSONResponse:
     else:
         raise HTTPException(status_code=404, detail="No location found before the specified datetime")
 
-
-
+    
+    
 @gis.get("/locate/{datetime_str}", response_model=List[Location])
 async def get_locate(datetime_str: str, all: bool = False):
     try:
@@ -559,3 +548,23 @@ async def get_locate(datetime_str: str, all: bool = False):
         raise HTTPException(status_code=404, detail="No nearby data found for this date and time")
         
     return locations if all else [locations[0]]
+
+
+@gis.get("/map", response_class=HTMLResponse)
+async def generate_map_endpoint(
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None),
+    max_points: int = Query(32767, description="Maximum number of points to display")
+):
+    try:
+        if start_date and end_date:
+            start_date = await dt(start_date)
+            end_date = await dt(end_date)
+        else:
+            start_date, end_date = await get_date_range()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format")
+
+    info(f"Generating map for {start_date} to {end_date}")
+    html_content = await generate_map(start_date, end_date, max_points)
+    return HTMLResponse(content=html_content)
