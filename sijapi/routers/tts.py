@@ -244,7 +244,7 @@ async def generate_speech(
             warn(f"No file exists at {audio_file_path}")
 
         if podcast:
-            podcast_path = Path(Dir.PODCAST) / Path(audio_file_path).name
+            podcast_path = Dir.PODCAST / audio_file_path
             
             shutil.copy(audio_file_path, podcast_path)
             if podcast_path.exists():
