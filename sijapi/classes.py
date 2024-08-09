@@ -361,9 +361,11 @@ class APIConfig(BaseModel):
                 fields[key] = (bool, value)
             else:
                 raise ValueError(f"Invalid value for {key}: {value}. Must be 'on', 'off', True, or False.")
-
+    
         DynamicConfig = create_model(model_name, **fields)
-        return DynamicConfig(**data)
+        instance_data = {k: (v.lower() == 'on' if isinstance(v, str) else v) for k, v in data.items()}
+        return DynamicConfig(**instance_data)
+
 
     @classmethod
     def _resolve_path(cls, path: Union[str, Path], default_dir: str) -> Path:
