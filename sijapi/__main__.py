@@ -86,6 +86,7 @@ app.add_middleware(
     allow_headers=['*'],
 )
 
+
 class SimpleAPIKeyMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         client_ip = ipaddress.ip_address(request.client.host)
@@ -97,16 +98,35 @@ class SimpleAPIKeyMiddleware(BaseHTTPMiddleware):
             if not any(client_ip in subnet for subnet in trusted_subnets):
                 api_key_header = request.headers.get("Authorization")
                 api_key_query = request.query_params.get("api_key")
+                
+                # Debug logging for API keys
+                debug(f"API.KEYS: {API.KEYS}")
+                
                 if api_key_header:
                     api_key_header = api_key_header.lower().split("bearer ")[-1]
+                    debug(f"API key provided in header: {api_key_header}")
+                if api_key_query:
+                    debug(f"API key provided in query: {api_key_query}")
+                
                 if api_key_header not in API.KEYS and api_key_query not in API.KEYS:
                     err(f"Invalid API key provided by a requester.")
+                    if api_key_header:
+                        debug(f"Invalid API key in header: {api_key_header}")
+                    if api_key_query:
+                        debug(f"Invalid API key in query: {api_key_query}")
                     return JSONResponse(
                         status_code=401,
                         content={"detail": "Invalid or missing API key"}
                     )
+                else:
+                    if api_key_header in API.KEYS:
+                        debug(f"Valid API key provided in header: {api_key_header}")
+                    if api_key_query in API.KEYS:
+                        debug(f"Valid API key provided in query: {api_key_query}")
+        
         response = await call_next(request)
         return response
+
 
 # Add the middleware to your FastAPI app
 app.add_middleware(SimpleAPIKeyMiddleware)

@@ -259,6 +259,10 @@ class DirConfig:
 
 
 class Database:
+    @classmethod
+    def load(cls, config_name: str):
+        return cls(config_name)
+    
     def __init__(self, config_path: str):
         self.config = self.load_config(config_path)
         self.pool_connections = {}

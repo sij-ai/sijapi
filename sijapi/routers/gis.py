@@ -16,7 +16,7 @@ from folium.plugins import Fullscreen, MiniMap, MousePosition, Geocoder, Draw, M
 from zoneinfo import ZoneInfo
 from dateutil.parser import parse as dateutil_parse
 from typing import Optional, List, Union
-from sijapi import L, API, TZ, GEO
+from sijapi import L, API, Db, TZ, GEO
 from sijapi.classes import Location
 from sijapi.utilities import haversine, assemble_journal_path
 
@@ -146,7 +146,7 @@ async def fetch_locations(start: Union[str, int, datetime], end: Union[str, int,
         ORDER BY datetime DESC
     '''
     
-    locations = await API.execute_read_query(query, start_datetime.replace(tzinfo=None), end_datetime.replace(tzinfo=None), table_name="locations")
+    locations = await Db.execute_read(query, start_datetime.replace(tzinfo=None), end_datetime.replace(tzinfo=None))
     
     debug(f"Range locations query returned: {locations}")
 
@@ -163,7 +163,7 @@ async def fetch_locations(start: Union[str, int, datetime], end: Union[str, int,
             ORDER BY datetime DESC
             LIMIT 1
         '''
-        location_data = await API.execute_read_query(fallback_query, start_datetime.replace(tzinfo=None), table_name="locations")
+        location_data = await Db.execute_read(fallback_query, start_datetime.replace(tzinfo=None))
         debug(f"Fallback query returned: {location_data}")
         if location_data:
             locations = location_data
@@ -196,32 +196,39 @@ async def fetch_locations(start: Union[str, int, datetime], end: Union[str, int,
 
     return location_objects if location_objects else []
 
+
 async def fetch_last_location_before(datetime: datetime) -> Optional[Location]:
-    datetime = await dt(datetime)
+    try:
+        datetime = await dt(datetime)
+        
+        debug(f"Fetching last location before {datetime}")
     
-    debug(f"Fetching last location before {datetime}")
-
-    query = '''
-        SELECT id, datetime,
-            ST_X(ST_AsText(location)::geometry) AS longitude,
-            ST_Y(ST_AsText(location)::geometry) AS latitude,
-            ST_Z(ST_AsText(location)::geometry) AS elevation,
-            city, state, zip, street, country,
-            action
-        FROM locations
-        WHERE datetime < $1
-        ORDER BY datetime DESC
-        LIMIT 1
-    '''
+        query = '''
+            SELECT id, datetime,
+                ST_X(ST_AsText(location)::geometry) AS longitude,
+                ST_Y(ST_AsText(location)::geometry) AS latitude,
+                ST_Z(ST_AsText(location)::geometry) AS elevation,
+                city, state, zip, street, country,
+                action
+            FROM locations
+            WHERE datetime < $1
+            ORDER BY datetime DESC
+            LIMIT 1
+        '''
+        
+        location_data = await Db.execute_read(query, datetime.replace(tzinfo=None))
     
-    location_data = await API.execute_read_query(query, datetime.replace(tzinfo=None), table_name="locations")
-
-    if location_data:
-        debug(f"Last location found: {location_data[0]}")
-        return Location(**location_data[0])
-    else:
-        debug("No location found before the specified datetime")
+        if location_data:
+            debug(f"Last location found: {location_data[0]}")
+            return Location(**location_data[0])
+        else:
+            debug("No location found before the specified datetime")
+            return None
+    except Exception as e:
+        error(f"Error fetching last location: {str(e)}")
         return None
+
+
 
 @gis.get("/map", response_class=HTMLResponse)
 async def generate_map_endpoint(
@@ -244,7 +251,7 @@ async def generate_map_endpoint(
 
 async def get_date_range():
     query = "SELECT MIN(datetime) as min_date, MAX(datetime) as max_date FROM locations"
-    row = await API.execute_read_query(query, table_name="locations")
+    row = await Db.execute_read(query, table_name="locations")
     if row and row[0]['min_date'] and row[0]['max_date']:
         return row[0]['min_date'], row[0]['max_date']
     else:
@@ -416,6 +423,7 @@ map.on(L.Draw.Event.CREATED, function (event) {
 
     return m.get_root().render()
 
+
 async def post_location(location: Location):
     try:
         context = location.context or {}
@@ -438,14 +446,13 @@ async def post_location(location: Location):
                     $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)
         '''
         
-        await API.execute_write_query(
+        await Db.execute_write(
             query,
             localized_datetime, location.longitude, location.latitude, location.elevation, location.city, location.state, 
             location.zip, location.street, action, device_type, device_model, device_name, device_os, 
             location.class_, location.type, location.name, location.display_name, 
             location.amenity, location.house_number, location.road, location.quarter, location.neighbourhood, 
-            location.suburb, location.county, location.country_code, location.country,
-            table_name="locations"
+            location.suburb, location.county, location.country_code, location.country
         )
             
         info(f"Successfully posted location: {location.latitude}, {location.longitude}, {location.elevation} on {localized_datetime}")

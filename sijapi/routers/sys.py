@@ -8,7 +8,7 @@ import httpx
 import socket
 from fastapi import APIRouter
 from tailscale import Tailscale
-from sijapi import L, API, TS_ID, SUBNET_BROADCAST
+from sijapi import L, API, TS_ID
 
 sys = APIRouter(tags=["public", "trusted", "private"])
 logger = L.get_module_logger("health")
@@ -36,7 +36,7 @@ def get_local_ip():
     """Get the server's local IP address."""
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
-        s.connect((f'{SUBNET_BROADCAST}', 1))
+        s.connect((f'{API.SUBNET_BROADCAST}', 1))
         IP = s.getsockname()[0]
     except Exception:
         IP = '127.0.0.1'
