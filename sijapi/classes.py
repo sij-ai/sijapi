@@ -258,28 +258,36 @@ class DirConfig(BaseModel):
         elif isinstance(data, list):
             return [self.resolve_placeholders(v, secrets_data) for v in data]
         elif isinstance(data, str):
-            return self.resolve_string_placeholders(data, secrets_data, self.HOME)
+            return self.resolve_string_placeholders(data, secrets_data)
         else:
             return data
     
-    def resolve_string_placeholders(self, value: str, secrets_data: Dict[str, Any], home_dir: Path) -> Any:
+    def resolve_string_placeholders(self, value: str, secrets_data: Dict[str, Any]) -> Any:
         pattern = r'\{\{\s*([^}]+)\s*\}\}'
         matches = re.findall(pattern, value)
     
         for match in matches:
             parts = match.split('.')
             if len(parts) == 1:  # Internal reference
-                replacement = str(home_dir / parts[0].lower())
+                replacement = getattr(self, parts[0], str(Path(self.HOME) / parts[0].lower()))
             elif len(parts) == 2 and parts[0] == 'Dir':
-                replacement = str(home_dir / parts[1].lower())
+                replacement = getattr(self, parts[1], str(Path(self.HOME) / parts[1].lower()))
             elif len(parts) == 2 and parts[0] == 'ENV':
                 replacement = os.getenv(parts[1], '')
+            elif len(parts) == 2 and parts[0] == 'SECRET':
+                replacement = secrets_data.get(parts[1].strip(), '')
+                if not replacement:
+                    warn(f"Secret '{parts[1].strip()}' not found in secrets file")
             else:
                 replacement = value
     
-            value = value.replace('{{' + match + '}}', replacement)
+            value = value.replace('{{' + match + '}}', str(replacement))
     
-        return Path(value).expanduser() if value.startswith(('/', '~')) else value
+        # Convert to Path if it looks like a file path
+        if isinstance(value, str) and (value.startswith(('/', '~')) or (':' in value and value[1] == ':')):
+            return Path(value).expanduser()
+        return value
+
     
     @classmethod
     def create_dynamic_model(cls, **data):
