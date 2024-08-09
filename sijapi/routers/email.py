@@ -22,7 +22,7 @@ import ssl
 import yaml
 from typing import List, Dict, Optional, Set
 from datetime import datetime as dt_datetime
-from sijapi import L, PODCAST_DIR, DEFAULT_VOICE, EMAIL_CONFIG, EMAIL_LOGS
+from sijapi import L, Dir, EMAIL_CONFIG, EMAIL_LOGS
 from sijapi.routers import gis, img, tts, llm
 from sijapi.utilities import clean_text, assemble_journal_path, extract_text, prefix_lines
 from sijapi.classes import EmailAccount, IMAPConfig, SMTPConfig, IncomingEmail, EmailContact, AutoResponder
@@ -205,7 +205,7 @@ async def summarize_single_email(this_email: IncomingEmail, podcast: bool = Fals
         attachment_texts = await extract_attachments(this_email.attachments)
         email_content += "\n—--\n" + "\n—--\n".join([f"Attachment: {text}" for text in attachment_texts])
     summary = await llm.summarize_text(email_content)
-    await tts.local_tts(text_content = summary, speed = 1.1, voice = DEFAULT_VOICE, podcast = podcast, output_path = tts_path)
+    await tts.local_tts(text_content = summary, speed = 1.1, voice = Tts.xtts.default, podcast = podcast, output_path = tts_path)
     md_summary = f'```ad.summary\n'
     md_summary += f'title: {this_email.subject}\n'
     md_summary += f'{summary}\n'

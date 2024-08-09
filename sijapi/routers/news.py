@@ -18,7 +18,7 @@ from markdownify import markdownify as md
 from better_profanity import profanity
 from fastapi import APIRouter, BackgroundTasks, UploadFile, Form, HTTPException, Query, Path as FastAPIPath
 from pathlib import Path
-from sijapi import L, News, Archivist, OBSIDIAN_VAULT_DIR, OBSIDIAN_RESOURCES_DIR, DEFAULT_11L_VOICE, DEFAULT_VOICE
+from sijapi import L, News, Archivist, OBSIDIAN_VAULT_DIR, OBSIDIAN_RESOURCES_DIR
 from sijapi.utilities import html_to_markdown, download_file, sanitize_filename, assemble_journal_path, assemble_archive_path, contains_profanity, is_ad_or_tracker
 from sijapi.routers import gis, llm, tts, note
 
@@ -37,7 +37,7 @@ async def clip_post(
     url: str = Form(...),
     title: Optional[str] = Form(None),
     tts: str = Form('summary'),
-    voice: str = Form(DEFAULT_VOICE),
+    voice: str = Form(None),
 ):
     result = await process_and_save_article(bg_tasks, url, title, tts, voice)
     return {"message": "Clip saved successfully", "result": result}
@@ -46,7 +46,7 @@ async def clip_post(
 async def clip_get(
     bg_tasks: BackgroundTasks,
     url: str,
-    voice: str = Query(DEFAULT_VOICE)
+    voice: str = Query(None)
 ):
     result = await process_and_save_article(bg_tasks, url, None, tts, voice)
     return {"message": "Clip saved successfully", "result": result}
@@ -124,7 +124,7 @@ async def process_news_site(site, bg_tasks: BackgroundTasks):
                 earliest_date, 
                 bg_tasks, 
                 tts_mode=site.tts if hasattr(site, 'tts') else "off",
-                voice=site.voice if hasattr(site, 'voice') else DEFAULT_11L_VOICE
+                voice=site.voice if hasattr(site, 'voice') else Tts.elevenlabs.default
             ))
             tasks.append(task)
         
@@ -136,7 +136,7 @@ async def process_news_site(site, bg_tasks: BackgroundTasks):
         err(f"Error processing {site.name}: {str(e)}")
 
 
-async def download_and_save_article(article, site_name, earliest_date, bg_tasks: BackgroundTasks, tts_mode: str = "off", voice: str = DEFAULT_11L_VOICE):
+async def download_and_save_article(article, site_name, earliest_date, bg_tasks: BackgroundTasks, tts_mode: str = "off", voice: str = Tts.elevenlabs.default):
     try:
         url = article.url
         parsed_article = await fetch_and_parse_article(url)
@@ -156,7 +156,7 @@ async def process_and_save_article(
     url: str,
     title: Optional[str] = None,
     tts_mode: str = "summary",
-    voice: str = DEFAULT_VOICE,
+    voice: str = Tts.elevenlabs.default,
     site_name: Optional[str] = None
 ) -> str:
     

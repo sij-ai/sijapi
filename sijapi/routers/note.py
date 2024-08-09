@@ -17,7 +17,7 @@ from dateutil.parser import parse as dateutil_parse
 from fastapi import HTTPException, status
 from pathlib import Path
 from fastapi import APIRouter, Query, HTTPException
-from sijapi import API, L, OBSIDIAN_VAULT_DIR, OBSIDIAN_RESOURCES_DIR, OBSIDIAN_BANNER_SCENE, DEFAULT_11L_VOICE, DEFAULT_VOICE, GEO
+from sijapi import API, L, OBSIDIAN_VAULT_DIR, OBSIDIAN_RESOURCES_DIR, OBSIDIAN_BANNER_SCENE, GEO
 from sijapi.routers import asr, cal, gis, img, llm, serve, timing, tts, weather
 from sijapi.utilities import assemble_journal_path, convert_to_12_hour_format, sanitize_filename, convert_degrees_to_cardinal, check_file_name, HOURLY_COLUMNS_MAPPING
 from sijapi.classes import Location
@@ -122,7 +122,7 @@ async def process_document(
     document: File,
     title: Optional[str] = None,
     tts_mode: str = "summary",
-    voice: str = DEFAULT_VOICE
+    voice: str = None,
 ):
     timestamp = dt_datetime.now().strftime('%b %d, %Y at %H:%M')
 

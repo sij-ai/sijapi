@@ -488,10 +488,10 @@ def copy_to_podcast_dir(file_path):
         # Extract the file name from the file path
         file_name = Path(file_path).name
         
-        # Construct the destination path in the PODCAST_DIR
+        # Construct the destination path in the podcast folder
         destination_path = Path(Dir.PODCAST) / file_name
         
-        # Copy the file to the PODCAST_DIR
+        # Copy the file to the podcast folder
         shutil.copy(file_path, destination_path)
         
         print(f"File copied successfully to {destination_path}")
