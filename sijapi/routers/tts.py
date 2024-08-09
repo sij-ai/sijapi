@@ -225,8 +225,8 @@ async def determine_voice_id(voice_name: str) -> str:
     
     debug(f"Requested voice not among the voices specified in config/tts.yaml. Checking with ElevenLabs API.")
     url = "https://api.elevenlabs.io/v1/voices"
-    headers = {"xi-api-key": Tts.elevenlabs.api_key}
-    debug(f"Using api_key: {Tts.elevenlabs.api_key}")
+    headers = {"xi-api-key": Tts.elevenlabs.key}
+    debug(f"Using key: {Tts.elevenlabs.key}")
     async with httpx.AsyncClient() as client:
         try:
             response = await client.get(url, headers=headers)
