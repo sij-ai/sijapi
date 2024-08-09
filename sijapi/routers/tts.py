@@ -213,17 +213,22 @@ async def get_model(voice: str = None, voice_file: UploadFile = None):
 
 async def determine_voice_id(voice_name: str) -> str:
     debug(f"Searching for voice id for {voice_name}")
-    debug(f"Tts.elevenlabs.voices: {Tts.elevenlabs.voices}")
+    debug(f"Tts.elevenlabs: {Tts.elevenlabs}")
     
-    # Check if the voice is in the configured voices
-    if voice_name and Tts.has_key(f'elevenlabs.voices.{voice_name}'):
-        voice_id = Tts.get_value(f'elevenlabs.voices.{voice_name}')
-        debug(f"Found voice ID in config - {voice_id}")
-        return voice_id
+    # Check if the voice is specified in the configuration
+    if voice_name is None:
+        voice_name = Tts.elevenlabs.voice
     
-    debug(f"Requested voice not among the voices specified in config/tts.yaml. Checking with ElevenLabs API using api_key: {Tts.elevenlabs.key}.")
+    # Use the API key from the configuration
+    api_key = Tts.elevenlabs.api_key or Tts.SECRETS.ELEVENLABS
+    
+    if not api_key:
+        err("No ElevenLabs API key found in configuration")
+        raise ValueError("ElevenLabs API key is missing")
+    
+    # If we don't have a voice ID system in the config, we'll need to fetch it from the API
     url = "https://api.elevenlabs.io/v1/voices"
-    headers = {"xi-api-key": Tts.elevenlabs.key}
+    headers = {"xi-api-key": api_key}
     async with httpx.AsyncClient() as client:
         try:
             response = await client.get(url, headers=headers)
@@ -231,7 +236,7 @@ async def determine_voice_id(voice_name: str) -> str:
             if response.status_code == 200:
                 voices_data = response.json().get("voices", [])
                 for voice in voices_data:
-                    if voice_name == voice["voice_id"] or (voice_name and voice_name.lower() == voice["name"].lower()):
+                    if voice_name.lower() == voice["name"].lower():
                         debug(f"Found voice ID from API - {voice['voice_id']}")
                         return voice["voice_id"]
             else:
@@ -240,32 +245,36 @@ async def determine_voice_id(voice_name: str) -> str:
         except Exception as e:
             err(f"Error determining voice ID: {e}")
     
-    warn(f"Voice '{voice_name}' not found; using the default specified in config/tts.yaml: {Tts.elevenlabs.default}")
-    if Tts.has_key(f'elevenlabs.voices.{Tts.elevenlabs.default}'):
-        return Tts.get_value(f'elevenlabs.voices.{Tts.elevenlabs.default}')
+    warn(f"Voice '{voice_name}' not found. Using the first available voice.")
+    if voices_data:
+        return voices_data[0]["voice_id"]
     else:
-        err(f"Default voice '{Tts.elevenlabs.default}' not found in configuration. Using first available voice.")
-        first_voice = next(iter(vars(Tts.elevenlabs.voices)))
-        return Tts.get_value(f'elevenlabs.voices.{first_voice}')
+        raise ValueError("No voices available from ElevenLabs API")
 
 
 
-async def elevenlabs_tts(model: str, input_text: str, voice: str, title: str = None, output_dir: str = None):
+
+async def elevenlabs_tts(model: str, input_text: str, voice: Optional[str], title: str = None, output_dir: str = None):
     # Debug logging
     debug(f"API.EXTENSIONS: {API.EXTENSIONS}")
     debug(f"API.EXTENSIONS.elevenlabs: {getattr(API.EXTENSIONS, 'elevenlabs', None)}")
     debug(f"Tts config: {Tts}")
     
-    if getattr(API.EXTENSIONS, 'elevenlabs', False):
+    
+    if API.EXTENSIONS.elevenlabs:
         voice_id = await determine_voice_id(voice)
+        api_key = Tts.elevenlabs.api_key or Tts.SECRETS.ELEVENLABS
+        
+        if not api_key:
+            err("No ElevenLabs API key found in configuration")
+            raise ValueError("ElevenLabs API key is missing")
     
         url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
         payload = {
             "text": input_text,
             "model_id": model
         }
-        # Make sure this is the correct way to access the API key
-        headers = {"Content-Type": "application/json", "xi-api-key": Tts.elevenlabs.key}
+        headers = {"Content-Type": "application/json", "xi-api-key": api_key}
         try:
             async with httpx.AsyncClient(timeout=httpx.Timeout(300.0)) as client:
                 response = await client.post(url, json=payload, headers=headers)
