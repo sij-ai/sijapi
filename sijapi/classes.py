@@ -130,6 +130,7 @@ class Configuration(BaseModel):
             err(f"Error loading configuration: {str(e)}")
             raise
     
+    
     @classmethod
     def _resolve_path(cls, path: Union[str, Path], default_dir: str) -> Path:
         base_path = Path(__file__).parent.parent
@@ -139,6 +140,7 @@ class Configuration(BaseModel):
         elif not path.is_absolute():
             path = base_path / path
         return path
+    
     
     def resolve_placeholders(self, data: Any, secrets_data: Dict[str, Any]) -> Any:
         if isinstance(data, dict):
@@ -153,9 +155,10 @@ class Configuration(BaseModel):
         elif isinstance(data, list):
             return [self.resolve_placeholders(v, secrets_data) for v in data]
         elif isinstance(data, str):
-            return self.resolve_string_placeholders(data, secrets_data, self.HOME)
+            return self.resolve_string_placeholders(data, secrets_data, Path(self.HOME))
         else:
             return data
+    
     
     def resolve_string_placeholders(self, value: str, secrets_data: Dict[str, Any], home_dir: Path) -> Any:
         pattern = r'\{\{\s*([^}]+)\s*\}\}'
@@ -182,7 +185,8 @@ class Configuration(BaseModel):
         if isinstance(value, str) and (value.startswith(('/', '~')) or (':' in value and value[1] == ':')):
             return Path(value).expanduser()
         return value
-    
+
+
     @classmethod
     def create_dynamic_model(cls, **data):
         for key, value in data.items():
@@ -198,12 +202,12 @@ class Configuration(BaseModel):
         )
         return DynamicModel(**data)
     
+    
     class Config:
         extra = "allow"
         arbitrary_types_allowed = True
     
     
-
 
 class DirConfig(BaseModel):
     HOME: Path = Path.home()
