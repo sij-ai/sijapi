@@ -49,7 +49,7 @@ async def list_wav_files():
 async def list_11l_voices():
     formatted_list = ""
     url = "https://api.elevenlabs.io/v1/voices"
-    headers = {"xi-api-key": Tts.elevenlabs.api_key}
+    headers = {"xi-api-key": Tts.elevenlabs.key}
     async with httpx.AsyncClient() as client:
         try:
             response = await client.get(url, headers=headers)
@@ -220,9 +220,9 @@ async def determine_voice_id(voice_name: str) -> str:
         debug(f"Found voice ID in config - {voice_id}")
         return voice_id
     
-    debug(f"Requested voice not among the voices specified in config/tts.yaml. Checking with ElevenLabs API using api_key: {Tts.elevenlabs.api_key}.")
+    debug(f"Requested voice not among the voices specified in config/tts.yaml. Checking with ElevenLabs API using api_key: {Tts.elevenlabs.key}.")
     url = "https://api.elevenlabs.io/v1/voices"
-    headers = {"xi-api-key": Tts.elevenlabs.api_key}
+    headers = {"xi-api-key": Tts.elevenlabs.key}
     async with httpx.AsyncClient() as client:
         try:
             response = await client.get(url, headers=headers)
@@ -263,7 +263,7 @@ async def elevenlabs_tts(model: str, input_text: str, voice: str, title: str = N
             "model_id": model
         }
         # Make sure this is the correct way to access the API key
-        headers = {"Content-Type": "application/json", "xi-api-key": Tts.elevenlabs.api_key}
+        headers = {"Content-Type": "application/json", "xi-api-key": Tts.elevenlabs.key}
         try:
             async with httpx.AsyncClient(timeout=httpx.Timeout(300.0)) as client:
                 response = await client.post(url, json=payload, headers=headers)
@@ -447,7 +447,7 @@ async def get_audio_stream(model: str, input_text: str, voice: str):
         "text": input_text,
         "model_id": "eleven_turbo_v2"
     }
-    headers = {"Content-Type": "application/json", "xi-api-key": Tts.elevenlabs.api_key}
+    headers = {"Content-Type": "application/json", "xi-api-key": Tts.elevenlabs.key}
     response = requests.post(url, json=payload, headers=headers)
 
     if response.status_code == 200:

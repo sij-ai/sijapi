@@ -21,4 +21,4 @@ elevenlabs:
     Attenborough: "b42GBisbu9r5m5n6pHF7"
     Victoria: "7UBkHqZOtFRLq6cSMQQg"
 
-  api_key: "{{ SECRET.ELEVENLABS_API_KEY }}"
+  api_key: "{{ SECRET.ELEVENLABS }}"
