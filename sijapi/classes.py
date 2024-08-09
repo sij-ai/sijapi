@@ -83,6 +83,7 @@ TS_ID = os.environ.get('TS_ID')
 T = TypeVar('T', bound='Configuration')
 
 
+
 class Configuration(BaseModel):
     HOME: Path = Path.home()
     _dir_config: Optional['Configuration'] = None
@@ -275,6 +276,7 @@ class DirConfig(BaseModel):
 
     class Config:
         arbitrary_types_allowed = True
+
 
 
 
