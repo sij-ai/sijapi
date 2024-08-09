@@ -99,6 +99,7 @@ EXTENSIONS:
   courtlistener: off
   macnotify: on
   shellfish: on
+  url_shortener: off
   
 TZ: 'America/Los_Angeles'
 

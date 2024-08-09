@@ -420,97 +420,95 @@ if API.EXTENSIONS.courtlistener:
             await cl_download_file(download_url, target_path, session)
             debug(f"Downloaded {file_name} to {target_path}")
 
-
-@serve.get("/s", response_class=HTMLResponse)
-async def shortener_form(request: Request):
-    return templates.TemplateResponse("shortener.html", {"request": request})
-
-
-@serve.post("/s")
-async def create_short_url(request: Request, long_url: str = Form(...), custom_code: Optional[str] = Form(None)):
-
-    if custom_code:
-        if len(custom_code) != 3 or not custom_code.isalnum():
-            return templates.TemplateResponse("shortener.html", {"request": request, "error": "Custom code must be 3 alphanumeric characters"})
+if API.EXTENSIONS.url_shortener: 
+    @serve.get("/s", response_class=HTMLResponse)
+    async def shortener_form(request: Request):
+        return templates.TemplateResponse("shortener.html", {"request": request})
+    
+    
+    @serve.post("/s")
+    async def create_short_url(request: Request, long_url: str = Form(...), custom_code: Optional[str] = Form(None)):
+    
+        if custom_code:
+            if len(custom_code) != 3 or not custom_code.isalnum():
+                return templates.TemplateResponse("shortener.html", {"request": request, "error": "Custom code must be 3 alphanumeric characters"})
+            
+            existing = await API.execute_read_query('SELECT 1 FROM short_urls WHERE short_code = $1', custom_code, table_name="short_urls")
+            if existing:
+                return templates.TemplateResponse("shortener.html", {"request": request, "error": "Custom code already in use"})
+            
+            short_code = custom_code
+        else:
+            chars = string.ascii_letters + string.digits
+            while True:
+                debug(f"FOUND THE ISSUE")
+                short_code = ''.join(random.choice(chars) for _ in range(3))
+                existing = await API.execute_read_query('SELECT 1 FROM short_urls WHERE short_code = $1', short_code, table_name="short_urls")
+                if not existing:
+                    break
+    
+        await API.execute_write_query(
+            'INSERT INTO short_urls (short_code, long_url) VALUES ($1, $2)',
+            short_code, long_url,
+            table_name="short_urls"
+        )
+    
+        short_url = f"https://sij.ai/{short_code}"
+        return templates.TemplateResponse("shortener.html", {"request": request, "short_url": short_url})
+    
+    
+    @serve.get("/{short_code}")
+    async def redirect_short_url(short_code: str):
+        results = await API.execute_read_query(
+            'SELECT long_url FROM short_urls WHERE short_code = $1',
+            short_code,
+            table_name="short_urls"
+        )
         
-        existing = await API.execute_read_query('SELECT 1 FROM short_urls WHERE short_code = $1', custom_code, table_name="short_urls")
-        if existing:
-            return templates.TemplateResponse("shortener.html", {"request": request, "error": "Custom code already in use"})
+        if not results:
+            raise HTTPException(status_code=404, detail="Short URL not found")
         
-        short_code = custom_code
-    else:
-        chars = string.ascii_letters + string.digits
-        while True:
-            debug(f"FOUND THE ISSUE")
-            short_code = ''.join(random.choice(chars) for _ in range(3))
-            existing = await API.execute_read_query('SELECT 1 FROM short_urls WHERE short_code = $1', short_code, table_name="short_urls")
-            if not existing:
-                break
-
-    await API.execute_write_query(
-        'INSERT INTO short_urls (short_code, long_url) VALUES ($1, $2)',
-        short_code, long_url,
-        table_name="short_urls"
-    )
-
-    short_url = f"https://sij.ai/{short_code}"
-    return templates.TemplateResponse("shortener.html", {"request": request, "short_url": short_url})
-
-
-@serve.get("/{short_code}")
-async def redirect_short_url(short_code: str):
-    results = await API.execute_read_query(
-        'SELECT long_url FROM short_urls WHERE short_code = $1',
-        short_code,
-        table_name="short_urls"
-    )
+        long_url = results[0].get('long_url')
+        
+        if not long_url:
+            raise HTTPException(status_code=404, detail="Long URL not found")
+        
+        # Increment click count (you may want to do this asynchronously)
+        await API.execute_write_query(
+            'INSERT INTO click_logs (short_code, clicked_at) VALUES ($1, $2)',
+            short_code, datetime.now(),
+            table_name="click_logs"
+        )
+        
+        return RedirectResponse(url=long_url)
     
-    if not results:
-        raise HTTPException(status_code=404, detail="Short URL not found")
     
-    long_url = results[0].get('long_url')
-    
-    if not long_url:
-        raise HTTPException(status_code=404, detail="Long URL not found")
-    
-    # Increment click count (you may want to do this asynchronously)
-    await API.execute_write_query(
-        'INSERT INTO click_logs (short_code, clicked_at) VALUES ($1, $2)',
-        short_code, datetime.now(),
-        table_name="click_logs"
-    )
-    
-    return RedirectResponse(url=long_url)
-
-
-@serve.get("/analytics/{short_code}")
-async def get_analytics(short_code: str):
-    url_info = await API.execute_read_query(
-        'SELECT long_url, created_at FROM short_urls WHERE short_code = $1',
-        short_code,
-        table_name="short_urls"
-    )
-    if not url_info:
-        raise HTTPException(status_code=404, detail="Short URL not found")
-    
-    click_count = await API.execute_read_query(
-        'SELECT COUNT(*) FROM click_logs WHERE short_code = $1',
-        short_code,
-        table_name="click_logs"
-    )
-    
-    clicks = await API.execute_read_query(
-        'SELECT clicked_at, ip_address, user_agent FROM click_logs WHERE short_code = $1 ORDER BY clicked_at DESC LIMIT 100',
-        short_code,
-        table_name="click_logs"
-    )
-    
-    return {
-        "short_code": short_code,
-        "long_url": url_info['long_url'],
-        "created_at": url_info['created_at'],
-        "total_clicks": click_count,
-        "recent_clicks": [dict(click) for click in clicks]
-    }
-
-
+    @serve.get("/analytics/{short_code}")
+    async def get_analytics(short_code: str):
+        url_info = await API.execute_read_query(
+            'SELECT long_url, created_at FROM short_urls WHERE short_code = $1',
+            short_code,
+            table_name="short_urls"
+        )
+        if not url_info:
+            raise HTTPException(status_code=404, detail="Short URL not found")
+        
+        click_count = await API.execute_read_query(
+            'SELECT COUNT(*) FROM click_logs WHERE short_code = $1',
+            short_code,
+            table_name="click_logs"
+        )
+        
+        clicks = await API.execute_read_query(
+            'SELECT clicked_at, ip_address, user_agent FROM click_logs WHERE short_code = $1 ORDER BY clicked_at DESC LIMIT 100',
+            short_code,
+            table_name="click_logs"
+        )
+        
+        return {
+            "short_code": short_code,
+            "long_url": url_info['long_url'],
+            "created_at": url_info['created_at'],
+            "total_clicks": click_count,
+            "recent_clicks": [dict(click) for click in clicks]
+        }
