@@ -87,7 +87,7 @@ T = TypeVar('T', bound='Configuration')
 class Configuration(BaseModel):
     HOME: Path = Path.home()
     _dir_config: Optional['Configuration'] = None
-
+    
     @classmethod
     def load(cls, yaml_path: Union[str, Path], secrets_path: Optional[Union[str, Path]] = None, dir_config: Optional['Configuration'] = None) -> 'Configuration':
         yaml_path = cls._resolve_path(yaml_path, 'config')
@@ -99,6 +99,7 @@ class Configuration(BaseModel):
                 config_data = yaml.safe_load(file)
     
             debug(f"Loaded configuration data from {yaml_path}")
+            secrets_data = {}
             if secrets_path:
                 with secrets_path.open('r') as file:
                     secrets_data = yaml.safe_load(file)
@@ -120,7 +121,7 @@ class Configuration(BaseModel):
             load_dotenv()
             instance = cls.create_dynamic_model(**config_data)
             instance._dir_config = dir_config or instance
-            resolved_data = instance.resolve_placeholders(config_data)
+            resolved_data = instance.resolve_placeholders(config_data, secrets_data)
             instance = cls.create_dynamic_model(**resolved_data)
             instance._dir_config = dir_config or instance
             return instance
@@ -128,8 +129,7 @@ class Configuration(BaseModel):
         except Exception as e:
             err(f"Error loading configuration: {str(e)}")
             raise
-
-
+    
     @classmethod
     def _resolve_path(cls, path: Union[str, Path], default_dir: str) -> Path:
         base_path = Path(__file__).parent.parent
@@ -139,11 +139,10 @@ class Configuration(BaseModel):
         elif not path.is_absolute():
             path = base_path / path
         return path
-
-    @classmethod
-    def resolve_placeholders(self, data: Any) -> Any:
+    
+    def resolve_placeholders(self, data: Any, secrets_data: Dict[str, Any]) -> Any:
         if isinstance(data, dict):
-            resolved_data = {k: self.resolve_placeholders(v) for k, v in data.items()}
+            resolved_data = {k: self.resolve_placeholders(v, secrets_data) for k, v in data.items()}
             home_dir = Path(resolved_data.get('HOME', self.HOME)).expanduser()
             base_dir = Path(__file__).parent.parent
             data_dir = base_dir / "data"
@@ -152,17 +151,16 @@ class Configuration(BaseModel):
             resolved_data['DATA'] = str(data_dir)
             return resolved_data
         elif isinstance(data, list):
-            return [self.resolve_placeholders(v) for v in data]
+            return [self.resolve_placeholders(v, secrets_data) for v in data]
         elif isinstance(data, str):
-            return self.resolve_string_placeholders(data)
+            return self.resolve_string_placeholders(data, secrets_data, self.HOME)
         else:
             return data
-
-    @classmethod
-    def resolve_string_placeholders(cls, value: str, secrets_data: Dict[str, Any], home_dir: Path) -> Any:
+    
+    def resolve_string_placeholders(self, value: str, secrets_data: Dict[str, Any], home_dir: Path) -> Any:
         pattern = r'\{\{\s*([^}]+)\s*\}\}'
         matches = re.findall(pattern, value)
-
+    
         for match in matches:
             parts = match.split('.')
             if len(parts) == 1:  # Internal reference
@@ -177,14 +175,14 @@ class Configuration(BaseModel):
                     warn(f"Secret '{parts[1]}' not found in secrets file")
             else:
                 replacement = value
-
+    
             value = value.replace('{{' + match + '}}', str(replacement))
-
+    
         # Convert to Path if it looks like a file path
         if isinstance(value, str) and (value.startswith(('/', '~')) or (':' in value and value[1] == ':')):
             return Path(value).expanduser()
         return value
-
+    
     @classmethod
     def create_dynamic_model(cls, **data):
         for key, value in data.items():
@@ -192,20 +190,19 @@ class Configuration(BaseModel):
                 data[key] = cls.create_dynamic_model(**value)
             elif isinstance(value, list) and all(isinstance(item, dict) for item in value):
                 data[key] = [cls.create_dynamic_model(**item) for item in value]
-
+    
         DynamicModel = create_model(
             f'Dynamic{cls.__name__}',
             __base__=cls,
             **{k: (Any, v) for k, v in data.items()}
         )
         return DynamicModel(**data)
-
+    
     class Config:
         extra = "allow"
         arbitrary_types_allowed = True
-
-
-
+    
+    
 
 
 class DirConfig(BaseModel):
