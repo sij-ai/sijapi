@@ -107,13 +107,13 @@ class Configuration(BaseModel):
                     for item in config_data:
                         if isinstance(item, dict):
                             item.update(secrets_data)
-                else:
+                elif isinstance(config_data, dict):
                     config_data.update(secrets_data)
     
             if isinstance(config_data, list):
                 config_data = {"configurations": config_data}
-            
-            if 'HOME' not in config_data:
+            if not isinstance(config_data, dict) or config_data.get('HOME') is None:
+                config_data = config_data if isinstance(config_data, dict) else {}
                 config_data['HOME'] = str(Path.home())
                 debug(f"HOME was not in config, set to default: {config_data['HOME']}")
     
@@ -141,9 +141,10 @@ class Configuration(BaseModel):
         return path
 
     @classmethod
-    def resolve_placeholders(cls, data: Any, secrets_data: Dict[str, Any], home_dir: Path) -> Any:
+    def resolve_placeholders(self, data: Any) -> Any:
         if isinstance(data, dict):
-            resolved_data = {k: cls.resolve_placeholders(v, secrets_data, home_dir) for k, v in data.items()}
+            resolved_data = {k: self.resolve_placeholders(v) for k, v in data.items()}
+            home_dir = Path(resolved_data.get('HOME', self.HOME)).expanduser()
             base_dir = Path(__file__).parent.parent
             data_dir = base_dir / "data"
             resolved_data['HOME'] = str(home_dir)
@@ -151,9 +152,9 @@ class Configuration(BaseModel):
             resolved_data['DATA'] = str(data_dir)
             return resolved_data
         elif isinstance(data, list):
-            return [cls.resolve_placeholders(v, secrets_data, home_dir) for v in data]
+            return [self.resolve_placeholders(v) for v in data]
         elif isinstance(data, str):
-            return cls.resolve_string_placeholders(data, secrets_data, home_dir)
+            return self.resolve_string_placeholders(data)
         else:
             return data
 
