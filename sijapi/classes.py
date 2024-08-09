@@ -157,7 +157,7 @@ class Configuration(BaseModel):
     def resolve_string_placeholders(self, value: str) -> Any:
         pattern = r'\{\{\s*([^}]+)\s*\}\}'
         matches = re.findall(pattern, value)
-
+        
         for match in matches:
             parts = match.split('.')
             if len(parts) == 1:  # Internal reference
@@ -166,15 +166,20 @@ class Configuration(BaseModel):
                 replacement = getattr(self, parts[1], str(Path.home() / parts[1].lower()))
             elif len(parts) == 2 and parts[0] == 'ENV':
                 replacement = os.getenv(parts[1], '')
+            elif len(parts) == 2 and parts[0] == 'SECRET':
+                replacement = getattr(self, parts[1].strip(), '')
+                if not replacement:
+                    warn(f"Secret '{parts[1].strip()}' not found in secrets file")
             else:
                 replacement = value
-
+        
             value = value.replace('{{' + match + '}}', str(replacement))
-
+        
         # Convert to Path if it looks like a file path
         if isinstance(value, str) and (value.startswith(('/', '~')) or (':' in value and value[1] == ':')):
             return Path(value).expanduser()
         return value
+
 
     @classmethod
     def create_dynamic_model(cls, **data):

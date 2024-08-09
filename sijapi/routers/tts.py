@@ -214,15 +214,19 @@ async def determine_voice_id(voice_name: str) -> str:
     debug(f"Searching for voice id for {voice_name}")
     debug(f"Tts.elevenlabs.voices: {Tts.elevenlabs.voices}")
     
-    # Check if the voice is in the configured voices
-    if voice_name in Tts.elevenlabs.voices:
-        voice_id = Tts.elevenlabs.voices[voice_name]
-        debug(f"Found voice ID in config - {voice_id}")
-        return voice_id
+    voices = Tts.elevenlabs.voices
+    if isinstance(voices, dict):
+        if voice_name in voices:
+            return voices[voice_name]
+    elif hasattr(voices, '__dict__'):
+        voices_dict = voices.__dict__
+        if voice_name in voices_dict:
+            return voices_dict[voice_name]
     
-    debug(f"Requested voice not among the voices specified in config/tts.yaml. Checking with ElevenLabs API using api_key: {Tts.elevenlabs.key}.")
+    debug(f"Requested voice not among the voices specified in config/tts.yaml. Checking with ElevenLabs API.")
     url = "https://api.elevenlabs.io/v1/voices"
-    headers = {"xi-api-key": Tts.elevenlabs.key}
+    headers = {"xi-api-key": Tts.elevenlabs.api_key}
+    debug(f"Using api_key: {Tts.elevenlabs.api_key}")
     async with httpx.AsyncClient() as client:
         try:
             response = await client.get(url, headers=headers)
@@ -230,7 +234,7 @@ async def determine_voice_id(voice_name: str) -> str:
             if response.status_code == 200:
                 voices_data = response.json().get("voices", [])
                 for voice in voices_data:
-                    if voice_name == voice["voice_id"] or voice_name.lower() == voice["name"].lower():
+                    if voice_name == voice["voice_id"] or (voice_name and voice_name.lower() == voice["name"].lower()):
                         debug(f"Found voice ID from API - {voice['voice_id']}")
                         return voice["voice_id"]
             else:
@@ -240,11 +244,15 @@ async def determine_voice_id(voice_name: str) -> str:
             err(f"Error determining voice ID: {str(e)}")
     
     warn(f"Voice '{voice_name}' not found; using the default specified in config/tts.yaml: {Tts.elevenlabs.default}")
-    if Tts.elevenlabs.default in Tts.elevenlabs.voices:
-        return Tts.elevenlabs.voices[Tts.elevenlabs.default]
+    if isinstance(voices, dict):
+        return voices.get(Tts.elevenlabs.default, next(iter(voices.values())))
+    elif hasattr(voices, '__dict__'):
+        voices_dict = voices.__dict__
+        return voices_dict.get(Tts.elevenlabs.default, next(iter(voices_dict.values())))
     else:
-        err(f"Default voice '{Tts.elevenlabs.default}' not found in configuration. Using first available voice.")
-        return next(iter(Tts.elevenlabs.voices.values()))
+        err(f"Unexpected type for Tts.elevenlabs.voices: {type(voices)}")
+        return ""
+
 
 
 
