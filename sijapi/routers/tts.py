@@ -212,6 +212,7 @@ async def get_model(voice: str = None, voice_file: UploadFile = None):
 
 async def determine_voice_id(voice_name: str) -> str:
     debug(f"Searching for voice id for {voice_name}")
+    debug(f"Tts.elevenlabs.voices: {Tts.elevenlabs.voices}")
 
     if voice_name in Tts.elevenlabs.voices:
         voice_id = hardcoded_voices[voice_name]
