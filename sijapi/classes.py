@@ -27,6 +27,17 @@ from srtm import get_data
 import os
 import sys
 from loguru import logger
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy import Column, Integer, String, DateTime, JSON, Text, select, func
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.exc import OperationalError
+from urllib.parse import urljoin
+import hashlib
+import random
+        
+Base = declarative_base()
 
 # Custom logger class
 class Logger:
@@ -258,14 +269,30 @@ class DirConfig:
 
 
 
+class QueryTracking(Base):
+    __tablename__ = 'query_tracking'
+
+    id = Column(Integer, primary_key=True)
+    ts_id = Column(String, nullable=False)
+    query = Column(Text, nullable=False)
+    args = Column(JSONB)
+    executed_at = Column(DateTime(timezone=True), server_default=func.now())
+    completed_by = Column(JSONB, default={})
+    result_checksum = Column(String)
+    
+    
+    
+    
 class Database:
     @classmethod
     def load(cls, config_name: str):
         return cls(config_name)
-    
+
     def __init__(self, config_path: str):
         self.config = self.load_config(config_path)
-        self.pool_connections = {}
+        self.engines: Dict[str, Any] = {}
+        self.sessions: Dict[str, Any] = {}
+        self.online_servers: set = set()
         self.local_ts_id = self.get_local_ts_id()
 
     def load_config(self, config_path: str) -> Dict[str, Any]:
@@ -280,91 +307,111 @@ class Database:
     def get_local_ts_id(self) -> str:
         return os.environ.get('TS_ID')
 
-    async def get_connection(self, ts_id: str = None):
-        if ts_id is None:
-            ts_id = self.local_ts_id
+    async def initialize_engines(self):
+        for db_info in self.config['POOL']:
+            url = f"postgresql+asyncpg://{db_info['db_user']}:{db_info['db_pass']}@{db_info['ts_ip']}:{db_info['db_port']}/{db_info['db_name']}"
+            try:
+                engine = create_async_engine(url, pool_pre_ping=True, pool_size=5, max_overflow=10)
+                self.engines[db_info['ts_id']] = engine
+                self.sessions[db_info['ts_id']] = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+                info(f"Initialized engine and session for {db_info['ts_id']}")
+            except Exception as e:
+                err(f"Failed to initialize engine for {db_info['ts_id']}: {str(e)}")
 
-        if ts_id not in self.pool_connections:
-            db_info = next((db for db in self.config['POOL'] if db['ts_id'] == ts_id), None)
-            if db_info is None:
-                raise ValueError(f"No database configuration found for TS_ID: {ts_id}")
-
-            self.pool_connections[ts_id] = await asyncpg.create_pool(
-                host=db_info['ts_ip'],
-                port=db_info['db_port'],
-                user=db_info['db_user'],
-                password=db_info['db_pass'],
-                database=db_info['db_name'],
-                min_size=1,
-                max_size=10
-            )
-
-        return await self.pool_connections[ts_id].acquire()
-
-    async def release_connection(self, ts_id: str, connection):
-        await self.pool_connections[ts_id].release(connection)
+        if self.local_ts_id not in self.sessions:
+            err(f"Failed to initialize session for local server {self.local_ts_id}")
+        else:
+            try:
+                # Create tables if they don't exist
+                async with self.engines[self.local_ts_id].begin() as conn:
+                    await conn.run_sync(Base.metadata.create_all)
+                info(f"Initialized tables for local server {self.local_ts_id}")
+            except Exception as e:
+                err(f"Failed to create tables for local server {self.local_ts_id}: {str(e)}")
 
     async def get_online_servers(self) -> List[str]:
         online_servers = []
-        for db_info in self.config['POOL']:
+        for ts_id, engine in self.engines.items():
             try:
-                conn = await self.get_connection(db_info['ts_id'])
-                await self.release_connection(db_info['ts_id'], conn)
-                online_servers.append(db_info['ts_id'])
-            except:
+                async with engine.connect() as conn:
+                    await conn.execute(text("SELECT 1"))
+                online_servers.append(ts_id)
+            except OperationalError:
                 pass
+        self.online_servers = set(online_servers)
         return online_servers
 
-    async def initialize_query_tracking(self):
-        conn = await self.get_connection()
-        try:
-            await conn.execute("""
-                CREATE TABLE IF NOT EXISTS query_tracking (
-                    id SERIAL PRIMARY KEY,
-                    ts_id TEXT NOT NULL,
-                    query TEXT NOT NULL,
-                    args JSONB,
-                    executed_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-                    completed_by JSONB DEFAULT '{}'::jsonb,
-                    result_checksum TEXT
+    async def execute_read(self, query: str, *args, **kwargs):
+        if self.local_ts_id not in self.sessions:
+            err(f"No session found for local server {self.local_ts_id}. Database may not be properly initialized.")
+            return None
+
+        params = self._normalize_params(args, kwargs)
+
+        async with self.sessions[self.local_ts_id]() as session:
+            try:
+                result = await session.execute(text(query), params)
+                return result.fetchall()
+            except Exception as e:
+                err(f"Failed to execute read query: {str(e)}")
+                return None
+
+    async def execute_write(self, query: str, *args, **kwargs):
+        if self.local_ts_id not in self.sessions:
+            err(f"No session found for local server {self.local_ts_id}. Database may not be properly initialized.")
+            return
+
+        params = self._normalize_params(args, kwargs)
+
+        async with self.sessions[self.local_ts_id]() as session:
+            try:
+                # Execute the write query
+                result = await session.execute(text(query), params)
+                
+                # Create a serializable version of params for logging
+                serializable_params = {
+                    k: v.isoformat() if isinstance(v, datetime) else v
+                    for k, v in params.items()
+                }
+                
+                # Log the query
+                new_query = QueryTracking(
+                    ts_id=self.local_ts_id,
+                    query=query,
+                    args=json.dumps(serializable_params)
                 )
-            """)
-        finally:
-            await self.release_connection(self.local_ts_id, conn)
+                session.add(new_query)
+                await session.flush()
+                query_id = new_query.id
 
-    async def execute_read(self, query: str, *args):
-        conn = await self.get_connection()
-        try:
-            return await conn.fetch(query, *args)
-        finally:
-            await self.release_connection(self.local_ts_id, conn)
+                await session.commit()
+                info(f"Successfully executed write query: {query[:50]}...")
+                
+                # Calculate checksum
+                checksum = await self._local_compute_checksum(query, params)
 
-    async def execute_write(self, query: str, *args):
-        # Execute write on local database
-        local_conn = await self.get_connection()
-        try:
-            await local_conn.execute(query, *args)
-            
-            # Log the query
-            query_id = await local_conn.fetchval("""
-                INSERT INTO query_tracking (ts_id, query, args)
-                VALUES ($1, $2, $3)
-                RETURNING id
-            """, self.local_ts_id, query, json.dumps(args))
-        finally:
-            await self.release_connection(self.local_ts_id, local_conn)
+                # Update query_tracking with checksum
+                await self.update_query_checksum(query_id, checksum)
 
-        # Calculate checksum
-        checksum = await self.compute_checksum(query, *args)
+                # Replicate to online servers
+                online_servers = await self.get_online_servers()
+                for ts_id in online_servers:
+                    if ts_id != self.local_ts_id:
+                        asyncio.create_task(self._replicate_write(ts_id, query_id, query, params, checksum))
 
-        # Update query_tracking with checksum
-        await self.update_query_checksum(query_id, checksum)
+            except Exception as e:
+                err(f"Failed to execute write query: {str(e)}")
+                return
 
-        # Replicate to online servers
-        online_servers = await self.get_online_servers()
-        for ts_id in online_servers:
-            if ts_id != self.local_ts_id:
-                asyncio.create_task(self._replicate_write(ts_id, query_id, query, args, checksum))
+    def _normalize_params(self, args, kwargs):
+        if args and isinstance(args[0], dict):
+            return args[0]
+        elif kwargs:
+            return kwargs
+        elif args:
+            return {f"param{i}": arg for i, arg in enumerate(args, start=1)}
+        else:
+            return {}
 
     async def get_primary_server(self) -> str:
         url = urljoin(self.config['URL'], '/id')
@@ -376,10 +423,10 @@ class Database:
                         primary_ts_id = await response.text()
                         return primary_ts_id.strip()
                     else:
-                        logging.error(f"Failed to get primary server. Status: {response.status}")
+                        err(f"Failed to get primary server. Status: {response.status}")
                         return None
             except aiohttp.ClientError as e:
-                logging.error(f"Error connecting to load balancer: {str(e)}")
+                err(f"Error connecting to load balancer: {str(e)}")
                 return None
 
     async def get_checksum_server(self) -> dict:
@@ -393,132 +440,134 @@ class Database:
         
         return random.choice(checksum_servers)
 
-    async def compute_checksum(self, query: str, *args):
+    async def compute_checksum(self, query: str, params: dict):
         checksum_server = await self.get_checksum_server()
         
         if checksum_server['ts_id'] == self.local_ts_id:
-            return await self._local_compute_checksum(query, *args)
+            return await self._local_compute_checksum(query, params)
         else:
-            return await self._delegate_compute_checksum(checksum_server, query, *args)
+            return await self._delegate_compute_checksum(checksum_server, query, params)
 
-    async def _local_compute_checksum(self, query: str, *args):
-        conn = await self.get_connection()
-        try:
-            result = await conn.fetch(query, *args)
-            checksum = hashlib.md5(str(result).encode()).hexdigest()
+    async def _local_compute_checksum(self, query: str, params: dict):
+        async with self.sessions[self.local_ts_id]() as session:
+            result = await session.execute(text(query), params)
+            if result.returns_rows:
+                data = result.fetchall()
+            else:
+                # For INSERT, UPDATE, DELETE queries that don't return rows
+                data = str(result.rowcount) + query + str(params)
+            checksum = hashlib.md5(str(data).encode()).hexdigest()
             return checksum
-        finally:
-            await self.release_connection(self.local_ts_id, conn)
 
-    async def _delegate_compute_checksum(self, server: dict, query: str, *args):
+    async def _delegate_compute_checksum(self, server: Dict[str, Any], query: str, params: dict):
         url = f"http://{server['ts_ip']}:{server['app_port']}/sync/checksum"
         
         async with aiohttp.ClientSession() as session:
             try:
-                async with session.post(url, json={"query": query, "args": list(args)}) as response:
+                serializable_params = {
+                    k: v.isoformat() if isinstance(v, datetime) else v
+                    for k, v in params.items()
+                }
+                async with session.post(url, json={"query": query, "params": serializable_params}) as response:
                     if response.status == 200:
                         result = await response.json()
                         return result['checksum']
                     else:
-                        logging.error(f"Failed to get checksum from {server['ts_id']}. Status: {response.status}")
-                        return await self._local_compute_checksum(query, *args)
+                        err(f"Failed to get checksum from {server['ts_id']}. Status: {response.status}")
+                        return await self._local_compute_checksum(query, params)
             except aiohttp.ClientError as e:
-                logging.error(f"Error connecting to {server['ts_id']} for checksum: {str(e)}")
-                return await self._local_compute_checksum(query, *args)
+                err(f"Error connecting to {server['ts_id']} for checksum: {str(e)}")
+                return await self._local_compute_checksum(query, params)
 
     async def update_query_checksum(self, query_id: int, checksum: str):
-        conn = await self.get_connection()
-        try:
-            await conn.execute("""
-                UPDATE query_tracking
-                SET result_checksum = $1
-                WHERE id = $2
-            """, checksum, query_id)
-        finally:
-            await self.release_connection(self.local_ts_id, conn)
+        async with self.sessions[self.local_ts_id]() as session:
+            await session.execute(
+                text("UPDATE query_tracking SET result_checksum = :checksum WHERE id = :id"),
+                {"checksum": checksum, "id": query_id}
+            )
+            await session.commit()
 
-    async def _replicate_write(self, ts_id: str, query_id: int, query: str, args: tuple, expected_checksum: str):
+    async def _replicate_write(self, ts_id: str, query_id: int, query: str, params: dict, expected_checksum: str):
         try:
-            conn = await self.get_connection(ts_id)
-            try:
-                await conn.execute(query, *args)
-                actual_checksum = await self.compute_checksum(query, *args)
+            async with self.sessions[ts_id]() as session:
+                await session.execute(text(query), params)
+                actual_checksum = await self.compute_checksum(query, params)
                 if actual_checksum != expected_checksum:
                     raise ValueError(f"Checksum mismatch on {ts_id}")
                 await self.mark_query_completed(query_id, ts_id)
-            finally:
-                await self.release_connection(ts_id, conn)
+                await session.commit()
+                info(f"Successfully replicated write to {ts_id}")
         except Exception as e:
-            logging.error(f"Failed to replicate write on {ts_id}: {str(e)}")
+            err(f"Failed to replicate write on {ts_id}: {str(e)}")
 
     async def mark_query_completed(self, query_id: int, ts_id: str):
-        conn = await self.get_connection()
-        try:
-            await conn.execute("""
-                UPDATE query_tracking
-                SET completed_by = completed_by || jsonb_build_object($1, true)
-                WHERE id = $2
-            """, ts_id, query_id)
-        finally:
-            await self.release_connection(self.local_ts_id, conn)
+        async with self.sessions[self.local_ts_id]() as session:
+            query = await session.get(QueryTracking, query_id)
+            if query:
+                completed_by = query.completed_by or {}
+                completed_by[ts_id] = True
+                query.completed_by = completed_by
+                await session.commit()
 
     async def sync_local_server(self):
-        conn = await self.get_connection()
-        try:
-            last_synced_id = await conn.fetchval("""
-                SELECT COALESCE(MAX(id), 0) FROM query_tracking
-                WHERE completed_by ? $1
-            """, self.local_ts_id)
+        async with self.sessions[self.local_ts_id]() as session:
+            last_synced = await session.execute(
+                text("SELECT MAX(id) FROM query_tracking WHERE completed_by ? :ts_id"),
+                {"ts_id": self.local_ts_id}
+            )
+            last_synced_id = last_synced.scalar() or 0
 
-            unexecuted_queries = await conn.fetch("""
-                SELECT id, query, args, result_checksum
-                FROM query_tracking
-                WHERE id > $1
-                ORDER BY id
-            """, last_synced_id)
+            unexecuted_queries = await session.execute(
+                text("SELECT * FROM query_tracking WHERE id > :last_id ORDER BY id"),
+                {"last_id": last_synced_id}
+            )
 
             for query in unexecuted_queries:
                 try:
-                    await conn.execute(query['query'], *json.loads(query['args']))
-                    actual_checksum = await self.compute_checksum(query['query'], *json.loads(query['args']))
-                    if actual_checksum != query['result_checksum']:
-                        raise ValueError(f"Checksum mismatch for query ID {query['id']}")
-                    await self.mark_query_completed(query['id'], self.local_ts_id)
+                    params = json.loads(query.args)
+                    # Convert ISO format strings back to datetime objects
+                    for key, value in params.items():
+                        if isinstance(value, str):
+                            try:
+                                params[key] = datetime.fromisoformat(value)
+                            except ValueError:
+                                pass  # If it's not a valid ISO format, keep it as a string
+                    await session.execute(text(query.query), params)
+                    actual_checksum = await self._local_compute_checksum(query.query, params)
+                    if actual_checksum != query.result_checksum:
+                        raise ValueError(f"Checksum mismatch for query ID {query.id}")
+                    await self.mark_query_completed(query.id, self.local_ts_id)
                 except Exception as e:
-                    logging.error(f"Failed to execute query ID {query['id']} during local sync: {str(e)}")
+                    err(f"Failed to execute query ID {query.id} during local sync: {str(e)}")
 
-            logging.info(f"Local server sync completed. Executed {len(unexecuted_queries)} queries.")
-
-        finally:
-            await self.release_connection(self.local_ts_id, conn)
+            await session.commit()
+            info(f"Local server sync completed. Executed {unexecuted_queries.rowcount} queries.")
 
     async def purge_completed_queries(self):
-        conn = await self.get_connection()
-        try:
+        async with self.sessions[self.local_ts_id]() as session:
             all_ts_ids = [db['ts_id'] for db in self.config['POOL']]
-            result = await conn.execute("""
-                WITH consecutive_completed AS (
-                    SELECT id, 
-                           row_number() OVER (ORDER BY id) AS rn
-                    FROM query_tracking
-                    WHERE completed_by ?& $1
-                )
-                DELETE FROM query_tracking
-                WHERE id IN (
-                    SELECT id 
-                    FROM consecutive_completed
-                    WHERE rn = (SELECT MAX(rn) FROM consecutive_completed)
-                )
-            """, all_ts_ids)
-            deleted_count = int(result.split()[-1])
-            logging.info(f"Purged {deleted_count} completed queries.")
-        finally:
-            await self.release_connection(self.local_ts_id, conn)
+            
+            result = await session.execute(
+                text("""
+                    DELETE FROM query_tracking
+                    WHERE id <= (
+                        SELECT MAX(id)
+                        FROM query_tracking
+                        WHERE completed_by ?& :ts_ids
+                    )
+                """),
+                {"ts_ids": all_ts_ids}
+            )
+            await session.commit()
+            
+            deleted_count = result.rowcount
+            info(f"Purged {deleted_count} completed queries.")
 
     async def close(self):
-        for pool in self.pool_connections.values():
-            await pool.close()
-        
+        for engine in self.engines.values():
+            await engine.dispose()
+
+    
 
 
 # Configuration class for API & Database methods. 

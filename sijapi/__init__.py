@@ -26,8 +26,7 @@ Db = Database.load('sys')
 
 # HOST = f"{API.BIND}:{API.PORT}"
 # LOCAL_HOSTS = [ipaddress.ip_address(localhost.strip()) for localhost in os.getenv('LOCAL_HOSTS', '127.0.0.1').split(',')] + ['localhost']
-
-SUBNET_BROADCAST = os.getenv("SUBNET_BROADCAST", '10.255.255.255')
+# SUBNET_BROADCAST = os.getenv("SUBNET_BROADCAST", '10.255.255.255')
 
 MAX_CPU_CORES = min(int(os.getenv("MAX_CPU_CORES", int(multiprocessing.cpu_count()/2))), multiprocessing.cpu_count())
 

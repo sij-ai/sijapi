@@ -26,7 +26,7 @@ import pytesseract
 from readability import Document
 from pdf2image import convert_from_path
 from datetime import datetime as dt_datetime, date, time
-from typing import Optional, Union, Tuple, List
+from typing import Optional, Union, Tuple, List, Any
 import asyncio
 from PIL import Image
 import pandas as pd
@@ -629,3 +629,34 @@ async def html_to_markdown(url: str = None, source: str = None) -> Optional[str]
     markdown_content = md(str(soup), heading_style="ATX")
     
     return markdown_content
+
+
+def json_serial(obj: Any) -> Any:
+    """JSON serializer for objects not serializable by default json code"""
+    if isinstance(obj, (datetime, date)):
+        return obj.isoformat()
+    if isinstance(obj, time):
+        return obj.isoformat()
+    if isinstance(obj, Decimal):
+        return float(obj)
+    if isinstance(obj, UUID):
+        return str(obj)
+    if isinstance(obj, bytes):
+        return obj.decode('utf-8')
+    if isinstance(obj, Path):
+        return str(obj)
+    if hasattr(obj, '__dict__'):
+        return obj.__dict__
+    raise TypeError(f"Type {type(obj)} not serializable")
+
+def json_dumps(obj: Any) -> str:
+    """
+    Serialize obj to a JSON formatted str using the custom serializer.
+    """
+    return json.dumps(obj, default=json_serial)
+
+def json_loads(json_str: str) -> Any:
+    """
+    Deserialize json_str to a Python object.
+    """
+    return json.loads(json_str)
