@@ -68,6 +68,7 @@ class Logger:
     def get_module_logger(self, module_name):
         return self.logger.bind(name=module_name)
 
+
 L = Logger("classes", "classes")
 logger = L.get_module_logger("classes")
 def debug(text: str): logger.debug(text)
@@ -93,28 +94,31 @@ class Configuration(BaseModel):
         yaml_path = cls._resolve_path(yaml_path, 'config')
         if secrets_path:
             secrets_path = cls._resolve_path(secrets_path, 'config')
-
+    
         try:
             with yaml_path.open('r') as file:
                 config_data = yaml.safe_load(file)
-
+    
             debug(f"Loaded configuration data from {yaml_path}")
             if secrets_path:
                 with secrets_path.open('r') as file:
                     secrets_data = yaml.safe_load(file)
                 debug(f"Loaded secrets data from {secrets_path}")
+                
                 if isinstance(config_data, list):
-                    for item in config_data:
-                        if isinstance(item, dict):
-                            item.update(secrets_data)
+                    config_data = {"configurations": config_data, "SECRETS": secrets_data}
+                elif isinstance(config_data, dict):
+                    config_data['SECRETS'] = secrets_data
                 else:
-                    config_data.update(secrets_data)
-            if isinstance(config_data, list):
+                    raise ValueError(f"Unexpected configuration data type: {type(config_data)}")
+    
+            if not isinstance(config_data, dict):
                 config_data = {"configurations": config_data}
+            
             if config_data.get('HOME') is None:
                 config_data['HOME'] = str(Path.home())
-                warn(f"HOME was None in config, set to default: {config_data['HOME']}")
-
+                debug(f"HOME was None in config, set to default: {config_data['HOME']}")
+    
             load_dotenv()
             instance = cls.create_dynamic_model(**config_data)
             instance._dir_config = dir_config or instance
@@ -122,10 +126,11 @@ class Configuration(BaseModel):
             instance = cls.create_dynamic_model(**resolved_data)
             instance._dir_config = dir_config or instance
             return instance
-
+    
         except Exception as e:
             err(f"Error loading configuration: {str(e)}")
             raise
+
 
     @classmethod
     def _resolve_path(cls, path: Union[str, Path], default_dir: str) -> Path:
@@ -136,6 +141,7 @@ class Configuration(BaseModel):
         elif not path.is_absolute():
             path = base_path / path
         return path
+
 
     def resolve_placeholders(self, data: Any) -> Any:
         if isinstance(data, dict):
@@ -154,21 +160,13 @@ class Configuration(BaseModel):
         else:
             return data
 
+
     def resolve_string_placeholders(self, value: str) -> Any:
-        pattern = r'\{\{\s*([^}]+)\s*\}\}'
-        matches = re.findall(pattern, value)
-        
-        for match in matches:
-            parts = match.split('.')
+        if isinstance(value, str) and value.startswith('{{') and value.endswith('}}'):
+            key = value[2:-2].strip()
+            parts = key.split('.')
             if len(parts) == 2 and parts[0] == 'SECRET':
-                replacement = getattr(self, parts[1].strip(), '')
-                if not replacement:
-                    warn(f"Secret '{parts[1].strip()}' not found in secrets file")
-            else:
-                replacement = getattr(self, match, value)
-        
-            value = value.replace('{{' + match + '}}', str(replacement))
-        
+                return getattr(self.SECRETS, parts[1], '')
         return value
 
 
@@ -187,6 +185,41 @@ class Configuration(BaseModel):
             **{k: (Any, v) for k, v in data.items()}
         )
         return DynamicModel(**data)
+        
+        
+    def has_key(self, key_path: str) -> bool:
+        """
+        Check if a key exists in the configuration or its nested objects.
+        
+        :param key_path: Dot-separated path to the key (e.g., 'elevenlabs.voices.Victoria')
+        :return: True if the key exists, False otherwise
+        """
+        parts = key_path.split('.')
+        current = self
+        for part in parts:
+            if hasattr(current, part):
+                current = getattr(current, part)
+            else:
+                return False
+        return True
+    
+    
+    def get_value(self, key_path: str, default=None):
+        """
+        Get the value of a key in the configuration or its nested objects.
+        
+        :param key_path: Dot-separated path to the key (e.g., 'elevenlabs.voices.Victoria')
+        :param default: Default value to return if the key doesn't exist
+        :return: The value of the key if it exists, otherwise the default value
+        """
+        parts = key_path.split('.')
+        current = self
+        for part in parts:
+            if hasattr(current, part):
+                current = getattr(current, part)
+            else:
+                return default
+        return current
 
     class Config:
         extra = "allow"
