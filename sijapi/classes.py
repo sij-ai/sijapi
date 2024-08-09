@@ -262,21 +262,34 @@ class DirConfig(BaseModel):
         else:
             return data
 
-    def resolve_string_placeholders(self, value: str) -> Path:
+    def resolve_string_placeholders(self, value: str, secrets_data: Dict[str, Any], home_dir: Path) -> Any:
         pattern = r'\{\{\s*([^}]+)\s*\}\}'
         matches = re.findall(pattern, value)
-
+        
         for match in matches:
-            if match == 'HOME':
-                replacement = str(self.HOME)
-            elif hasattr(self, match):
-                replacement = str(getattr(self, match))
+            parts = match.split('.')
+            if len(parts) == 1:  # Internal reference
+                replacement = str(home_dir / parts[0].lower())
+            elif len(parts) == 2 and parts[0] == 'Dir':
+                replacement = str(home_dir / parts[1].lower())
+            elif len(parts) == 2 and parts[0] == 'ENV':
+                replacement = os.getenv(parts[1], '')
+            elif len(parts) == 2 and parts[0] == 'SECRET':
+                secret_key = parts[1].strip()  # Remove any leading/trailing whitespace
+                replacement = secrets_data.get(secret_key)
+                if replacement is None:
+                    warn(f"Secret '{secret_key}' not found in secrets file")
+                    replacement = ''
             else:
                 replacement = value
+        
+            value = value.replace('{{' + match + '}}', str(replacement))
+        
+        # Convert to Path if it looks like a file path
+        if isinstance(value, str) and (value.startswith(('/', '~')) or (':' in value and value[1] == ':')):
+            return Path(value).expanduser()
+        return value
 
-            value = value.replace('{{' + match + '}}', replacement)
-
-        return Path(value).expanduser()
 
     @classmethod
     def create_dynamic_model(cls, **data):
