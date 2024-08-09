@@ -270,39 +270,35 @@ Generate a heatmap for the given date range and save it as a PNG file using Foli
         else:
             end_date = start_date.replace(hour=23, minute=59, second=59)
 
-        # Fetch locations
         locations = await fetch_locations(start_date, end_date)
         if not locations:
             raise ValueError("No locations found for the given date range")
 
-        # Create map
         m = folium.Map()
-
-        # Prepare heatmap data
         heat_data = [[loc.latitude, loc.longitude] for loc in locations]
-
-        # Add heatmap layer
         HeatMap(heat_data).add_to(m)
 
-        # Fit the map to the bounds of all locations
         bounds = [
             [min(loc.latitude for loc in locations), min(loc.longitude for loc in locations)],
             [max(loc.latitude for loc in locations), max(loc.longitude for loc in locations)]
         ]
         m.fit_bounds(bounds)
-
-        # Generate output path if not provided
-        if output_path is None:
-            output_path, relative_path = assemble_journal_path(end_date, filename="map", extension=".png", no_timestamp=True)
-
-        # Save the map as PNG
-        m.save(str(output_path))
-
-        info(f"Heatmap saved as PNG: {output_path}")
-        return output_path
+        
+        try:
+            if output_path is None:
+                output_path, relative_path = assemble_journal_path(end_date, filename="map", extension=".png", no_timestamp=True)
+    
+            m.save(str(output_path))
+    
+            info(f"Heatmap saved as PNG: {output_path}")
+            return output_path
+            
+        except Exception as e:
+            err(f"Error saving heatmap: {str(e)}")
+            raise
 
     except Exception as e:
-        err(f"Error generating and saving heatmap: {str(e)}")
+        err(f"Error generating heatmap: {str(e)}")
         raise
 
 async def generate_map(start_date: datetime, end_date: datetime, max_points: int):

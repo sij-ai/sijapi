@@ -27,7 +27,6 @@ MODULES:
   dist: off
   email: on
   gis: on
-  health: on
   ig: off
   img: on
   llm: on
@@ -36,6 +35,7 @@ MODULES:
   rag: off
   scrape: on
   serve: on
+  sys: on
   timing: on
   tts: on
   weather: on
