@@ -203,7 +203,7 @@ async def generate_speech(
     speed: float = 1.1,
     podcast: bool = False,
     title: str = None,
-    output_dir = None
+    output_dir = None,
 ) -> str:
     debug(f"Entering generate_speech function")
     debug(f"API.EXTENSIONS: {API.EXTENSIONS}")
@@ -213,14 +213,14 @@ async def generate_speech(
     debug(f"Type of Tts: {type(Tts)}")
     debug(f"Dir of Tts: {dir(Tts)}")
 
-    output_dir = Path(output_dir) if output_dir else TTS_OUTPUT_DIR
-    if not output_dir.exists():
-        output_dir.mkdir(parents=True)
+    
+    use_output_dir = Path(output_dir) if output_dir else TTS_OUTPUT_DIR
+    if not use_output_dir.exists(): use_output_dir.mkdir(parents=True)
 
     try:
         model = model if model else await get_model(voice, voice_file)
         title = title if title else "TTS audio"
-        output_path = output_dir / f"{dt_datetime.now().strftime('%Y%m%d%H%M%S')} {title}.wav"
+        output_path = use_output_dir / f"{dt_datetime.now().strftime('%Y%m%d%H%M%S')} {title}.wav"
         
         debug(f"Model: {model}")
         debug(f"Voice: {voice}")
@@ -228,7 +228,7 @@ async def generate_speech(
 
         if model == "eleven_turbo_v2" and getattr(API.EXTENSIONS, 'elevenlabs', False):
             info("Using ElevenLabs.")
-            audio_file_path = await elevenlabs_tts(model, text, voice, title, output_dir)
+            audio_file_path = await elevenlabs_tts(model, text, voice, title, use_output_dir)
         elif getattr(API.EXTENSIONS, 'xtts', False):
             info("Using XTTS2")
             audio_file_path = await local_tts(text, speed, voice, voice_file, podcast, bg_tasks, title, output_path)
@@ -244,23 +244,28 @@ async def generate_speech(
             warn(f"No file exists at {audio_file_path}")
 
         if podcast:
-            podcast_path = Dir.PODCAST / audio_file_path
+            podcast_path = Dir.PODCAST / audio_file_path.name
             
-            shutil.copy(audio_file_path, podcast_path)
-            if podcast_path.exists():
-                info(f"Saved to podcast path: {podcast_path}")
-            else:
-                warn(f"Podcast mode enabled, but failed to save to {podcast_path}")
-
             if podcast_path != audio_file_path:
-                info(f"Podcast mode enabled, so we will remove {audio_file_path}")
-                bg_tasks.add_task(os.remove, audio_file_path)
+                shutil.copy(audio_file_path, podcast_path)
+                if podcast_path.exists():
+                    info(f"Saved to podcast path: {podcast_path}")
+                else:
+                    warn(f"Podcast mode enabled, but failed to save to {podcast_path}")
+                
+                if output_dir and Path(output_dir) == use_output_dir:
+                    debug(f"Keeping {audio_file_path} because it was specified")
+                    
+                else:
+                    info(f"Podcast mode enabled and output_dir not specified so we will remove {audio_file_path}")
+                    bg_tasks.add_task(os.remove, audio_file_path)
             else:
-                warn(f"Podcast path set to same as audio file path...")
-
+                warn(f"Podcast path is the same as audio file path. Using existing file.")
+        
             return podcast_path
-
+        
         return audio_file_path
+
 
     except Exception as e:
         err(f"Failed to generate speech: {e}")

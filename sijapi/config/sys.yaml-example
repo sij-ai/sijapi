@@ -1,0 +1,112 @@
+# Primary configuration file
+
+HOST: '0.0.0.0'
+PORT: 4444
+BIND: '{{ HOST }}:{{ PORT }}'
+URL: 'https://api.example.com'
+
+PUBLIC: 
+  - /id
+  - /ip
+  - /health
+  - /img/
+  - /cl/dockets
+  - /cl/search
+  - /cd/alert
+
+TRUSTED_SUBNETS:
+  - 127.0.0.1/32
+  - 10.13.37.0/24
+  - 100.64.64.0/24
+
+MODULES:
+  archivist: on
+  asr: on
+  cal: on
+  cf: off
+  dist: off
+  email: on
+  gis: on
+  ig: off
+  img: on
+  llm: on
+  news: on
+  note: on
+  rag: off
+  scrape: on
+  serve: on
+  sys: on
+  timing: on
+  tts: on
+  weather: on
+
+POOL:
+  - ts_id: 'server1'
+    ts_ip: '192.168.0.10'
+    app_port: 4444
+    db_port: 5432
+    db_name: mydb
+    db_user: dbuser
+    db_pass: 'password123'
+    ssh_port: 22
+    ssh_user: sshuser
+    ssh_pass: 'password456'
+    path: '/Users/sij/workshop/sijapi'
+    tmux: '/opt/homebrew/bin/tmux'
+    tailscale: '/usr/local/bin/tailscale'
+    conda: '/Users/sij/miniforge3/bin/mamba'
+    conda_env: '/Users/sij/miniforge3/envs/sijapi'
+    vitals: '/Users/sij/workshop/scripts/gitea/pathScripts/vitals'
+    vpn: '/Users/sij/workshop/scripts/gitea/pathScripts/vpn'
+  - ts_id: 'server2'
+    ts_ip: '192.168.0.11'
+    app_port: 4444
+    db_port: 5432
+    db_name: mydb
+    db_user: dbuser
+    db_pass: 'password123'
+    ssh_port: 22
+    ssh_user: sshuser
+    ssh_pass: 'password456'
+    path: '/Users/sij/workshop/sijapi'
+    tmux: '/opt/homebrew/bin/tmux'
+    tailscale: '/usr/local/bin/tailscale'
+    conda: '/Users/sij/miniforge3/bin/mamba'
+    conda_env: '/Users/sij/miniforge3/envs/sijapi'
+    vitals: '/Users/sij/workshop/scripts/gitea/pathScripts/vitals'
+    vpn: '/Users/sij/workshop/scripts/gitea/pathScripts/vpn'
+  - ts_id: 'server3'
+    ts_ip: '192.168.0.12'
+    app_port: 4444
+    db_port: 5432
+    db_name: mydb
+    db_user: dbuser
+    db_pass: 'password123'
+    ssh_port: 22
+    ssh_user: sshuser
+    ssh_pass: 'password456'
+    path: '/Users/sij/workshop/sijapi'
+    tmux: '/opt/homebrew/bin/tmux'
+    tailscale: '/usr/local/bin/tailscale'
+    conda: '/Users/sij/miniforge3/bin/mamba'
+    conda_env: '/Users/sij/miniforge3/envs/sijapi'
+    vitals: '/Users/sij/workshop/scripts/gitea/pathScripts/vitals'
+    vpn: '/Users/sij/workshop/scripts/gitea/pathScripts/vpn'
+  
+EXTENSIONS:
+  pgp: on
+  archivist: on
+  courtlistener: off
+  macnotify: on
+  shellfish: on
+  
+TZ: 'America/Los_Angeles'
+
+KEYS:
+  - 'sk-YOUR_FIRST_API_KEY'
+  - 'sk-YOUR_SECOND_API_KEY'
+  - 'sk-YOUR_THIRD_API_KEY'
+
+GARBAGE:
+  COLLECTION_INTERVAL: 60 * 60
+  TTL: 60 * 60 * 24

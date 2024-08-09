@@ -337,8 +337,8 @@ Obsidian helper. Takes a datetime and creates a new daily note. Note: it uses th
     _, note_path = assemble_journal_path(date_time, filename="Notes", extension=".md", no_timestamp = True)
     note_embed = f"![[{note_path}]]"
 
-    _, map_path = assemble_journal_path(date_time, filename="Map", extension=".png", no_timestamp = True)
-    map = await gis.generate_and_save_heatmap(date_time, output_path=map_path)
+    absolute_map_path, map_path = assemble_journal_path(date_time, filename="Map", extension=".png", no_timestamp = True)
+    map = await gis.generate_and_save_heatmap(date_time, output_path=absolute_map_path)
     map_embed = f"![[{map_path}]]"
 
     _, banner_path = assemble_journal_path(date_time, filename="Banner", extension=".jpg", no_timestamp = True)

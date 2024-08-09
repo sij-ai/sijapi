@@ -76,6 +76,7 @@ def info(text: str): logger.info(text)
 def warn(text: str): logger.warning(text)
 def err(text: str): logger.error(text)
 def crit(text: str): logger.critical(text)
+
 BASE_DIR = Path(__file__).resolve().parent
 CONFIG_DIR = BASE_DIR / "config"
 ENV_PATH = CONFIG_DIR / ".env"
@@ -226,100 +227,297 @@ class Configuration(BaseModel):
         arbitrary_types_allowed = True
 
 
-class DirConfig(BaseModel):
-    HOME: Path = Path.home()
-
+class DirConfig:
+    def __init__(self, config_data: dict):
+        self.BASE = Path(__file__).parent.parent
+        self.HOME = Path.home()
+        self.DATA = self.BASE / "data"
+        
+        for key, value in config_data.items():
+            setattr(self, key, self._resolve_path(value))
+    
+    def _resolve_path(self, path: str) -> Path:
+        path = path.replace("{{ BASE }}", str(self.BASE))
+        path = path.replace("{{ HOME }}", str(self.HOME))
+        path = path.replace("{{ DATA }}", str(self.DATA))
+        return Path(path).expanduser()
+    
     @classmethod
     def load(cls, yaml_path: Union[str, Path]) -> 'DirConfig':
-        yaml_path = cls._resolve_path(yaml_path, 'config')
+        yaml_path = Path(yaml_path)
+        if not yaml_path.is_absolute():
+            yaml_path = Path(__file__).parent / "config" / yaml_path
+        
+        if not yaml_path.suffix:
+            yaml_path = yaml_path.with_suffix('.yaml')
     
-        try:
-            with yaml_path.open('r') as file:
-                config_data = yaml.safe_load(file)
+        with yaml_path.open('r') as file:
+            config_data = yaml.safe_load(file)
     
-            print(f"Loaded configuration data from {yaml_path}")
-    
-            # Ensure HOME is set
-            if 'HOME' not in config_data:
-                config_data['HOME'] = str(Path.home())
-                print(f"HOME was not in config, set to default: {config_data['HOME']}")
-    
-            # Create a temporary instance to resolve placeholders
-            temp_instance = cls.create_dynamic_model(**config_data)
-            resolved_data = temp_instance.resolve_placeholders(config_data)
-    
-            # Create the final instance with resolved data
-            return cls.create_dynamic_model(**resolved_data)
-    
-        except Exception as e:
-            print(f"Error loading configuration: {str(e)}")
-            raise
+        return cls(config_data)
 
 
-    @classmethod
-    def _resolve_path(cls, path: Union[str, Path], default_dir: str) -> Path:
+
+class Database:
+    def __init__(self, config_path: str):
+        self.config = self.load_config(config_path)
+        self.pool_connections = {}
+        self.local_ts_id = self.get_local_ts_id()
+
+    def load_config(self, config_path: str) -> Dict[str, Any]:
         base_path = Path(__file__).parent.parent
-        path = Path(path)
-        if not path.suffix:
-            path = base_path / 'sijapi' / default_dir / f"{path.name}.yaml"
-        elif not path.is_absolute():
-            path = base_path / path
-        return path
+        full_path = base_path / "sijapi" / "config" / f"{config_path}.yaml"
+        
+        with open(full_path, 'r') as file:
+            config = yaml.safe_load(file)
+        
+        return config
 
-    def resolve_placeholders(self, data: Any) -> Any:
-        if isinstance(data, dict):
-            resolved_data = {k: self.resolve_placeholders(v) for k, v in data.items()}
-            home_dir = Path(resolved_data.get('HOME', self.HOME)).expanduser()
-            base_dir = Path(__file__).parent.parent
-            data_dir = base_dir / "data"
-            resolved_data['HOME'] = str(home_dir)
-            resolved_data['BASE'] = str(base_dir)
-            resolved_data['DATA'] = str(data_dir)
-            return resolved_data
-        elif isinstance(data, list):
-            return [self.resolve_placeholders(v) for v in data]
-        elif isinstance(data, str):
-            return self.resolve_string_placeholders(data)
+    def get_local_ts_id(self) -> str:
+        return os.environ.get('TS_ID')
+
+    async def get_connection(self, ts_id: str = None):
+        if ts_id is None:
+            ts_id = self.local_ts_id
+
+        if ts_id not in self.pool_connections:
+            db_info = next((db for db in self.config['POOL'] if db['ts_id'] == ts_id), None)
+            if db_info is None:
+                raise ValueError(f"No database configuration found for TS_ID: {ts_id}")
+
+            self.pool_connections[ts_id] = await asyncpg.create_pool(
+                host=db_info['ts_ip'],
+                port=db_info['db_port'],
+                user=db_info['db_user'],
+                password=db_info['db_pass'],
+                database=db_info['db_name'],
+                min_size=1,
+                max_size=10
+            )
+
+        return await self.pool_connections[ts_id].acquire()
+
+    async def release_connection(self, ts_id: str, connection):
+        await self.pool_connections[ts_id].release(connection)
+
+    async def get_online_servers(self) -> List[str]:
+        online_servers = []
+        for db_info in self.config['POOL']:
+            try:
+                conn = await self.get_connection(db_info['ts_id'])
+                await self.release_connection(db_info['ts_id'], conn)
+                online_servers.append(db_info['ts_id'])
+            except:
+                pass
+        return online_servers
+
+    async def initialize_query_tracking(self):
+        conn = await self.get_connection()
+        try:
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS query_tracking (
+                    id SERIAL PRIMARY KEY,
+                    ts_id TEXT NOT NULL,
+                    query TEXT NOT NULL,
+                    args JSONB,
+                    executed_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                    completed_by JSONB DEFAULT '{}'::jsonb,
+                    result_checksum TEXT
+                )
+            """)
+        finally:
+            await self.release_connection(self.local_ts_id, conn)
+
+    async def execute_read(self, query: str, *args):
+        conn = await self.get_connection()
+        try:
+            return await conn.fetch(query, *args)
+        finally:
+            await self.release_connection(self.local_ts_id, conn)
+
+    async def execute_write(self, query: str, *args):
+        # Execute write on local database
+        local_conn = await self.get_connection()
+        try:
+            await local_conn.execute(query, *args)
+            
+            # Log the query
+            query_id = await local_conn.fetchval("""
+                INSERT INTO query_tracking (ts_id, query, args)
+                VALUES ($1, $2, $3)
+                RETURNING id
+            """, self.local_ts_id, query, json.dumps(args))
+        finally:
+            await self.release_connection(self.local_ts_id, local_conn)
+
+        # Calculate checksum
+        checksum = await self.compute_checksum(query, *args)
+
+        # Update query_tracking with checksum
+        await self.update_query_checksum(query_id, checksum)
+
+        # Replicate to online servers
+        online_servers = await self.get_online_servers()
+        for ts_id in online_servers:
+            if ts_id != self.local_ts_id:
+                asyncio.create_task(self._replicate_write(ts_id, query_id, query, args, checksum))
+
+    async def get_primary_server(self) -> str:
+        url = urljoin(self.config['URL'], '/id')
+        
+        async with aiohttp.ClientSession() as session:
+            try:
+                async with session.get(url) as response:
+                    if response.status == 200:
+                        primary_ts_id = await response.text()
+                        return primary_ts_id.strip()
+                    else:
+                        logging.error(f"Failed to get primary server. Status: {response.status}")
+                        return None
+            except aiohttp.ClientError as e:
+                logging.error(f"Error connecting to load balancer: {str(e)}")
+                return None
+
+    async def get_checksum_server(self) -> dict:
+        primary_ts_id = await self.get_primary_server()
+        online_servers = await self.get_online_servers()
+        
+        checksum_servers = [server for server in self.config['POOL'] if server['ts_id'] in online_servers and server['ts_id'] != primary_ts_id]
+        
+        if not checksum_servers:
+            return next(server for server in self.config['POOL'] if server['ts_id'] == primary_ts_id)
+        
+        return random.choice(checksum_servers)
+
+    async def compute_checksum(self, query: str, *args):
+        checksum_server = await self.get_checksum_server()
+        
+        if checksum_server['ts_id'] == self.local_ts_id:
+            return await self._local_compute_checksum(query, *args)
         else:
-            return data
+            return await self._delegate_compute_checksum(checksum_server, query, *args)
 
-    def resolve_string_placeholders(self, value: str) -> Path:
-        pattern = r'\{\{\s*([^}]+)\s*\}\}'
-        matches = re.findall(pattern, value)
+    async def _local_compute_checksum(self, query: str, *args):
+        conn = await self.get_connection()
+        try:
+            result = await conn.fetch(query, *args)
+            checksum = hashlib.md5(str(result).encode()).hexdigest()
+            return checksum
+        finally:
+            await self.release_connection(self.local_ts_id, conn)
+
+    async def _delegate_compute_checksum(self, server: dict, query: str, *args):
+        url = f"http://{server['ts_ip']}:{server['app_port']}/sync/checksum"
         
-        for match in matches:
-            if match == 'HOME':
-                replacement = str(self.HOME)
-            elif match == 'BASE':
-                replacement = str(Path(__file__).parent.parent)
-            elif match == 'DATA':
-                replacement = str(Path(__file__).parent.parent / "data")
-            elif hasattr(self, match):
-                replacement = str(getattr(self, match))
-            else:
-                replacement = value
+        async with aiohttp.ClientSession() as session:
+            try:
+                async with session.post(url, json={"query": query, "args": list(args)}) as response:
+                    if response.status == 200:
+                        result = await response.json()
+                        return result['checksum']
+                    else:
+                        logging.error(f"Failed to get checksum from {server['ts_id']}. Status: {response.status}")
+                        return await self._local_compute_checksum(query, *args)
+            except aiohttp.ClientError as e:
+                logging.error(f"Error connecting to {server['ts_id']} for checksum: {str(e)}")
+                return await self._local_compute_checksum(query, *args)
+
+    async def update_query_checksum(self, query_id: int, checksum: str):
+        conn = await self.get_connection()
+        try:
+            await conn.execute("""
+                UPDATE query_tracking
+                SET result_checksum = $1
+                WHERE id = $2
+            """, checksum, query_id)
+        finally:
+            await self.release_connection(self.local_ts_id, conn)
+
+    async def _replicate_write(self, ts_id: str, query_id: int, query: str, args: tuple, expected_checksum: str):
+        try:
+            conn = await self.get_connection(ts_id)
+            try:
+                await conn.execute(query, *args)
+                actual_checksum = await self.compute_checksum(query, *args)
+                if actual_checksum != expected_checksum:
+                    raise ValueError(f"Checksum mismatch on {ts_id}")
+                await self.mark_query_completed(query_id, ts_id)
+            finally:
+                await self.release_connection(ts_id, conn)
+        except Exception as e:
+            logging.error(f"Failed to replicate write on {ts_id}: {str(e)}")
+
+    async def mark_query_completed(self, query_id: int, ts_id: str):
+        conn = await self.get_connection()
+        try:
+            await conn.execute("""
+                UPDATE query_tracking
+                SET completed_by = completed_by || jsonb_build_object($1, true)
+                WHERE id = $2
+            """, ts_id, query_id)
+        finally:
+            await self.release_connection(self.local_ts_id, conn)
+
+    async def sync_local_server(self):
+        conn = await self.get_connection()
+        try:
+            last_synced_id = await conn.fetchval("""
+                SELECT COALESCE(MAX(id), 0) FROM query_tracking
+                WHERE completed_by ? $1
+            """, self.local_ts_id)
+
+            unexecuted_queries = await conn.fetch("""
+                SELECT id, query, args, result_checksum
+                FROM query_tracking
+                WHERE id > $1
+                ORDER BY id
+            """, last_synced_id)
+
+            for query in unexecuted_queries:
+                try:
+                    await conn.execute(query['query'], *json.loads(query['args']))
+                    actual_checksum = await self.compute_checksum(query['query'], *json.loads(query['args']))
+                    if actual_checksum != query['result_checksum']:
+                        raise ValueError(f"Checksum mismatch for query ID {query['id']}")
+                    await self.mark_query_completed(query['id'], self.local_ts_id)
+                except Exception as e:
+                    logging.error(f"Failed to execute query ID {query['id']} during local sync: {str(e)}")
+
+            logging.info(f"Local server sync completed. Executed {len(unexecuted_queries)} queries.")
+
+        finally:
+            await self.release_connection(self.local_ts_id, conn)
+
+    async def purge_completed_queries(self):
+        conn = await self.get_connection()
+        try:
+            all_ts_ids = [db['ts_id'] for db in self.config['POOL']]
+            result = await conn.execute("""
+                WITH consecutive_completed AS (
+                    SELECT id, 
+                           row_number() OVER (ORDER BY id) AS rn
+                    FROM query_tracking
+                    WHERE completed_by ?& $1
+                )
+                DELETE FROM query_tracking
+                WHERE id IN (
+                    SELECT id 
+                    FROM consecutive_completed
+                    WHERE rn = (SELECT MAX(rn) FROM consecutive_completed)
+                )
+            """, all_ts_ids)
+            deleted_count = int(result.split()[-1])
+            logging.info(f"Purged {deleted_count} completed queries.")
+        finally:
+            await self.release_connection(self.local_ts_id, conn)
+
+    async def close(self):
+        for pool in self.pool_connections.values():
+            await pool.close()
         
-            value = value.replace('{{' + match + '}}', replacement)
-        
-        return Path(value).expanduser()
 
 
-    @classmethod
-    def create_dynamic_model(cls, **data):
-        DynamicModel = create_model(
-            f'Dynamic{cls.__name__}',
-            __base__=cls,
-            **{k: (Path, v) for k, v in data.items()}
-        )
-        return DynamicModel(**data)
-
-    class Config:
-        arbitrary_types_allowed = True
-
-
-
-
-# Configuration class for API & Database methods.
+# Configuration class for API & Database methods. 
 class APIConfig(BaseModel):
     HOST: str
     PORT: int
