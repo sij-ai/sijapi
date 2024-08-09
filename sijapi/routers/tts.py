@@ -210,18 +210,14 @@ async def get_model(voice: str = None, voice_file: UploadFile = None):
         err(f"No model or voice specified, or no TTS module loaded")
         raise HTTPException(status_code=400, detail="No model or voice specified, or no TTS module loaded")
 
+
 async def determine_voice_id(voice_name: str) -> str:
     debug(f"Searching for voice id for {voice_name}")
     debug(f"Tts.elevenlabs.voices: {Tts.elevenlabs.voices}")
     
     voices = Tts.elevenlabs.voices
-    if isinstance(voices, dict):
-        if voice_name in voices:
-            return voices[voice_name]
-    elif hasattr(voices, '__dict__'):
-        voices_dict = voices.__dict__
-        if voice_name in voices_dict:
-            return voices_dict[voice_name]
+    if voice_name in voices:
+        return voices[voice_name]
     
     debug(f"Requested voice not among the voices specified in config/tts.yaml. Checking with ElevenLabs API.")
     url = "https://api.elevenlabs.io/v1/voices"
@@ -244,15 +240,7 @@ async def determine_voice_id(voice_name: str) -> str:
             err(f"Error determining voice ID: {str(e)}")
     
     warn(f"Voice '{voice_name}' not found; using the default specified in config/tts.yaml: {Tts.elevenlabs.default}")
-    if isinstance(voices, dict):
-        return voices.get(Tts.elevenlabs.default, next(iter(voices.values())))
-    elif hasattr(voices, '__dict__'):
-        voices_dict = voices.__dict__
-        return voices_dict.get(Tts.elevenlabs.default, next(iter(voices_dict.values())))
-    else:
-        err(f"Unexpected type for Tts.elevenlabs.voices: {type(voices)}")
-        return ""
-
+    return voices.get(Tts.elevenlabs.default, next(iter(voices.values())))
 
 
 
