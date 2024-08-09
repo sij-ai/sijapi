@@ -82,6 +82,7 @@ load_dotenv(ENV_PATH)
 TS_ID = os.environ.get('TS_ID')
 T = TypeVar('T', bound='Configuration')
 
+
 # Primary configuration class
 class Configuration(BaseModel):
     HOME: Path = Path.home()
@@ -98,16 +99,15 @@ class Configuration(BaseModel):
                 config_data = yaml.safe_load(file)
 
             debug(f"Loaded configuration data from {yaml_path}")
+            secrets_data = {}
             if secrets_path:
                 with secrets_path.open('r') as file:
                     secrets_data = yaml.safe_load(file)
                 debug(f"Loaded secrets data from {secrets_path}")
-                if isinstance(config_data, list):
-                    for item in config_data:
-                        if isinstance(item, dict):
-                            item.update(secrets_data)
-                else:
-                    config_data.update(secrets_data)
+
+            # Resolve placeholders using secrets
+            config_data = cls.resolve_placeholders(config_data, secrets_data)
+
             if isinstance(config_data, list):
                 config_data = {"configurations": config_data}
             if config_data.get('HOME') is None:
@@ -116,9 +116,6 @@ class Configuration(BaseModel):
 
             load_dotenv()
             instance = cls.create_dynamic_model(**config_data)
-            instance._dir_config = dir_config or instance
-            resolved_data = instance.resolve_placeholders(config_data)
-            instance = cls.create_dynamic_model(**resolved_data)
             instance._dir_config = dir_config or instance
             return instance
 
@@ -136,11 +133,11 @@ class Configuration(BaseModel):
             path = base_path / path
         return path
 
-
-    def resolve_placeholders(self, data: Any) -> Any:
+    @classmethod
+    def resolve_placeholders(cls, data: Any, secrets_data: Dict[str, Any]) -> Any:
         if isinstance(data, dict):
-            resolved_data = {k: self.resolve_placeholders(v) for k, v in data.items()}
-            home_dir = Path(resolved_data.get('HOME', self.HOME)).expanduser()
+            resolved_data = {k: cls.resolve_placeholders(v, secrets_data) for k, v in data.items()}
+            home_dir = Path(resolved_data.get('HOME', cls.HOME)).expanduser()
             base_dir = Path(__file__).parent.parent
             data_dir = base_dir / "data"
             resolved_data['HOME'] = str(home_dir)
@@ -148,24 +145,29 @@ class Configuration(BaseModel):
             resolved_data['DATA'] = str(data_dir)
             return resolved_data
         elif isinstance(data, list):
-            return [self.resolve_placeholders(v) for v in data]
+            return [cls.resolve_placeholders(v, secrets_data) for v in data]
         elif isinstance(data, str):
-            return self.resolve_string_placeholders(data)
+            return cls.resolve_string_placeholders(data, secrets_data)
         else:
             return data
 
-    def resolve_string_placeholders(self, value: str) -> Any:
+    @classmethod
+    def resolve_string_placeholders(cls, value: str, secrets_data: Dict[str, Any]) -> Any:
         pattern = r'\{\{\s*([^}]+)\s*\}\}'
         matches = re.findall(pattern, value)
 
         for match in matches:
             parts = match.split('.')
             if len(parts) == 1:  # Internal reference
-                replacement = getattr(self, parts[0], str(Path.home() / parts[0].lower()))
+                replacement = getattr(cls, parts[0], str(Path.home() / parts[0].lower()))
             elif len(parts) == 2 and parts[0] == 'Dir':
-                replacement = getattr(self, parts[1], str(Path.home() / parts[1].lower()))
+                replacement = getattr(cls, parts[1], str(Path.home() / parts[1].lower()))
             elif len(parts) == 2 and parts[0] == 'ENV':
                 replacement = os.getenv(parts[1], '')
+            elif len(parts) == 2 and parts[0] == 'SECRET':
+                replacement = secrets_data.get(parts[1], '')
+                if not replacement:
+                    warn(f"Secret '{parts[1]}' not found in secrets file")
             else:
                 replacement = value
 
@@ -175,7 +177,6 @@ class Configuration(BaseModel):
         if isinstance(value, str) and (value.startswith(('/', '~')) or (':' in value and value[1] == ':')):
             return Path(value).expanduser()
         return value
-
 
     @classmethod
     def create_dynamic_model(cls, **data):
@@ -195,6 +196,7 @@ class Configuration(BaseModel):
     class Config:
         extra = "allow"
         arbitrary_types_allowed = True
+
 
 
 
