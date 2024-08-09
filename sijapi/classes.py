@@ -232,25 +232,29 @@ class DirConfig(BaseModel):
     @classmethod
     def load(cls, yaml_path: Union[str, Path]) -> 'DirConfig':
         yaml_path = cls._resolve_path(yaml_path, 'config')
-
+    
         try:
             with yaml_path.open('r') as file:
                 config_data = yaml.safe_load(file)
-
+    
             print(f"Loaded configuration data from {yaml_path}")
-
+    
             # Ensure HOME is set
             if 'HOME' not in config_data:
                 config_data['HOME'] = str(Path.home())
                 print(f"HOME was not in config, set to default: {config_data['HOME']}")
-
-            instance = cls.create_dynamic_model(**config_data)
-            resolved_data = instance.resolve_placeholders(config_data)
+    
+            # Create a temporary instance to resolve placeholders
+            temp_instance = cls.create_dynamic_model(**config_data)
+            resolved_data = temp_instance.resolve_placeholders(config_data)
+    
+            # Create the final instance with resolved data
             return cls.create_dynamic_model(**resolved_data)
-
+    
         except Exception as e:
             print(f"Error loading configuration: {str(e)}")
             raise
+
 
     @classmethod
     def _resolve_path(cls, path: Union[str, Path], default_dir: str) -> Path:
@@ -282,18 +286,23 @@ class DirConfig(BaseModel):
     def resolve_string_placeholders(self, value: str) -> Path:
         pattern = r'\{\{\s*([^}]+)\s*\}\}'
         matches = re.findall(pattern, value)
-
+        
         for match in matches:
             if match == 'HOME':
                 replacement = str(self.HOME)
+            elif match == 'BASE':
+                replacement = str(Path(__file__).parent.parent)
+            elif match == 'DATA':
+                replacement = str(Path(__file__).parent.parent / "data")
             elif hasattr(self, match):
                 replacement = str(getattr(self, match))
             else:
                 replacement = value
-
+        
             value = value.replace('{{' + match + '}}', replacement)
-
+        
         return Path(value).expanduser()
+
 
     @classmethod
     def create_dynamic_model(cls, **data):
