@@ -83,7 +83,7 @@ TS_ID = os.environ.get('TS_ID')
 T = TypeVar('T', bound='Configuration')
 
 
-# Primary configuration class
+
 class Configuration(BaseModel):
     HOME: Path = Path.home()
     _dir_config: Optional['Configuration'] = None
@@ -105,16 +105,17 @@ class Configuration(BaseModel):
                     secrets_data = yaml.safe_load(file)
                 debug(f"Loaded secrets data from {secrets_path}")
 
+            # Set default HOME if not present
+            if 'HOME' not in config_data:
+                config_data['HOME'] = str(Path.home())
+                debug(f"HOME was not in config, set to default: {config_data['HOME']}")
+
             # Resolve placeholders using secrets
-            config_data = cls.resolve_placeholders(config_data, secrets_data)
+            config_data = cls.resolve_placeholders(config_data, secrets_data, Path(config_data['HOME']))
 
             if isinstance(config_data, list):
                 config_data = {"configurations": config_data}
-            if config_data.get('HOME') is None:
-                config_data['HOME'] = str(Path.home())
-                warn(f"HOME was None in config, set to default: {config_data['HOME']}")
 
-            load_dotenv()
             instance = cls.create_dynamic_model(**config_data)
             instance._dir_config = dir_config or instance
             return instance
@@ -125,7 +126,7 @@ class Configuration(BaseModel):
 
     @classmethod
     def _resolve_path(cls, path: Union[str, Path], default_dir: str) -> Path:
-        base_path = Path(__file__).parent.parent  # This will be two levels up from this file
+        base_path = Path(__file__).parent.parent
         path = Path(path)
         if not path.suffix:
             path = base_path / 'sijapi' / default_dir / f"{path.name}.yaml"
@@ -134,10 +135,9 @@ class Configuration(BaseModel):
         return path
 
     @classmethod
-    def resolve_placeholders(cls, data: Any, secrets_data: Dict[str, Any]) -> Any:
+    def resolve_placeholders(cls, data: Any, secrets_data: Dict[str, Any], home_dir: Path) -> Any:
         if isinstance(data, dict):
-            resolved_data = {k: cls.resolve_placeholders(v, secrets_data) for k, v in data.items()}
-            home_dir = Path(resolved_data.get('HOME', cls.HOME)).expanduser()
+            resolved_data = {k: cls.resolve_placeholders(v, secrets_data, home_dir) for k, v in data.items()}
             base_dir = Path(__file__).parent.parent
             data_dir = base_dir / "data"
             resolved_data['HOME'] = str(home_dir)
@@ -145,23 +145,23 @@ class Configuration(BaseModel):
             resolved_data['DATA'] = str(data_dir)
             return resolved_data
         elif isinstance(data, list):
-            return [cls.resolve_placeholders(v, secrets_data) for v in data]
+            return [cls.resolve_placeholders(v, secrets_data, home_dir) for v in data]
         elif isinstance(data, str):
-            return cls.resolve_string_placeholders(data, secrets_data)
+            return cls.resolve_string_placeholders(data, secrets_data, home_dir)
         else:
             return data
 
     @classmethod
-    def resolve_string_placeholders(cls, value: str, secrets_data: Dict[str, Any]) -> Any:
+    def resolve_string_placeholders(cls, value: str, secrets_data: Dict[str, Any], home_dir: Path) -> Any:
         pattern = r'\{\{\s*([^}]+)\s*\}\}'
         matches = re.findall(pattern, value)
 
         for match in matches:
             parts = match.split('.')
             if len(parts) == 1:  # Internal reference
-                replacement = getattr(cls, parts[0], str(Path.home() / parts[0].lower()))
+                replacement = str(home_dir / parts[0].lower())
             elif len(parts) == 2 and parts[0] == 'Dir':
-                replacement = getattr(cls, parts[1], str(Path.home() / parts[1].lower()))
+                replacement = str(home_dir / parts[1].lower())
             elif len(parts) == 2 and parts[0] == 'ENV':
                 replacement = os.getenv(parts[1], '')
             elif len(parts) == 2 and parts[0] == 'SECRET':
@@ -196,6 +196,7 @@ class Configuration(BaseModel):
     class Config:
         extra = "allow"
         arbitrary_types_allowed = True
+
 
 
 
