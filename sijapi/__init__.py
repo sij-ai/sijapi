@@ -1,4 +1,5 @@
 # __init__.py
+
 import os
 from pathlib import Path
 import ipaddress
@@ -18,12 +19,15 @@ os.makedirs(LOGS_DIR, exist_ok=True)
 L = Logger("Central", LOGS_DIR)
 
 # API essentials
+print("Loading API configuration...")
 API = APIConfig.load('api', 'secrets')
 Dir = DirConfig.load('dirs')
+
 HOST = f"{API.BIND}:{API.PORT}"
 LOCAL_HOSTS = [ipaddress.ip_address(localhost.strip()) for localhost in os.getenv('LOCAL_HOSTS', '127.0.0.1').split(',')] + ['localhost']
 SUBNET_BROADCAST = os.getenv("SUBNET_BROADCAST", '10.255.255.255')
 MAX_CPU_CORES = min(int(os.getenv("MAX_CPU_CORES", int(multiprocessing.cpu_count()/2))), multiprocessing.cpu_count())
+
 IMG = Configuration.load('img', 'secrets', Dir)
 Llm = Configuration.load('llm', 'secrets', Dir)
 News = Configuration.load('news', 'secrets', Dir)
@@ -31,6 +35,39 @@ Archivist = Configuration.load('archivist', 'secrets', Dir)
 Scrape = Configuration.load('scrape', 'secrets', Dir)
 Serve = Configuration.load('serve', 'secrets', Dir)
 Tts = Configuration.load('tts', 'secrets', Dir)
+
+print(f"Tts configuration loaded: {Tts}")
+print(f"Tts.elevenlabs: {Tts.elevenlabs}")
+print(f"Tts.elevenlabs.key: {Tts.elevenlabs.key}")
+print(f"Tts.elevenlabs.voices: {Tts.elevenlabs.voices}")
+
+# Additional debug logging for Configuration class
+print(f"Configuration.resolve_placeholders method: {Configuration.resolve_placeholders}")
+print(f"Configuration.resolve_string_placeholders method: {Configuration.resolve_string_placeholders}")
+
+# Check if secrets are properly loaded
+print(f"Secrets in Tts config: {[attr for attr in dir(Tts) if attr.isupper()]}")
+
+# Verify the structure of Tts.elevenlabs
+print(f"Type of Tts.elevenlabs: {type(Tts.elevenlabs)}")
+print(f"Attributes of Tts.elevenlabs: {dir(Tts.elevenlabs)}")
+
+# Check if the ElevenLabs API key is properly resolved
+print(f"ElevenLabs API key (masked): {'*' * len(Tts.elevenlabs.key) if hasattr(Tts.elevenlabs, 'key') else 'Not found'}")
+
+# Verify the structure of Tts.elevenlabs.voices
+print(f"Type of Tts.elevenlabs.voices: {type(Tts.elevenlabs.voices)}")
+print(f"Attributes of Tts.elevenlabs.voices: {dir(Tts.elevenlabs.voices)}")
+
+# Check if the default voice is set
+print(f"Default voice: {Tts.elevenlabs.default if hasattr(Tts.elevenlabs, 'default') else 'Not found'}")
+
+# Additional checks
+print(f"Is 'get' method available on Tts.elevenlabs.voices? {'get' in dir(Tts.elevenlabs.voices)}")
+print(f"Is 'values' method available on Tts.elevenlabs.voices? {'values' in dir(Tts.elevenlabs.voices)}")
+
+print("Initialization complete")
+
 
 # Directories & general paths
 ROUTER_DIR = BASE_DIR / "routers"
