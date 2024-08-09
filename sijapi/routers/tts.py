@@ -213,30 +213,39 @@ async def get_model(voice: str = None, voice_file: UploadFile = None):
 async def determine_voice_id(voice_name: str) -> str:
     debug(f"Searching for voice id for {voice_name}")
     debug(f"Tts.elevenlabs.voices: {Tts.elevenlabs.voices}")
-
+    
+    # Check if the voice is in the configured voices
     if voice_name in Tts.elevenlabs.voices:
-        voice_id = hardcoded_voices[voice_name]
-        debug(f"Found voice ID - {voice_id}")
+        voice_id = Tts.elevenlabs.voices[voice_name]
+        debug(f"Found voice ID in config - {voice_id}")
         return voice_id
-
-    debug(f"Requested voice not among the voices specified in config/tts.yaml. Checking with 11L next.")
+    
+    debug(f"Requested voice not among the voices specified in config/tts.yaml. Checking with ElevenLabs API using api_key: {Tts.elevenlabs.api_key}.")
     url = "https://api.elevenlabs.io/v1/voices"
     headers = {"xi-api-key": Tts.elevenlabs.api_key}
     async with httpx.AsyncClient() as client:
         try:
             response = await client.get(url, headers=headers)
-            debug(f"Response: {response}")
+            debug(f"Response status: {response.status_code}")
             if response.status_code == 200:
                 voices_data = response.json().get("voices", [])
                 for voice in voices_data:
-                    if voice_name == voice["voice_id"] or voice_name == voice["name"]:
+                    if voice_name == voice["voice_id"] or voice_name.lower() == voice["name"].lower():
+                        debug(f"Found voice ID from API - {voice['voice_id']}")
                         return voice["voice_id"]
-                    
+            else:
+                err(f"Failed to get voices from ElevenLabs API. Status code: {response.status_code}")
+                err(f"Response content: {response.text}")
         except Exception as e:
             err(f"Error determining voice ID: {str(e)}")
+    
+    warn(f"Voice '{voice_name}' not found; using the default specified in config/tts.yaml: {Tts.elevenlabs.default}")
+    if Tts.elevenlabs.default in Tts.elevenlabs.voices:
+        return Tts.elevenlabs.voices[Tts.elevenlabs.default]
+    else:
+        err(f"Default voice '{Tts.elevenlabs.default}' not found in configuration. Using first available voice.")
+        return next(iter(Tts.elevenlabs.voices.values()))
 
-    warn(f"Voice \'{voice_name}\' not found; attempting to use the default specified in config/tts.yaml: {Tts.elevenlabs.default}")
-    return await determine_voice_id(Tts.elevenlabs.default)
 
 
 async def elevenlabs_tts(model: str, input_text: str, voice: str, title: str = None, output_dir: str = None):
