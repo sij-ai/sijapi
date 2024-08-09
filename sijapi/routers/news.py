@@ -18,7 +18,7 @@ from markdownify import markdownify as md
 from better_profanity import profanity
 from fastapi import APIRouter, BackgroundTasks, UploadFile, Form, HTTPException, Query, Path as FastAPIPath
 from pathlib import Path
-from sijapi import L, News, Archivist, OBSIDIAN_VAULT_DIR, OBSIDIAN_RESOURCES_DIR
+from sijapi import L, Archivist, News, Tts, OBSIDIAN_VAULT_DIR, OBSIDIAN_RESOURCES_DIR
 from sijapi.utilities import html_to_markdown, download_file, sanitize_filename, assemble_journal_path, assemble_archive_path, contains_profanity, is_ad_or_tracker
 from sijapi.routers import gis, llm, tts, note
 
