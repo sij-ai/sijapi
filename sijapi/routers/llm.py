@@ -26,7 +26,7 @@ import tempfile
 import shutil
 import html2text
 import markdown
-from sijapi import L, LLM_SYS_MSG, DEFAULT_LLM, DEFAULT_VISION, REQUESTS_DIR, OBSIDIAN_CHROMADB_COLLECTION, OBSIDIAN_VAULT_DIR, DOC_DIR, OPENAI_API_KEY, DEFAULT_VOICE, SUMMARY_INSTRUCT, SUMMARY_CHUNK_SIZE, SUMMARY_TPW, SUMMARY_CHUNK_OVERLAP, SUMMARY_LENGTH_RATIO, SUMMARY_TOKEN_LIMIT, SUMMARY_MIN_LENGTH, SUMMARY_MODEL
+from sijapi import L, LLM_SYS_MSG, REQUESTS_DIR, OBSIDIAN_CHROMADB_COLLECTION, OBSIDIAN_VAULT_DIR, DOC_DIR, OPENAI_API_KEY, SUMMARY_INSTRUCT, SUMMARY_CHUNK_SIZE, SUMMARY_TPW, SUMMARY_CHUNK_OVERLAP, SUMMARY_LENGTH_RATIO, SUMMARY_TOKEN_LIMIT, SUMMARY_MIN_LENGTH, SUMMARY_MODEL
 from sijapi.utilities import convert_to_unix_time, sanitize_filename, ocr_pdf, clean_text, should_use_ocr, extract_text_from_pdf, extract_text_from_docx, read_text_file, str_to_bool, get_extension
 from sijapi.routers import tts
 from sijapi.routers.asr import transcribe_audio
@@ -87,7 +87,7 @@ async def generate_response(prompt: str):
     return {"response": output['response']}
 
 
-async def query_ollama(usr: str, sys: str = LLM_SYS_MSG, model: str = DEFAULT_LLM, max_tokens: int = 200):
+async def query_ollama(usr: str, sys: str = LLM_SYS_MSG, model: str = Llm.chat.model, max_tokens: int = 200):
     messages = [{"role": "system", "content": sys},
                 {"role": "user", "content": usr}]
     LLM = Ollama()
@@ -105,7 +105,7 @@ async def query_ollama(usr: str, sys: str = LLM_SYS_MSG, model: str = DEFAULT_LL
 async def query_ollama_multishot(
     message_list: List[str],
     sys: str = LLM_SYS_MSG,
-    model: str = DEFAULT_LLM,
+    model: str = Llm.chat.model,
     max_tokens: int = 200
 ):
     if len(message_list) % 2 == 0:
@@ -231,9 +231,9 @@ async def stream_messages_with_vision(message: dict, model: str, num_predict: in
         
 def get_appropriate_model(requested_model):
     if requested_model == "gpt-4-vision-preview":
-        return DEFAULT_VISION
+        return Llm.vision.model
     elif not is_model_available(requested_model):
-        return DEFAULT_LLM
+        return Llm.chat.model
     else:
         return requested_model
 
@@ -314,7 +314,7 @@ async def chat_completions_options(request: Request):
             ],
             "created": int(time.time()),
             "id": str(uuid.uuid4()),
-            "model": DEFAULT_LLM,
+            "model": Llm.chat.model,
             "object": "chat.completion.chunk",
         },
         status_code=200,
@@ -533,7 +533,7 @@ async def summarize_tts_endpoint(
     instruction: str = Form(SUMMARY_INSTRUCT),
     file: Optional[UploadFile] = File(None),
     text: Optional[str] = Form(None),
-    voice: Optional[str] = Form(DEFAULT_VOICE),
+    voice: Optional[str] = Form(None),
     speed: Optional[float] = Form(1.2),
     podcast: Union[bool, str] = Form(False)
 ):
@@ -577,7 +577,7 @@ async def summarize_tts_endpoint(
 async def summarize_tts(
     text: str, 
     instruction: str = SUMMARY_INSTRUCT,
-    voice: Optional[str] = DEFAULT_VOICE,
+    voice: Optional[str] = None,
     speed: float = 1.1,
     podcast: bool = False,
     LLM: Ollama = None

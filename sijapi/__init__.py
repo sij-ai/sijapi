@@ -78,10 +78,6 @@ DAY_SHORT_FMT = os.getenv("DAY_SHORT_FMT")
 # Large language model
 LLM_URL = os.getenv("LLM_URL", "http://localhost:11434")
 LLM_SYS_MSG = os.getenv("SYSTEM_MSG", "You are a helpful AI assistant.")
-DEFAULT_LLM = os.getenv("DEFAULT_LLM", "llama3")
-DEFAULT_VISION = os.getenv("DEFAULT_VISION", "llava")
-DEFAULT_VOICE = os.getenv("DEFAULT_VOICE", "Luna")
-DEFAULT_11L_VOICE = os.getenv("DEFAULT_11L_VOICE", "Victoria")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 # Summarization
@@ -118,8 +114,6 @@ TTS_DIR = DATA_DIR / "tts"
 os.makedirs(TTS_DIR, exist_ok=True)
 VOICE_DIR = TTS_DIR / 'voices'
 os.makedirs(VOICE_DIR, exist_ok=True)
-PODCAST_DIR = os.getenv("PODCAST_DIR", TTS_DIR / "sideloads")
-os.makedirs(PODCAST_DIR, exist_ok=True)
 TTS_OUTPUT_DIR = TTS_DIR / 'outputs'
 os.makedirs(TTS_OUTPUT_DIR, exist_ok=True)
 TTS_SEGMENTS_DIR = TTS_DIR / 'segments'
