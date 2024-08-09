@@ -25,6 +25,7 @@ LOCAL_HOSTS = [ipaddress.ip_address(localhost.strip()) for localhost in os.geten
 SUBNET_BROADCAST = os.getenv("SUBNET_BROADCAST", '10.255.255.255')
 MAX_CPU_CORES = min(int(os.getenv("MAX_CPU_CORES", int(multiprocessing.cpu_count()/2))), multiprocessing.cpu_count())
 IMG = Configuration.load('img', 'secrets', Dir)
+Llm = Configuration.load('llm', 'secrets', Dir)
 News = Configuration.load('news', 'secrets', Dir)
 Archivist = Configuration.load('archivist', 'secrets', Dir)
 Scrape = Configuration.load('scrape', 'secrets', Dir)
