@@ -93,36 +93,42 @@ class Configuration(BaseModel):
         yaml_path = cls._resolve_path(yaml_path, 'config')
         if secrets_path:
             secrets_path = cls._resolve_path(secrets_path, 'config')
-
+    
         try:
             with yaml_path.open('r') as file:
                 config_data = yaml.safe_load(file)
-
+    
             debug(f"Loaded configuration data from {yaml_path}")
-            secrets_data = {}
             if secrets_path:
                 with secrets_path.open('r') as file:
                     secrets_data = yaml.safe_load(file)
                 debug(f"Loaded secrets data from {secrets_path}")
-
-            # Set default HOME if not present
+                if isinstance(config_data, list):
+                    for item in config_data:
+                        if isinstance(item, dict):
+                            item.update(secrets_data)
+                else:
+                    config_data.update(secrets_data)
+    
+            if isinstance(config_data, list):
+                config_data = {"configurations": config_data}
+            
             if 'HOME' not in config_data:
                 config_data['HOME'] = str(Path.home())
                 debug(f"HOME was not in config, set to default: {config_data['HOME']}")
-
-            # Resolve placeholders using secrets
-            config_data = cls.resolve_placeholders(config_data, secrets_data, Path(config_data['HOME']))
-
-            if isinstance(config_data, list):
-                config_data = {"configurations": config_data}
-
+    
+            load_dotenv()
             instance = cls.create_dynamic_model(**config_data)
             instance._dir_config = dir_config or instance
+            resolved_data = instance.resolve_placeholders(config_data)
+            instance = cls.create_dynamic_model(**resolved_data)
+            instance._dir_config = dir_config or instance
             return instance
-
+    
         except Exception as e:
             err(f"Error loading configuration: {str(e)}")
             raise
+
 
     @classmethod
     def _resolve_path(cls, path: Union[str, Path], default_dir: str) -> Path:
