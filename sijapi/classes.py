@@ -160,27 +160,27 @@ class Configuration(BaseModel):
             return data
     
     
-    def resolve_string_placeholders(self, value: str, secrets_data: Dict[str, Any], home_dir: Path) -> Any:
+    def resolve_string_placeholders(self, value: str) -> Any:
         pattern = r'\{\{\s*([^}]+)\s*\}\}'
         matches = re.findall(pattern, value)
-    
+        
         for match in matches:
             parts = match.split('.')
             if len(parts) == 1:  # Internal reference
-                replacement = str(home_dir / parts[0].lower())
+                replacement = getattr(self, parts[0], str(Path.home() / parts[0].lower()))
             elif len(parts) == 2 and parts[0] == 'Dir':
-                replacement = str(home_dir / parts[1].lower())
+                replacement = getattr(self, parts[1], str(Path.home() / parts[1].lower()))
             elif len(parts) == 2 and parts[0] == 'ENV':
                 replacement = os.getenv(parts[1], '')
             elif len(parts) == 2 and parts[0] == 'SECRET':
-                replacement = secrets_data.get(parts[1], '')
+                replacement = getattr(self, parts[1].strip(), '')
                 if not replacement:
-                    warn(f"Secret '{parts[1]}' not found in secrets file")
+                    warn(f"Secret '{parts[1].strip()}' not found in secrets file")
             else:
                 replacement = value
-    
+        
             value = value.replace('{{' + match + '}}', str(replacement))
-    
+        
         # Convert to Path if it looks like a file path
         if isinstance(value, str) and (value.startswith(('/', '~')) or (':' in value and value[1] == ':')):
             return Path(value).expanduser()
