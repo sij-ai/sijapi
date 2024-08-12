@@ -11,8 +11,8 @@ import sys
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-def load_config():
-    config_path = Path(__file__).parent.parent / 'config' / 'sys.yaml'
+def load_config(cfg: str):
+    config_path = Path(__file__).parent.parent / 'config' / f'{cfg}.yaml'
     with open(config_path, 'r') as file:
         return yaml.safe_load(file)
 
@@ -149,8 +149,8 @@ def kill_remote_server(server):
 
 def main():
     load_env()
-    config = load_config()
-    pool = config['POOL']
+    db_config = load_config('db')
+    pool = db_config['POOL']
     local_ts_id = os.environ.get('TS_ID')
 
     parser = argparse.ArgumentParser(description='Manage sijapi servers')
