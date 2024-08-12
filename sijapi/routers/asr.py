@@ -13,15 +13,10 @@ from fastapi import APIRouter, HTTPException, Form, UploadFile, File, Background
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from typing import Optional
-from sijapi import L, ASR_DIR, WHISPER_CPP_MODELS, WHISPER_CPP_DIR, MAX_CPU_CORES
-
+from sijapi import Sys, ASR_DIR, WHISPER_CPP_MODELS, WHISPER_CPP_DIR
+from sijapi.logs import get_logger
+l = get_logger(__name__)
 asr = APIRouter()
-logger = L.get_module_logger("asr")
-def debug(text: str): logger.debug(text)
-def info(text: str): logger.info(text)
-def warn(text: str): logger.warning(text)
-def err(text: str): logger.error(text)
-def crit(text: str): logger.critical(text)
 
 transcription_results = {}
 class TranscribeParams(BaseModel):
@@ -84,13 +79,13 @@ async def transcribe_endpoint(
 
 
 async def transcribe_audio(file_path, params: TranscribeParams):
-    debug(f"Transcribing audio file from {file_path}...")
+    l.debug(f"Transcribing audio file from {file_path}...")
     file_path = await convert_to_wav(file_path)
     model = params.model if params.model in WHISPER_CPP_MODELS else 'small'
     model_path = WHISPER_CPP_DIR / 'models' / f'ggml-{model}.bin'
     command = [str(WHISPER_CPP_DIR / 'build' / 'bin' / 'main')]
     command.extend(['-m', str(model_path)])
-    command.extend(['-t', str(max(1, min(params.threads or MAX_CPU_CORES, MAX_CPU_CORES)))])
+    command.extend(['-t', str(max(1, min(params.threads or Sys.MAX_CPU_CORES, Sys.MAX_CPU_CORES)))])
     command.extend(['-np'])
 
     if params.split_on_word:
@@ -121,11 +116,11 @@ async def transcribe_audio(file_path, params: TranscribeParams):
         command.extend(['--dtw', params.dtw])
 
     command.extend(['-f', file_path])
-    debug(f"Command: {command}")
+    l.debug(f"Command: {command}")
 
     # Create a unique ID for this transcription job
     job_id = str(uuid.uuid4())
-    debug(f"Created job ID: {job_id}")
+    l.debug(f"Created job ID: {job_id}")
 
     # Store the job status
     transcription_results[job_id] = {"status": "processing", "result": None}
@@ -137,20 +132,20 @@ async def transcribe_audio(file_path, params: TranscribeParams):
     poll_interval = 10  # 10 seconds
     start_time = asyncio.get_event_loop().time()
 
-    debug(f"Starting to poll for job {job_id}")
+    l.debug(f"Starting to poll for job {job_id}")
     try:
         while asyncio.get_event_loop().time() - start_time < max_wait_time:
             job_status = transcription_results.get(job_id, {})
-            debug(f"Current status for job {job_id}: {job_status['status']}")
+            l.debug(f"Current status for job {job_id}: {job_status['status']}")
             if job_status["status"] == "completed":
-                info(f"Transcription completed for job {job_id}")
+                l.info(f"Transcription completed for job {job_id}")
                 return job_id  # This is the only change
             elif job_status["status"] == "failed":
-                err(f"Transcription failed for job {job_id}: {job_status.get('error', 'Unknown error')}")
+                l.error(f"Transcription failed for job {job_id}: {job_status.get('error', 'Unknown error')}")
                 raise Exception(f"Transcription failed: {job_status.get('error', 'Unknown error')}")
             await asyncio.sleep(poll_interval)
 
-        err(f"Transcription timed out for job {job_id}")
+        l.error(f"Transcription timed out for job {job_id}")
         raise TimeoutError("Transcription timed out")
     finally:
         # Ensure the task is cancelled if we exit the loop
@@ -160,20 +155,20 @@ async def transcribe_audio(file_path, params: TranscribeParams):
 
 async def process_transcription(command, file_path, job_id):
     try:
-        debug(f"Starting transcription process for job {job_id}")
+        l.debug(f"Starting transcription process for job {job_id}")
         result = await run_transcription(command, file_path)
         transcription_results[job_id] = {"status": "completed", "result": result}
-        debug(f"Transcription completed for job {job_id}")
+        l.debug(f"Transcription completed for job {job_id}")
     except Exception as e:
-        err(f"Transcription failed for job {job_id}: {str(e)}")
+        l.error(f"Transcription failed for job {job_id}: {str(e)}")
         transcription_results[job_id] = {"status": "failed", "error": str(e)}
     finally:
         # Clean up the temporary file
         os.remove(file_path)
-        debug(f"Cleaned up temporary file for job {job_id}")
+        l.debug(f"Cleaned up temporary file for job {job_id}")
 
 async def run_transcription(command, file_path):
-    debug(f"Running transcription command: {' '.join(command)}")
+    l.debug(f"Running transcription command: {' '.join(command)}")
     proc = await asyncio.create_subprocess_exec(
         *command,
         stdout=asyncio.subprocess.PIPE,
@@ -182,9 +177,9 @@ async def run_transcription(command, file_path):
     stdout, stderr = await proc.communicate()
     if proc.returncode != 0:
         error_message = f"Error running command: {stderr.decode()}"
-        err(error_message)
+        l.error(error_message)
         raise Exception(error_message)
-    debug("Transcription command completed successfully")
+    l.debug("Transcription command completed successfully")
     return stdout.decode().strip()
 
 async def convert_to_wav(file_path: str):

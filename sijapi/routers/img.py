@@ -18,15 +18,12 @@ import random
 import os
 import asyncio
 from sijapi.routers.llm import query_ollama
-from sijapi import API, L, COMFYUI_URL, COMFYUI_OUTPUT_DIR, IMG_CONFIG_PATH, IMG_DIR, IMG_WORKFLOWS_DIR
+from sijapi import Sys, COMFYUI_URL, COMFYUI_OUTPUT_DIR, IMG_CONFIG_PATH, IMG_DIR, IMG_WORKFLOWS_DIR
+from sijapi.logs import get_logger
+l = get_logger(__name__)
 
 img = APIRouter()
-logger = L.get_module_logger("img")
-def debug(text: str): logger.debug(text)
-def info(text: str): logger.info(text)
-def warn(text: str): logger.warning(text)
-def err(text: str): logger.error(text)
-def crit(text: str): logger.critical(text)
+
 
 CLIENT_ID = str(uuid.uuid4())
 
@@ -73,12 +70,12 @@ async def workflow(prompt: str, scene: str = None, size: str = None, earlyout: s
 
     scene_workflow = random.choice(scene_data['workflows'])
     if size:
-        debug(f"Specified size: {size}")
+        l.debug(f"Specified size: {size}")
 
     size = size if size else scene_workflow.get('size', '1024x1024')
     
     width, height = map(int, size.split('x'))
-    debug(f"Parsed width: {width}; parsed height: {height}")
+    l.debug(f"Parsed width: {width}; parsed height: {height}")
 
     workflow_path = Path(IMG_WORKFLOWS_DIR) / scene_workflow['workflow']
     workflow_data = json.loads(workflow_path.read_text())
@@ -92,22 +89,22 @@ async def workflow(prompt: str, scene: str = None, size: str = None, earlyout: s
     }
 
     saved_file_key = await update_prompt_and_get_key(workflow=workflow_data, post=post, positive=image_concept)
-    info(f"Saved file key: {saved_file_key}")
+    l.info(f"Saved file key: {saved_file_key}")
 
     prompt_id = await queue_prompt(workflow_data)
-    info(f"Prompt ID: {prompt_id}")
+    l.info(f"Prompt ID: {prompt_id}")
 
     max_size = max(width, height) if downscale_to_fit else None
     destination_path = Path(destination_path).with_suffix(".jpg") if destination_path else IMG_DIR / f"{prompt_id}.jpg"
 
     if earlyout:
         asyncio.create_task(generate_and_save_image(prompt_id, saved_file_key, max_size, destination_path))
-        debug(f"Returning {destination_path}")
+        l.debug(f"Returning {destination_path}")
         return destination_path
     
     else:
         await generate_and_save_image(prompt_id, saved_file_key, max_size, destination_path)
-        debug(f"Returning {destination_path}")
+        l.debug(f"Returning {destination_path}")
         return destination_path
 
 
@@ -118,16 +115,16 @@ async def generate_and_save_image(prompt_id, saved_file_key, max_size, destinati
         jpg_file_path = await save_as_jpg(image_data, prompt_id, quality=90, max_size=max_size, destination_path=destination_path)
 
         if Path(jpg_file_path) != Path(destination_path):
-            err(f"Mismatch between jpg_file_path, {jpg_file_path}, and detination_path, {destination_path}")
+            l.error(f"Mismatch between jpg_file_path, {jpg_file_path}, and detination_path, {destination_path}")
 
     except Exception as e:
-        err(f"Error in generate_and_save_image: {e}")
+        l.error(f"Error in generate_and_save_image: {e}")
         return None
     
     
 def get_web_path(file_path: Path) -> str:
     uri = file_path.relative_to(IMG_DIR)
-    web_path = f"{API.URL}/img/{uri}"
+    web_path = f"{Sys.URL}/img/{uri}"
     return web_path
 
 
@@ -143,7 +140,7 @@ async def poll_status(prompt_id):
                 status_data = await response.json()
                 job_data = status_data.get(prompt_id, {})
                 if job_data.get("status", {}).get("completed", False):
-                    info(f"{prompt_id} completed in {elapsed_time} seconds.")
+                    l.info(f"{prompt_id} completed in {elapsed_time} seconds.")
                     return job_data
             await asyncio.sleep(1)
 
@@ -194,7 +191,7 @@ async def save_as_jpg(image_data, prompt_id, max_size = None, quality = 100, des
         return str(destination_path_jpg)
     
     except Exception as e:
-        err(f"Error processing image: {e}")
+        l.error(f"Error processing image: {e}")
         return None
 
 
@@ -210,11 +207,11 @@ def set_presets(workflow_data, preset_values):
             if 'inputs' in workflow_data.get(preset_node, {}):
                 workflow_data[preset_node]['inputs'][preset_key] = preset_value
             else:
-                debug("Node not found in workflow_data")
+                l.debug("Node not found in workflow_data")
         else:
-            debug("Required data missing in preset_values")
+            l.debug("Required data missing in preset_values")
     else:
-        debug("No preset_values found")
+        l.debug("No preset_values found")
 
 
 def get_return_path(destination_path):
@@ -229,7 +226,7 @@ def get_scene(scene):
         IMG_CONFIG = yaml.safe_load(IMG_CONFIG_file)
     for scene_data in IMG_CONFIG['scenes']:
         if scene_data['scene'] == scene:
-            debug(f"Found scene for \"{scene}\".")
+            l.debug(f"Found scene for \"{scene}\".")
             return scene_data
     return None
 
@@ -249,11 +246,11 @@ def get_matching_scene(prompt):
             max_count = count
             scene_data = sc
             if scene_data:
-                debug(f"Found better-matching scene: the prompt contains {max_count} words that match triggers for {scene_data.get('name')}!")
+                l.debug(f"Found better-matching scene: the prompt contains {max_count} words that match triggers for {scene_data.get('name')}!")
     if scene_data:
         return scene_data
     else:
-        debug(f"No matching scenes found, falling back to default scene.")
+        l.debug(f"No matching scenes found, falling back to default scene.")
         return IMG_CONFIG['scenes'][0]
 
 
@@ -272,11 +269,11 @@ async def ensure_comfy(retries: int = 4, timeout: float = 6.0):
     for attempt in range(retries):
         try:
             with socket.create_connection(("127.0.0.1", 8188), timeout=2):
-                info("ComfyUI is already running.")
+                l.info("ComfyUI is already running.")
                 return
         except (socket.timeout, ConnectionRefusedError):
             if attempt == 0:  # Only try to start ComfyUI on the first failed attempt
-                warn("ComfyUI is not running. Starting it now...")
+                l.warning("ComfyUI is not running. Starting it now...")
                 try:
                     tmux_command = (
                         "tmux split-window -h "
@@ -285,14 +282,14 @@ async def ensure_comfy(retries: int = 4, timeout: float = 6.0):
                         "python main.py; exec $SHELL\""
                     )
                     subprocess.Popen(tmux_command, shell=True)
-                    info("ComfyUI started in a new tmux session.")
+                    l.info("ComfyUI started in a new tmux session.")
                 except Exception as e:
                     raise RuntimeError(f"Error starting ComfyUI: {e}")
             
-            warn(f"Attempt {attempt + 1}/{retries} failed. Waiting {timeout} seconds before retrying...")
+            l.warning(f"Attempt {attempt + 1}/{retries} failed. Waiting {timeout} seconds before retrying...")
             await asyncio.sleep(timeout)
 
-    crit(f"Failed to ensure ComfyUI is running after {retries} attempts with {timeout} second intervals.")
+    l.critical(f"Failed to ensure ComfyUI is running after {retries} attempts with {timeout} second intervals.")
     raise RuntimeError(f"Failed to ensure ComfyUI is running after {retries} attempts with {timeout} second intervals.")
 
 
@@ -398,13 +395,13 @@ Even more important, it finds and returns the key to the filepath where the file
                     workflow[key] = random.randint(1000000000000, 9999999999999)
 
                 elif key in ["width", "max_width", "scaled_width", "height", "max_height", "scaled_height", "side_length", "size", "value", "dimension", "dimensions", "long", "long_side", "short", "short_side", "length"]:
-                    debug(f"Got a hit for a dimension: {key} {value}")
+                    l.debug(f"Got a hit for a dimension: {key} {value}")
                     if value == 1023:
                         workflow[key] = post.get("width", 1024)
-                        debug(f"Set {key} to {workflow[key]}.")
+                        l.debug(f"Set {key} to {workflow[key]}.")
                     elif value == 1025:
                         workflow[key] = post.get("height", 1024)
-                        debug(f"Set {key} to {workflow[key]}.")
+                        l.debug(f"Set {key} to {workflow[key]}.")
 
     update_recursive(workflow)
     return found_key[0]

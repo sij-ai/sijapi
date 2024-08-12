@@ -36,19 +36,16 @@ import json
 from ollama import Client as oLlama
 from sijapi.routers.img import img
 from dotenv import load_dotenv
-from sijapi import L, COMFYUI_DIR
-
 import io
 from io import BytesIO
 import base64
 
+from sijapi import COMFYUI_DIR
+from sijapi.logs import get_logger
+l = get_logger(__name__)
+
 ig = APIRouter()
-logger = L.get_module_logger("ig")
-def debug(text: str): logger.debug(text)
-def info(text: str): logger.info(text)
-def warn(text: str): logger.warning(text)
-def err(text: str): logger.error(text)
-def crit(text: str): logger.critical(text)
+
 
 class IG_Request(BaseModel):
     file: Optional[UploadFile] = None # upload a particular file to Instagram
@@ -862,16 +859,16 @@ async def ig_flow_endpoint(new_session: bool = False):
     time_remaining = 30 - (time_since_rollover % 30)
 
     if time_remaining < 4:
-        logger.debug("Too close to end of TOTP counter. Waiting.")
+        logger.l.debug("Too close to end of TOTP counter. Waiting.")
         sleepupto(5, 5)
 
         if not new_session and os.path.exists(IG_SESSION_PATH):
             cl.load_settings(IG_SESSION_PATH)
-            logger.debug("Loaded past session.")
+            logger.l.debug("Loaded past session.")
 
         elif new_session and cl.login(IG_USERNAME, IG_PASSWORD, verification_code=TOTP.now()):
             cl.dump_settings(IG_SESSION_PATH)
-            logger.debug("Logged in and saved new session.")
+            logger.l.debug("Logged in and saved new session.")
 
         else:
             raise Exception(f"Failed to login as {IG_USERNAME}.")

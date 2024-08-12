@@ -33,20 +33,15 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from sijapi import (
-    L, API, Serve, LOGS_DIR, TS_ID, CASETABLE_PATH, COURTLISTENER_DOCKETS_URL, COURTLISTENER_API_KEY,
+    Sys, Serve, Db, LOGS_DIR, TS_ID, CASETABLE_PATH, COURTLISTENER_DOCKETS_URL, COURTLISTENER_API_KEY,
     COURTLISTENER_BASE_URL, COURTLISTENER_DOCKETS_DIR, COURTLISTENER_SEARCH_DIR, ALERTS_DIR,
     MAC_UN, MAC_PW, MAC_ID, TS_TAILNET, IMG_DIR, PUBLIC_KEY, OBSIDIAN_VAULT_DIR
 )
 from sijapi.classes import WidgetUpdate
 from sijapi.utilities import bool_convert, sanitize_filename, assemble_journal_path
 from sijapi.routers import gis
-
-logger = L.get_module_logger("serve")
-def debug(text: str): logger.debug(text)
-def info(text: str): logger.info(text)
-def warn(text: str): logger.warning(text)
-def err(text: str): logger.err(text)
-def crit(text: str): logger.critical(text)
+from sijapi.logs import get_logger
+l = get_logger(__name__)
 
 serve = APIRouter()
 templates = Jinja2Templates(directory=Path(__file__).parent.parent / "sites")
@@ -85,13 +80,13 @@ async def get_file_endpoint(file_path: str):
         date_time = await gis.dt(file_path);
         absolute_path, local_path = assemble_journal_path(date_time, no_timestamp = True)
     except ValueError as e:
-        debug(f"Unable to parse {file_path} as a date, now trying to use it as a local path")
+        l.debug(f"Unable to parse {file_path} as a date, now trying to use it as a local path")
         absolute_path = OBSIDIAN_VAULT_DIR / file_path
         if not absolute_path.suffix:
             absolute_path = Path(absolute_path.with_suffix(".md"))
 
     if not absolute_path.is_file():
-        warn(f"{absolute_path} is not a valid file it seems.")
+        l.warning(f"{absolute_path} is not a valid file it seems.")
     elif absolute_path.suffix == '.md':
         try:
             with open(absolute_path, 'r', encoding='utf-8') as file:
@@ -125,11 +120,11 @@ async def hook_alert(request: Request):
 async def notify(alert: str):
     fail = True
     try:
-        if API.EXTENSIONS.shellfish:
+        if Sys.EXTENSIONS.shellfish:
             await notify_shellfish(alert)
             fail = False
 
-        if API.EXTENSIONS.macnotify:
+        if Sys.EXTENSIONS.macnotify:
             if TS_ID == MAC_ID:
                 await notify_local(alert)
                 fail = False
@@ -140,10 +135,10 @@ async def notify(alert: str):
         fail = True
 
     if fail == False:
-        info(f"Delivered alert: {alert}")
+        l.info(f"Delivered alert: {alert}")
         return {"message": alert}
     else:
-        crit(f"Failed to deliver alert: {alert}")
+        l.critical(f"Failed to deliver alert: {alert}")
         return {"message": f"Failed to deliver alert: {alert}"}
 
 async def notify_local(message: str):
@@ -165,7 +160,7 @@ async def notify_remote(host: str, message: str, username: str = None, password:
     ssh.close()
 
 
-if API.EXTENSIONS.shellfish:
+if Sys.EXTENSIONS.shellfish:
     async def notify_shellfish(alert: str):
         key = "d7e810e7601cd296a05776c169b4fe97a6a5ee1fd46abe38de54f415732b3f4b"
         user = "WuqPwm1VpGijF4U5AnIKzqNMVWGioANTRjJoonPm"
@@ -250,14 +245,14 @@ if API.EXTENSIONS.shellfish:
         return result.stdout
 
 
-if API.EXTENSIONS.courtlistener:
+if Sys.EXTENSIONS.courtlistener:
     with open(CASETABLE_PATH, 'r') as file:
         CASETABLE = json.load(file)
 
     @serve.post("/cl/search")
     async def hook_cl_search(request: Request, bg_tasks: BackgroundTasks):
         client_ip = request.client.host
-        debug(f"Received request from IP: {client_ip}")
+        l.debug(f"Received request from IP: {client_ip}")
         data = await request.json()
         payload = data['payload']
         results = data['payload']['results']
@@ -275,7 +270,7 @@ if API.EXTENSIONS.courtlistener:
     @serve.post("/cl/docket")
     async def hook_cl_docket(request: Request):
         client_ip = request.client.host
-        debug(f"Received request from IP: {client_ip}")
+        l.debug(f"Received request from IP: {client_ip}")
         data = await request.json()
         await cl_docket(data, client_ip)
 
@@ -312,14 +307,14 @@ if API.EXTENSIONS.courtlistener:
         async with aiohttp.ClientSession() as session:
             async with session.get(url, headers=headers) as response:           
                 if response.status == 200:
-                    debug(f"Fetching CourtListener docket information for {docket}...")
+                    l.debug(f"Fetching CourtListener docket information for {docket}...")
                     data = await response.json()
                     court_docket = data['results'][0]['docket_number_core']
                     court_docket = f"{court_docket[:2]}-cv-{court_docket[2:]}"  # Formatting the docket number
                     case_name = data['results'][0]['case_name']
-                    debug(f"Obtained from CourtListener: docket {court_docket}, case name {case_name}.")
+                    l.debug(f"Obtained from CourtListener: docket {court_docket}, case name {case_name}.")
                 else:
-                    debug("Failed to fetch data from CourtListener API.")
+                    l.debug("Failed to fetch data from CourtListener API.")
                     court_docket = 'NoCourtDocket'
                     case_name = 'NoCaseName'
 
@@ -329,12 +324,12 @@ if API.EXTENSIONS.courtlistener:
 
             if filepath_ia:
                 file_url = filepath_ia
-                debug(f"Found IA file at {file_url}.")
+                l.debug(f"Found IA file at {file_url}.")
             elif filepath_local:
                 file_url = f"{COURTLISTENER_BASE_URL}/{filepath_local}"
-                debug(f"Found local file at {file_url}.")
+                l.debug(f"Found local file at {file_url}.")
             else:
-                debug(f"No file URL found in filepath_ia or filepath_local for one of the documents.")
+                l.debug(f"No file URL found in filepath_ia or filepath_local for one of the documents.")
                 continue
 
             document_number = document.get('document_number', 'NoDocumentNumber')
@@ -345,7 +340,7 @@ if API.EXTENSIONS.courtlistener:
             target_path = Path(COURTLISTENER_DOCKETS_DIR) / case_shortname / "Docket" / file_name
             target_path.parent.mkdir(parents=True, exist_ok=True)
             await cl_download_file(file_url, target_path, session)
-            debug(f"Downloaded {file_name} to {target_path}")
+            l.debug(f"Downloaded {file_name} to {target_path}")
 
 
     def cl_case_details(docket):
@@ -360,18 +355,18 @@ if API.EXTENSIONS.courtlistener:
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.82 Safari/537.36'
         }
         async with aiohttp.ClientSession() as session:
-            debug(f"Attempting to download {url} to {path}.")
+            l.debug(f"Attempting to download {url} to {path}.")
             try:
                 async with session.get(url, headers=headers, allow_redirects=True) as response:
                     if response.status == 403:
-                        err(f"Access denied (403 Forbidden) for URL: {url}. Skipping download.")
+                        l.error(f"Access denied (403 Forbidden) for URL: {url}. Skipping download.")
                         return
                     response.raise_for_status()
 
                     # Check if the response content type is a PDF
                     content_type = response.headers.get('Content-Type')
                     if content_type != 'application/pdf':
-                        err(f"Invalid content type: {content_type}. Skipping download.")
+                        l.error(f"Invalid content type: {content_type}. Skipping download.")
                         return
 
                     # Create an in-memory buffer to store the downloaded content
@@ -386,7 +381,7 @@ if API.EXTENSIONS.courtlistener:
                     try:
                         PdfReader(buffer)
                     except Exception as e:
-                        err(f"Invalid PDF content: {str(e)}. Skipping download.")
+                        l.error(f"Invalid PDF content: {str(e)}. Skipping download.")
                         return
 
                     # If the PDF is valid, write the content to the file on disk
@@ -395,7 +390,7 @@ if API.EXTENSIONS.courtlistener:
                         file.write(buffer.getvalue())
 
             except Exception as e:
-                err(f"Error downloading file: {str(e)}")
+                l.error(f"Error downloading file: {str(e)}")
 
 
     async def cl_search_process_result(result):
@@ -404,7 +399,7 @@ if API.EXTENSIONS.courtlistener:
             court_id = result.get('court_id')
             case_name_short = result.get('caseNameShort')
             case_name = result.get('caseName')
-            debug(f"Received payload for case {case_name} ({court_id}) and download url {download_url}")
+            l.debug(f"Received payload for case {case_name} ({court_id}) and download url {download_url}")
 
             court_folder = court_id
 
@@ -418,9 +413,9 @@ if API.EXTENSIONS.courtlistener:
             target_path.parent.mkdir(parents=True, exist_ok=True)
 
             await cl_download_file(download_url, target_path, session)
-            debug(f"Downloaded {file_name} to {target_path}")
+            l.debug(f"Downloaded {file_name} to {target_path}")
 
-if API.EXTENSIONS.url_shortener: 
+if Sys.EXTENSIONS.url_shortener: 
     @serve.get("/s", response_class=HTMLResponse)
     async def shortener_form(request: Request):
         return templates.TemplateResponse("shortener.html", {"request": request})
@@ -433,7 +428,7 @@ if API.EXTENSIONS.url_shortener:
             if len(custom_code) != 3 or not custom_code.isalnum():
                 return templates.TemplateResponse("shortener.html", {"request": request, "error": "Custom code must be 3 alphanumeric characters"})
             
-            existing = await API.execute_read_query('SELECT 1 FROM short_urls WHERE short_code = $1', custom_code, table_name="short_urls")
+            existing = await Db.execute_read('SELECT 1 FROM short_urls WHERE short_code = $1', custom_code, table_name="short_urls")
             if existing:
                 return templates.TemplateResponse("shortener.html", {"request": request, "error": "Custom code already in use"})
             
@@ -441,13 +436,13 @@ if API.EXTENSIONS.url_shortener:
         else:
             chars = string.ascii_letters + string.digits
             while True:
-                debug(f"FOUND THE ISSUE")
+                l.debug(f"FOUND THE ISSUE")
                 short_code = ''.join(random.choice(chars) for _ in range(3))
-                existing = await API.execute_read_query('SELECT 1 FROM short_urls WHERE short_code = $1', short_code, table_name="short_urls")
+                existing = await Db.execute_read('SELECT 1 FROM short_urls WHERE short_code = $1', short_code, table_name="short_urls")
                 if not existing:
                     break
     
-        await API.execute_write_query(
+        await Db.execute_write(
             'INSERT INTO short_urls (short_code, long_url) VALUES ($1, $2)',
             short_code, long_url,
             table_name="short_urls"
@@ -459,7 +454,7 @@ if API.EXTENSIONS.url_shortener:
     
     @serve.get("/{short_code}")
     async def redirect_short_url(short_code: str):
-        results = await API.execute_read_query(
+        results = await Db.execute_read(
             'SELECT long_url FROM short_urls WHERE short_code = $1',
             short_code,
             table_name="short_urls"
@@ -474,7 +469,7 @@ if API.EXTENSIONS.url_shortener:
             raise HTTPException(status_code=404, detail="Long URL not found")
         
         # Increment click count (you may want to do this asynchronously)
-        await API.execute_write_query(
+        await Db.execute_write(
             'INSERT INTO click_logs (short_code, clicked_at) VALUES ($1, $2)',
             short_code, datetime.now(),
             table_name="click_logs"
@@ -485,7 +480,7 @@ if API.EXTENSIONS.url_shortener:
     
     @serve.get("/analytics/{short_code}")
     async def get_analytics(short_code: str):
-        url_info = await API.execute_read_query(
+        url_info = await Db.execute_read(
             'SELECT long_url, created_at FROM short_urls WHERE short_code = $1',
             short_code,
             table_name="short_urls"
@@ -493,13 +488,13 @@ if API.EXTENSIONS.url_shortener:
         if not url_info:
             raise HTTPException(status_code=404, detail="Short URL not found")
         
-        click_count = await API.execute_read_query(
+        click_count = await Db.execute_read(
             'SELECT COUNT(*) FROM click_logs WHERE short_code = $1',
             short_code,
             table_name="click_logs"
         )
         
-        clicks = await API.execute_read_query(
+        clicks = await Db.execute_read(
             'SELECT clicked_at, ip_address, user_agent FROM click_logs WHERE short_code = $1 ORDER BY clicked_at DESC LIMIT 100',
             short_code,
             table_name="click_logs"

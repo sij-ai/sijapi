@@ -29,17 +29,13 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from datetime import datetime as dt_datetime
 from better_profanity import profanity
+from sijapi.logs import get_logger
 from sijapi.utilities import html_to_markdown, sanitize_filename, assemble_journal_path, assemble_archive_path, contains_profanity, is_ad_or_tracker, initialize_adblock_rules, contains_blacklisted_word
-from sijapi import L, API, Archivist, BLOCKLISTS_DIR, OBSIDIAN_VAULT_DIR, OBSIDIAN_RESOURCES_DIR
+from sijapi import Sys, Archivist, BLOCKLISTS_DIR, OBSIDIAN_VAULT_DIR, OBSIDIAN_RESOURCES_DIR
+from sijapi.logs import get_logger
+l = get_logger(__name__)
 
 archivist = APIRouter()
-
-logger = L.get_module_logger("news")
-def debug(text: str): logger.debug(text)
-def info(text: str): logger.info(text)
-def warn(text: str): logger.warning(text)
-def err(text: str): logger.error(text)
-def crit(text: str): logger.critical(text)
 
 adblock_rules = initialize_adblock_rules(BLOCKLISTS_DIR)
 
@@ -51,11 +47,11 @@ async def archive_post(
 	encoding: str = Form('utf-8')
 ):
 	if not url:
-		warn(f"No URL provided to /archive endpoint.")
+		l.warning(f"No URL provided to /archive endpoint.")
 		raise HTTPException(status_code=400, detail="URL is required")
 		
 	if is_ad_or_tracker(url, adblock_rules):
-		debug(f"Skipping likely ad or tracker URL: {url}")
+		l.debug(f"Skipping likely ad or tracker URL: {url}")
 		raise HTTPException(status_code=400, detail="URL is likely an ad or tracker")
 	
 	markdown_filename = await process_archive(url, title, encoding, source)
@@ -70,7 +66,7 @@ async def process_archive(
 	
 	# Check URL against blacklist
 	if contains_blacklisted_word(url, Archivist.blacklist):
-		info(f"Not archiving {url} due to blacklisted word in URL")
+		l.info(f"Not archiving {url} due to blacklisted word in URL")
 		return None
 	
 	timestamp = dt_datetime.now().strftime('%b %d, %Y at %H:%M')
@@ -82,13 +78,13 @@ async def process_archive(
 	
 	# Check content for profanity
 	if contains_profanity(content, threshold=0.01, custom_words=Archivist.blacklist):
-		info(f"Not archiving {url} due to profanity in content")
+		l.info(f"Not archiving {url} due to profanity in content")
 		return None
 	
 	try:
 		markdown_path, relative_path = assemble_archive_path(filename=readable_title, extension=".md")
 	except Exception as e:
-		warn(f"Failed to assemble archive path for {url}: {str(e)}")
+		l.warning(f"Failed to assemble archive path for {url}: {str(e)}")
 		return None
 	
 	markdown_content = f"---\n"
@@ -105,8 +101,8 @@ async def process_archive(
 		markdown_path.parent.mkdir(parents=True, exist_ok=True)
 		with open(markdown_path, 'w', encoding=encoding) as md_file:
 			md_file.write(markdown_content)
-		debug(f"Successfully saved to {markdown_path}")
+		l.debug(f"Successfully saved to {markdown_path}")
 		return markdown_path
 	except Exception as e:
-		warn(f"Failed to write markdown file: {str(e)}")
+		l.warning(f"Failed to write markdown file: {str(e)}")
 		return None

@@ -18,17 +18,13 @@ from markdownify import markdownify as md
 from better_profanity import profanity
 from fastapi import APIRouter, BackgroundTasks, UploadFile, Form, HTTPException, Query, Path as FastAPIPath
 from pathlib import Path
-from sijapi import L, Archivist, News, Tts, OBSIDIAN_VAULT_DIR, OBSIDIAN_RESOURCES_DIR
+from sijapi import Archivist, News, Tts, OBSIDIAN_VAULT_DIR, OBSIDIAN_RESOURCES_DIR
 from sijapi.utilities import html_to_markdown, download_file, sanitize_filename, assemble_journal_path, assemble_archive_path, contains_profanity, is_ad_or_tracker
 from sijapi.routers import gis, llm, tts, note
+from sijapi.logs import get_logger
+l = get_logger(__name__)
 
 news = APIRouter()
-logger = L.get_module_logger("news")
-def debug(text: str): logger.debug(text)
-def info(text: str): logger.info(text)
-def warn(text: str): logger.warning(text)
-def err(text: str): logger.error(text)
-def crit(text: str): logger.critical(text)
 
 
 @news.post("/clip")
@@ -87,7 +83,7 @@ async def handle_tts(bg_tasks: BackgroundTasks, article: Article, title: str, tt
         return f"![[{Path(audio_path).name}]]"
 
     except HTTPException as e:
-        err(f"Failed to generate TTS: {str(e)}")
+        l.error(f"Failed to generate TTS: {str(e)}")
         return None
 
 
@@ -99,7 +95,7 @@ def get_banner_markdown(image_url: str) -> str:
         banner_image = download_file(image_url, Path(OBSIDIAN_VAULT_DIR) / OBSIDIAN_RESOURCES_DIR)
         return f"![[{OBSIDIAN_RESOURCES_DIR}/{banner_image}]]" if banner_image else ''
     except Exception as e:
-        err(f"Failed to download banner image: {str(e)}")
+        l.error(f"Failed to download banner image: {str(e)}")
         return ''
 
 
@@ -109,7 +105,7 @@ async def save_markdown_file(filename: str, content: str):
 
 
 async def process_news_site(site, bg_tasks: BackgroundTasks):
-    info(f"Downloading articles from {site.name}...")
+    l.info(f"Downloading articles from {site.name}...")
     
     earliest_date = dt_datetime.now().date() - timedelta(days=site.days_back)
     
@@ -131,9 +127,9 @@ async def process_news_site(site, bg_tasks: BackgroundTasks):
         results = await asyncio.gather(*tasks)
         articles_downloaded = sum(results)
         
-        info(f"Downloaded {articles_downloaded} articles from {site.name}")
+        l.info(f"Downloaded {articles_downloaded} articles from {site.name}")
     except Exception as e:
-        err(f"Error processing {site.name}: {str(e)}")
+        l.error(f"Error processing {site.name}: {str(e)}")
 
 
 async def download_and_save_article(article, site_name, earliest_date, bg_tasks: BackgroundTasks, tts_mode: str = "off", voice: str = Tts.elevenlabs.default):
@@ -147,7 +143,7 @@ async def download_and_save_article(article, site_name, earliest_date, bg_tasks:
         return await process_and_save_article(bg_tasks, url, None, tts_mode, voice, site_name=site_name)
 
     except Exception as e:
-        err(f"Error processing article from {article.url}: {str(e)}")
+        l.error(f"Error processing article from {article.url}: {str(e)}")
         return False
 
 
@@ -186,16 +182,16 @@ async def process_and_save_article(
                     return f"Successfully saved: {relative_path}"
                 
                 except Exception as e:
-                    err(f"Failed to handle final markdown content preparation and/or saving to daily note; {e}")
+                    l.error(f"Failed to handle final markdown content preparation and/or saving to daily note; {e}")
             
             except Exception as e:
-                err(f"Failed to handle TTS: {e}")
+                l.error(f"Failed to handle TTS: {e}")
         
         except Exception as e:
-            err(f"Failed to generate title, file paths, and summary: {e}")
+            l.error(f"Failed to generate title, file paths, and summary: {e}")
         
     except Exception as e:
-        err(f"Failed to fetch and parse article {url}: {str(e)}")
+        l.error(f"Failed to fetch and parse article {url}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

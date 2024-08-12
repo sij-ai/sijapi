@@ -12,7 +12,7 @@ import sys
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def load_config():
-    config_path = Path(__file__).parent.parent / 'config' / 'api.yaml'
+    config_path = Path(__file__).parent.parent / 'config' / 'sys.yaml'
     with open(config_path, 'r') as file:
         return yaml.safe_load(file)
 

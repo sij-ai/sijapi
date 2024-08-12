@@ -2,44 +2,41 @@
 
 import os
 from pathlib import Path
-import ipaddress
-import multiprocessing
 from dotenv import load_dotenv
-from dateutil import tz
-from pathlib import Path
-from .classes import Logger, Configuration, APIConfig, Database, DirConfig, Geocoder
+from .logs import L, get_logger
 
-
-# INITIALization
 BASE_DIR = Path(__file__).resolve().parent
 CONFIG_DIR = BASE_DIR / "config"
 ENV_PATH = CONFIG_DIR / ".env"
 load_dotenv(ENV_PATH)
 LOGS_DIR = BASE_DIR / "logs"
 os.makedirs(LOGS_DIR, exist_ok=True)
-L = Logger("Central", LOGS_DIR)
+L.init('sys', LOGS_DIR)
+l = get_logger("init")
+
+import ipaddress
+import multiprocessing
+from dateutil import tz
+from pathlib import Path
+from .database import Database
+from .classes import Config, SysConfig, DirConfig, Geocoder
 
 # API essentials
-API = APIConfig.load('sys', 'secrets')
-Dir = DirConfig.load('dirs')
-Db = Database.load('sys')
+Sys = SysConfig.init('sys', 'secrets')
+Dir = DirConfig.init('dirs')
+l.debug(f"Dir configuration initialized: {Dir}")
+l.debug(f"ROUTER path: {Dir.ROUTER}")
+Db = Database.init('db')
 
-# HOST = f"{API.BIND}:{API.PORT}"
-# LOCAL_HOSTS = [ipaddress.ip_address(localhost.strip()) for localhost in os.getenv('LOCAL_HOSTS', '127.0.0.1').split(',')] + ['localhost']
-# SUBNET_BROADCAST = os.getenv("SUBNET_BROADCAST", '10.255.255.255')
-
-MAX_CPU_CORES = min(int(os.getenv("MAX_CPU_CORES", int(multiprocessing.cpu_count()/2))), multiprocessing.cpu_count())
-
-IMG = Configuration.load('img', 'secrets', Dir)
-Llm = Configuration.load('llm', 'secrets', Dir)
-News = Configuration.load('news', 'secrets', Dir)
-Archivist = Configuration.load('archivist', 'secrets', Dir)
-Scrape = Configuration.load('scrape', 'secrets', Dir)
-Serve = Configuration.load('serve', 'secrets', Dir)
-Tts = Configuration.load('tts', 'secrets', Dir)
+Img = Config.init('img', 'secrets', Dir)
+Llm = Config.init('llm', 'secrets', Dir)
+News = Config.init('news', 'secrets', Dir)
+Archivist = Config.init('archivist', 'secrets', Dir)
+Scrape = Config.init('scrape', 'secrets', Dir)
+Serve = Config.init('serve', 'secrets', Dir)
+Tts = Config.init('tts', 'secrets', Dir)
 
 # Directories & general paths
-ROUTER_DIR = BASE_DIR / "routers"
 DATA_DIR = BASE_DIR / "data"
 os.makedirs(DATA_DIR, exist_ok=True)
 ALERTS_DIR = DATA_DIR / "alerts"
@@ -172,7 +169,7 @@ CF_IP = DATA_DIR / "cf_ip.txt" # to be deprecated soon
 CF_DOMAINS_PATH = DATA_DIR / "cf_domains.json" # to be deprecated soon
 
 # Caddy - not fully implemented
-API.URL = os.getenv("API.URL")
+Sys.URL = os.getenv("Sys.URL")
 CADDY_SERVER = os.getenv('CADDY_SERVER', None)
 CADDYFILE_PATH = os.getenv("CADDYFILE_PATH", "") if CADDY_SERVER is not None else None
 CADDY_API_KEY = os.getenv("CADDY_API_KEY")

@@ -17,45 +17,42 @@ import threading
 from typing import Dict, List, Any
 from datetime import datetime, timedelta
 
-from sijapi import L, ICAL_TOGGLE, ICALENDARS, MS365_TOGGLE, MS365_CLIENT_ID, MS365_SECRET, MS365_AUTHORITY_URL, MS365_SCOPE, MS365_REDIRECT_PATH, MS365_TOKEN_PATH
+from sijapi import ICAL_TOGGLE, ICALENDARS, MS365_TOGGLE, MS365_CLIENT_ID, MS365_SECRET, MS365_AUTHORITY_URL, MS365_SCOPE, MS365_REDIRECT_PATH, MS365_TOKEN_PATH
 from sijapi.routers import gis
+from sijapi.logs import get_logger
+l = get_logger(__name__)
 
 cal = APIRouter()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/token")
 timeout = httpx.Timeout(12)
-logger = L.get_module_logger("cal")
-def debug(text: str): logger.debug(text)
-def info(text: str): logger.info(text)
-def warn(text: str): logger.warning(text)
-def err(text: str): logger.error(text)
-def crit(text: str): logger.critical(text)
+
 
 if MS365_TOGGLE is True:
-    crit(f"Visit https://api.sij.ai/o365/login to obtain your Microsoft 365 authentication token.")
+    l.critical(f"Visit https://api.sij.ai/o365/login to obtain your Microsoft 365 authentication token.")
 
     @cal.get("/o365/login")
     async def login():
-        debug(f"Received request to /o365/login")
-        debug(f"SCOPE: {MS365_SCOPE}")
+        l.debug(f"Received request to /o365/login")
+        l.debug(f"SCOPE: {MS365_SCOPE}")
         if not MS365_SCOPE:
-            err("No scopes defined for authorization.")
+            l.error("No scopes defined for authorization.")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="No scopes defined for authorization."
             )
         authorization_url = f"{MS365_AUTHORITY_URL}/oauth2/v2.0/authorize?client_id={MS365_CLIENT_ID}&response_type=code&redirect_uri={MS365_REDIRECT_PATH}&scope={'+'.join(MS365_SCOPE)}"
-        info(f"Redirecting to authorization URL: {authorization_url}")
+        l.info(f"Redirecting to authorization URL: {authorization_url}")
         return RedirectResponse(authorization_url)
 
     @cal.get("/o365/oauth_redirect")
     async def oauth_redirect(code: str = None, error: str = None):
-        debug(f"Received request to /o365/oauth_redirect")
+        l.debug(f"Received request to /o365/oauth_redirect")
         if error:
-            err(f"OAuth2 Error: {error}")
+            l.error(f"OAuth2 Error: {error}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST, detail="OAuth2 Error"
             )
-        info(f"Requesting token with authorization code: {code}")
+        l.info(f"Requesting token with authorization code: {code}")
         token_url = f"{MS365_AUTHORITY_URL}/oauth2/v2.0/token"
         data = {
             "client_id": MS365_CLIENT_ID,
@@ -66,15 +63,15 @@ if MS365_TOGGLE is True:
         }
         async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.post(token_url, data=data)
-        debug(f"Token endpoint response status code: {response.status_code}")
-        info(f"Token endpoint response text: {response.text}")
+        l.debug(f"Token endpoint response status code: {response.status_code}")
+        l.info(f"Token endpoint response text: {response.text}")
         result = response.json()
         if 'access_token' in result:
             await save_token(result)
-            info("Access token obtained successfully")
+            l.info("Access token obtained successfully")
             return {"message": "Access token stored successfully"}
         else:
-            crit(f"Failed to obtain access token. Response: {result}")
+            l.critical(f"Failed to obtain access token. Response: {result}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to obtain access token"
@@ -82,7 +79,7 @@ if MS365_TOGGLE is True:
 
     @cal.get("/o365/me")
     async def read_items():
-        debug(f"Received request to /o365/me")
+        l.debug(f"Received request to /o365/me")
         token = await load_token()
         if not token:
             raise HTTPException(
@@ -95,10 +92,10 @@ if MS365_TOGGLE is True:
             response = await client.get(graph_url, headers=headers)
         if response.status_code == 200:
             user = response.json()
-            info(f"User retrieved: {user}")
+            l.info(f"User retrieved: {user}")
             return user
         else:
-            err("Invalid or expired token")
+            l.error("Invalid or expired token")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid or expired token",
@@ -106,14 +103,14 @@ if MS365_TOGGLE is True:
             )
         
     async def save_token(token):
-        debug(f"Saving token: {token}")
+        l.debug(f"Saving token: {token}")
         try:
             token["expires_at"] = int(time.time()) + token["expires_in"]
             with open(MS365_TOKEN_PATH, "w") as file:
                 json.dump(token, file)
-                debug(f"Saved token to {MS365_TOKEN_PATH}")
+                l.debug(f"Saved token to {MS365_TOKEN_PATH}")
         except Exception as e:
-            err(f"Failed to save token: {e}")
+            l.error(f"Failed to save token: {e}")
 
     async def load_token():
         if os.path.exists(MS365_TOKEN_PATH):
@@ -121,21 +118,21 @@ if MS365_TOGGLE is True:
                 with open(MS365_TOKEN_PATH, "r") as file:
                     token = json.load(file)
             except FileNotFoundError:
-                err("Token file not found.")
+                l.error("Token file not found.")
                 return None
             except json.JSONDecodeError:
-                err("Failed to decode token JSON")
+                l.error("Failed to decode token JSON")
                 return None
             
             if token:
                 token["expires_at"] = int(time.time()) + token["expires_in"]
-                debug(f"Loaded token: {token}")  # Add this line to log the loaded token
+                l.debug(f"Loaded token: {token}")  # Add this line to log the loaded token
                 return token
             else:
-                debug("No token found.")
+                l.debug("No token found.")
                 return None
         else:
-            err(f"No file found at {MS365_TOKEN_PATH}")
+            l.error(f"No file found at {MS365_TOKEN_PATH}")
             return None
 
 
@@ -165,39 +162,39 @@ if MS365_TOGGLE is True:
             response = await client.post(token_url, data=data)
         result = response.json()
         if "access_token" in result:
-            info("Access token refreshed successfully")
+            l.info("Access token refreshed successfully")
             return result
         else:
-            err("Failed to refresh access token")
+            l.error("Failed to refresh access token")
             return None
 
 
     async def refresh_token():
         token = await load_token()
         if not token:
-            err("No token found in storage")
+            l.error("No token found in storage")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="No token found",
             )
 
         if 'refresh_token' not in token:
-            err("Refresh token not found in the loaded token")
+            l.error("Refresh token not found in the loaded token")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Refresh token not found",
             )
 
         refresh_token = token['refresh_token']
-        debug("Found refresh token, attempting to refresh access token")
+        l.debug("Found refresh token, attempting to refresh access token")
 
         new_token = await get_new_token_with_refresh_token(refresh_token)
         
         if new_token:
             await save_token(new_token)
-            info("Token refreshed and saved successfully")
+            l.info("Token refreshed and saved successfully")
         else:
-            err("Failed to refresh token")
+            l.error("Failed to refresh token")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to refresh token",
@@ -218,7 +215,7 @@ if ICAL_TOGGLE is True:
         calendar_identifiers = {
             calendar.title() : calendar.calendarIdentifier() for calendar in all_calendars
         }
-        debug(f"{calendar_identifiers}")
+        l.debug(f"{calendar_identifiers}")
         return calendar_identifiers
 
     def get_macos_calendar_events(start_date: datetime, end_date: datetime, calendar_ids: List[str] = None) -> List[Dict]:
@@ -230,7 +227,7 @@ if ICAL_TOGGLE is True:
 
             def completion_handler(granted, error):
                 if error is not None:
-                    err(f"Error: {error}")
+                    l.error(f"Error: {error}")
                 access_granted.append(granted)
                 with access_granted_condition:
                     access_granted_condition.notify()
@@ -242,11 +239,11 @@ if ICAL_TOGGLE is True:
                 if access_granted:
                     return access_granted[0]
                 else:
-                    err("Request access timed out or failed")
+                    l.error("Request access timed out or failed")
                     return False
 
         if not request_access():
-            err("Access to calendar data was not granted")
+            l.error("Access to calendar data was not granted")
             return []
 
         ns_start_date = datetime_to_nsdate(start_date)
@@ -336,7 +333,7 @@ async def get_ms365_events(start_date: datetime, end_date: datetime):
         response = await client.get(graph_url, headers=headers)
 
     if response.status_code != 200:
-        err("Failed to retrieve events from Microsoft 365")
+        l.error("Failed to retrieve events from Microsoft 365")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve events",
@@ -352,33 +349,33 @@ async def parse_calendar_for_day(range_start: datetime, range_end: datetime, eve
     event_list = []
 
     for event in events:
-        info(f"Event: {event}")
+        l.info(f"Event: {event}")
         start_str = event.get('start')
         end_str = event.get('end')
 
         if isinstance(start_str, dict):
             start_str = start_str.get('dateTime')
         else:
-            info(f"Start date string not a dict")
+            l.info(f"Start date string not a dict")
 
         if isinstance(end_str, dict):
             end_str = end_str.get('dateTime')
         else:
-            info(f"End date string not a dict")
+            l.info(f"End date string not a dict")
 
         try:
             start_date = await gis.dt(start_str) if start_str else None
         except (ValueError, TypeError) as e:
-            err(f"Invalid start date format: {start_str}, error: {e}")
+            l.error(f"Invalid start date format: {start_str}, error: {e}")
             continue
 
         try:
             end_date = await gis.dt(end_str) if end_str else None
         except (ValueError, TypeError) as e:
-            err(f"Invalid end date format: {end_str}, error: {e}")
+            l.error(f"Invalid end date format: {end_str}, error: {e}")
             continue
 
-        debug(f"Comparing {start_date} with range {range_start} to {range_end}")
+        l.debug(f"Comparing {start_date} with range {range_start} to {range_end}")
 
         if start_date:
             # Ensure start_date is timezone-aware
@@ -410,11 +407,11 @@ async def parse_calendar_for_day(range_start: datetime, range_end: datetime, eve
                     "busy": event.get('showAs', '') in ['busy', 'tentative'],
                     "all_day": event.get('isAllDay', False)
                 }
-                info(f"Event_data: {event_data}")
+                l.info(f"Event_data: {event_data}")
                 event_list.append(event_data)
             else:
-                debug(f"Event outside of specified range: {start_date} to {end_date}")
+                l.debug(f"Event outside of specified range: {start_date} to {end_date}")
         else:
-            err(f"Invalid or missing start date for event: {event.get('id', 'Unknown ID')}")
+            l.error(f"Invalid or missing start date for event: {event.get('id', 'Unknown ID')}")
 
     return event_list
