@@ -4,14 +4,13 @@ import yaml
 import math
 import os
 import re
-import uuid
 import time
 import aiofiles
 import aiohttp
 import asyncio
 import asyncpg
-import socket
 import traceback
+import multiprocessing
 from tqdm.asyncio import tqdm
 import reverse_geocoder as rg
 from pathlib import Path
@@ -26,83 +25,32 @@ from zoneinfo import ZoneInfo
 from srtm import get_data
 import os
 import sys
-from loguru import logger
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy.exc import OperationalError
 from sqlalchemy import Column, Integer, String, DateTime, JSON, Text, select, func
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.exc import OperationalError
 from urllib.parse import urljoin
-import hashlib
-import random
-        
+
+from .logs import get_logger
+l = get_logger(__name__)
+
 Base = declarative_base()
-
-# Custom logger class
-class Logger:
-    def __init__(self, name, logs_dir):
-        self.logs_dir = logs_dir
-        self.name = name
-        self.logger = logger
-        self.debug_modules = set()
-
-    def setup_from_args(self, args):
-        if not os.path.exists(self.logs_dir):
-            os.makedirs(self.logs_dir)
-        
-        self.logger.remove()
-        
-        log_format = "{time:YYYY-MM-DD HH:mm:ss} - {name} - <level>{level: <8}</level> - <level>{message}</level>"
-        
-        # File handler
-        self.logger.add(os.path.join(self.logs_dir, 'app.log'), rotation="2 MB", level="DEBUG", format=log_format)
-        
-        # Set debug modules
-        self.debug_modules = set(args.debug)
-        
-        # Console handler with custom filter
-        def module_filter(record):
-            return (record["level"].no >= logger.level(args.log.upper()).no or
-                    record["name"] in self.debug_modules)
-        
-        self.logger.add(sys.stdout, level="DEBUG", format=log_format, filter=module_filter, colorize=True)
-        
-        # Custom color and style mappings
-        self.logger.level("CRITICAL", color="<yellow><bold><MAGENTA>")
-        self.logger.level("ERROR", color="<red><bold>")
-        self.logger.level("WARNING", color="<yellow><bold>")
-        self.logger.level("DEBUG", color="<green><bold>")
-        
-        self.logger.info(f"Debug modules: {self.debug_modules}")
-
-    def get_module_logger(self, module_name):
-        return self.logger.bind(name=module_name)
-
-
-L = Logger("classes", "classes")
-logger = L.get_module_logger("classes")
-def debug(text: str): logger.debug(text)
-def info(text: str): logger.info(text)
-def warn(text: str): logger.warning(text)
-def err(text: str): logger.error(text)
-def crit(text: str): logger.critical(text)
 
 BASE_DIR = Path(__file__).resolve().parent
 CONFIG_DIR = BASE_DIR / "config"
 ENV_PATH = CONFIG_DIR / ".env"
 load_dotenv(ENV_PATH)
 TS_ID = os.environ.get('TS_ID')
-T = TypeVar('T', bound='Configuration')
+T = TypeVar('T', bound='Config')
 
-
-
-class Configuration(BaseModel):
+class Config(BaseModel):
     HOME: Path = Path.home()
-    _dir_config: Optional['Configuration'] = None
+    _dir_config: Optional['Config'] = None
 
     @classmethod
-    def load(cls, yaml_path: Union[str, Path], secrets_path: Optional[Union[str, Path]] = None, dir_config: Optional['Configuration'] = None) -> 'Configuration':
+    def init(cls, yaml_path: Union[str, Path], secrets_path: Optional[Union[str, Path]] = None, dir_config: Optional['Config'] = None) -> 'Config':
         yaml_path = cls._resolve_path(yaml_path, 'config')
         if secrets_path:
             secrets_path = cls._resolve_path(secrets_path, 'config')
@@ -111,11 +59,11 @@ class Configuration(BaseModel):
             with yaml_path.open('r') as file:
                 config_data = yaml.safe_load(file)
     
-            debug(f"Loaded configuration data from {yaml_path}")
+            l.debug(f"Loaded configuration data from {yaml_path}")
             if secrets_path:
                 with secrets_path.open('r') as file:
                     secrets_data = yaml.safe_load(file)
-                debug(f"Loaded secrets data from {secrets_path}")
+                l.debug(f"Loaded secrets data from {secrets_path}")
                 
                 if isinstance(config_data, list):
                     config_data = {"configurations": config_data, "SECRETS": secrets_data}
@@ -129,7 +77,7 @@ class Configuration(BaseModel):
             
             if config_data.get('HOME') is None:
                 config_data['HOME'] = str(Path.home())
-                debug(f"HOME was None in config, set to default: {config_data['HOME']}")
+                l.debug(f"HOME was None in config, set to default: {config_data['HOME']}")
     
             load_dotenv()
             instance = cls.create_dynamic_model(**config_data)
@@ -140,7 +88,7 @@ class Configuration(BaseModel):
             return instance
     
         except Exception as e:
-            err(f"Error loading configuration: {str(e)}")
+            l.error(f"Error loading configuration: {str(e)}")
             raise
 
 
@@ -254,7 +202,7 @@ class DirConfig:
         return Path(path).expanduser()
     
     @classmethod
-    def load(cls, yaml_path: Union[str, Path]) -> 'DirConfig':
+    def init(cls, yaml_path: Union[str, Path]) -> 'DirConfig':
         yaml_path = Path(yaml_path)
         if not yaml_path.is_absolute():
             yaml_path = Path(__file__).parent / "config" / yaml_path
@@ -268,310 +216,7 @@ class DirConfig:
         return cls(config_data)
 
 
-
-class QueryTracking(Base):
-    __tablename__ = 'query_tracking'
-
-    id = Column(Integer, primary_key=True)
-    ts_id = Column(String, nullable=False)
-    query = Column(Text, nullable=False)
-    args = Column(JSONB)
-    executed_at = Column(DateTime(timezone=True), server_default=func.now())
-    completed_by = Column(JSONB, default={})
-    result_checksum = Column(String)
-    
-    
-    
-    
-class Database:
-    @classmethod
-    def load(cls, config_name: str):
-        return cls(config_name)
-
-    def __init__(self, config_path: str):
-        self.config = self.load_config(config_path)
-        self.engines: Dict[str, Any] = {}
-        self.sessions: Dict[str, Any] = {}
-        self.online_servers: set = set()
-        self.local_ts_id = self.get_local_ts_id()
-
-    def load_config(self, config_path: str) -> Dict[str, Any]:
-        base_path = Path(__file__).parent.parent
-        full_path = base_path / "sijapi" / "config" / f"{config_path}.yaml"
-        
-        with open(full_path, 'r') as file:
-            config = yaml.safe_load(file)
-        
-        return config
-
-    def get_local_ts_id(self) -> str:
-        return os.environ.get('TS_ID')
-
-    async def initialize_engines(self):
-        for db_info in self.config['POOL']:
-            url = f"postgresql+asyncpg://{db_info['db_user']}:{db_info['db_pass']}@{db_info['ts_ip']}:{db_info['db_port']}/{db_info['db_name']}"
-            try:
-                engine = create_async_engine(url, pool_pre_ping=True, pool_size=5, max_overflow=10)
-                self.engines[db_info['ts_id']] = engine
-                self.sessions[db_info['ts_id']] = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-                info(f"Initialized engine and session for {db_info['ts_id']}")
-            except Exception as e:
-                err(f"Failed to initialize engine for {db_info['ts_id']}: {str(e)}")
-
-        if self.local_ts_id not in self.sessions:
-            err(f"Failed to initialize session for local server {self.local_ts_id}")
-        else:
-            try:
-                # Create tables if they don't exist
-                async with self.engines[self.local_ts_id].begin() as conn:
-                    await conn.run_sync(Base.metadata.create_all)
-                info(f"Initialized tables for local server {self.local_ts_id}")
-            except Exception as e:
-                err(f"Failed to create tables for local server {self.local_ts_id}: {str(e)}")
-
-    async def get_online_servers(self) -> List[str]:
-        online_servers = []
-        for ts_id, engine in self.engines.items():
-            try:
-                async with engine.connect() as conn:
-                    await conn.execute(text("SELECT 1"))
-                online_servers.append(ts_id)
-            except OperationalError:
-                pass
-        self.online_servers = set(online_servers)
-        return online_servers
-
-    async def execute_read(self, query: str, *args, **kwargs):
-        if self.local_ts_id not in self.sessions:
-            err(f"No session found for local server {self.local_ts_id}. Database may not be properly initialized.")
-            return None
-
-        params = self._normalize_params(args, kwargs)
-
-        async with self.sessions[self.local_ts_id]() as session:
-            try:
-                result = await session.execute(text(query), params)
-                return result.fetchall()
-            except Exception as e:
-                err(f"Failed to execute read query: {str(e)}")
-                return None
-
-    async def execute_write(self, query: str, *args, **kwargs):
-        if self.local_ts_id not in self.sessions:
-            err(f"No session found for local server {self.local_ts_id}. Database may not be properly initialized.")
-            return
-
-        params = self._normalize_params(args, kwargs)
-
-        async with self.sessions[self.local_ts_id]() as session:
-            try:
-                # Execute the write query
-                result = await session.execute(text(query), params)
-                
-                # Create a serializable version of params for logging
-                serializable_params = {
-                    k: v.isoformat() if isinstance(v, datetime) else v
-                    for k, v in params.items()
-                }
-                
-                # Log the query
-                new_query = QueryTracking(
-                    ts_id=self.local_ts_id,
-                    query=query,
-                    args=json.dumps(serializable_params)
-                )
-                session.add(new_query)
-                await session.flush()
-                query_id = new_query.id
-
-                await session.commit()
-                info(f"Successfully executed write query: {query[:50]}...")
-                
-                # Calculate checksum
-                checksum = await self._local_compute_checksum(query, params)
-
-                # Update query_tracking with checksum
-                await self.update_query_checksum(query_id, checksum)
-
-                # Replicate to online servers
-                online_servers = await self.get_online_servers()
-                for ts_id in online_servers:
-                    if ts_id != self.local_ts_id:
-                        asyncio.create_task(self._replicate_write(ts_id, query_id, query, params, checksum))
-
-            except Exception as e:
-                err(f"Failed to execute write query: {str(e)}")
-                return
-
-    def _normalize_params(self, args, kwargs):
-        if args and isinstance(args[0], dict):
-            return args[0]
-        elif kwargs:
-            return kwargs
-        elif args:
-            return {f"param{i}": arg for i, arg in enumerate(args, start=1)}
-        else:
-            return {}
-
-    async def get_primary_server(self) -> str:
-        url = urljoin(self.config['URL'], '/id')
-        
-        async with aiohttp.ClientSession() as session:
-            try:
-                async with session.get(url) as response:
-                    if response.status == 200:
-                        primary_ts_id = await response.text()
-                        return primary_ts_id.strip()
-                    else:
-                        err(f"Failed to get primary server. Status: {response.status}")
-                        return None
-            except aiohttp.ClientError as e:
-                err(f"Error connecting to load balancer: {str(e)}")
-                return None
-
-    async def get_checksum_server(self) -> dict:
-        primary_ts_id = await self.get_primary_server()
-        online_servers = await self.get_online_servers()
-        
-        checksum_servers = [server for server in self.config['POOL'] if server['ts_id'] in online_servers and server['ts_id'] != primary_ts_id]
-        
-        if not checksum_servers:
-            return next(server for server in self.config['POOL'] if server['ts_id'] == primary_ts_id)
-        
-        return random.choice(checksum_servers)
-
-    async def compute_checksum(self, query: str, params: dict):
-        checksum_server = await self.get_checksum_server()
-        
-        if checksum_server['ts_id'] == self.local_ts_id:
-            return await self._local_compute_checksum(query, params)
-        else:
-            return await self._delegate_compute_checksum(checksum_server, query, params)
-
-    async def _local_compute_checksum(self, query: str, params: dict):
-        async with self.sessions[self.local_ts_id]() as session:
-            result = await session.execute(text(query), params)
-            if result.returns_rows:
-                data = result.fetchall()
-            else:
-                # For INSERT, UPDATE, DELETE queries that don't return rows
-                data = str(result.rowcount) + query + str(params)
-            checksum = hashlib.md5(str(data).encode()).hexdigest()
-            return checksum
-
-    async def _delegate_compute_checksum(self, server: Dict[str, Any], query: str, params: dict):
-        url = f"http://{server['ts_ip']}:{server['app_port']}/sync/checksum"
-        
-        async with aiohttp.ClientSession() as session:
-            try:
-                serializable_params = {
-                    k: v.isoformat() if isinstance(v, datetime) else v
-                    for k, v in params.items()
-                }
-                async with session.post(url, json={"query": query, "params": serializable_params}) as response:
-                    if response.status == 200:
-                        result = await response.json()
-                        return result['checksum']
-                    else:
-                        err(f"Failed to get checksum from {server['ts_id']}. Status: {response.status}")
-                        return await self._local_compute_checksum(query, params)
-            except aiohttp.ClientError as e:
-                err(f"Error connecting to {server['ts_id']} for checksum: {str(e)}")
-                return await self._local_compute_checksum(query, params)
-
-    async def update_query_checksum(self, query_id: int, checksum: str):
-        async with self.sessions[self.local_ts_id]() as session:
-            await session.execute(
-                text("UPDATE query_tracking SET result_checksum = :checksum WHERE id = :id"),
-                {"checksum": checksum, "id": query_id}
-            )
-            await session.commit()
-
-    async def _replicate_write(self, ts_id: str, query_id: int, query: str, params: dict, expected_checksum: str):
-        try:
-            async with self.sessions[ts_id]() as session:
-                await session.execute(text(query), params)
-                actual_checksum = await self.compute_checksum(query, params)
-                if actual_checksum != expected_checksum:
-                    raise ValueError(f"Checksum mismatch on {ts_id}")
-                await self.mark_query_completed(query_id, ts_id)
-                await session.commit()
-                info(f"Successfully replicated write to {ts_id}")
-        except Exception as e:
-            err(f"Failed to replicate write on {ts_id}: {str(e)}")
-
-    async def mark_query_completed(self, query_id: int, ts_id: str):
-        async with self.sessions[self.local_ts_id]() as session:
-            query = await session.get(QueryTracking, query_id)
-            if query:
-                completed_by = query.completed_by or {}
-                completed_by[ts_id] = True
-                query.completed_by = completed_by
-                await session.commit()
-
-    async def sync_local_server(self):
-        async with self.sessions[self.local_ts_id]() as session:
-            last_synced = await session.execute(
-                text("SELECT MAX(id) FROM query_tracking WHERE completed_by ? :ts_id"),
-                {"ts_id": self.local_ts_id}
-            )
-            last_synced_id = last_synced.scalar() or 0
-
-            unexecuted_queries = await session.execute(
-                text("SELECT * FROM query_tracking WHERE id > :last_id ORDER BY id"),
-                {"last_id": last_synced_id}
-            )
-
-            for query in unexecuted_queries:
-                try:
-                    params = json.loads(query.args)
-                    # Convert ISO format strings back to datetime objects
-                    for key, value in params.items():
-                        if isinstance(value, str):
-                            try:
-                                params[key] = datetime.fromisoformat(value)
-                            except ValueError:
-                                pass  # If it's not a valid ISO format, keep it as a string
-                    await session.execute(text(query.query), params)
-                    actual_checksum = await self._local_compute_checksum(query.query, params)
-                    if actual_checksum != query.result_checksum:
-                        raise ValueError(f"Checksum mismatch for query ID {query.id}")
-                    await self.mark_query_completed(query.id, self.local_ts_id)
-                except Exception as e:
-                    err(f"Failed to execute query ID {query.id} during local sync: {str(e)}")
-
-            await session.commit()
-            info(f"Local server sync completed. Executed {unexecuted_queries.rowcount} queries.")
-
-    async def purge_completed_queries(self):
-        async with self.sessions[self.local_ts_id]() as session:
-            all_ts_ids = [db['ts_id'] for db in self.config['POOL']]
-            
-            result = await session.execute(
-                text("""
-                    DELETE FROM query_tracking
-                    WHERE id <= (
-                        SELECT MAX(id)
-                        FROM query_tracking
-                        WHERE completed_by ?& :ts_ids
-                    )
-                """),
-                {"ts_ids": all_ts_ids}
-            )
-            await session.commit()
-            
-            deleted_count = result.rowcount
-            info(f"Purged {deleted_count} completed queries.")
-
-    async def close(self):
-        for engine in self.engines.values():
-            await engine.dispose()
-
-    
-
-
-# Configuration class for API & Database methods. 
-class APIConfig(BaseModel):
+class SysConfig(BaseModel):
     HOST: str
     PORT: int
     BIND: str
@@ -579,49 +224,43 @@ class APIConfig(BaseModel):
     PUBLIC: List[str]
     TRUSTED_SUBNETS: List[str]
     MODULES: Any
-    POOL: List[Dict[str, Any]]
     EXTENSIONS: Any
     TZ: str
     KEYS: List[str]
     GARBAGE: Dict[str, Any]
-    SPECIAL_TABLES: ClassVar[List[str]] = ['spatial_ref_sys']
-    db_pools: Dict[str, Any] = Field(default_factory=dict)
-    offline_servers: Dict[str, float] = Field(default_factory=dict)
-    offline_timeout: float = Field(default=30.0)  # 30 second timeout for offline servers
-    online_hosts_cache: Dict[str, Tuple[List[Dict[str, Any]], float]] = Field(default_factory=dict)
-    online_hosts_cache_ttl: float = Field(default=30.0)  # Cache TTL in seconds
+    MAX_CPU_CORES: int
 
     def __init__(self, **data):
+        if 'MAX_CPU_CORES' not in data:
+            data['MAX_CPU_CORES'] = max(1, min(int(multiprocessing.cpu_count() / 2), multiprocessing.cpu_count()))
         super().__init__(**data)
-        self.db_pools = {}
-        self.online_hosts_cache = {}  # Initialize the cache
-        self._sync_tasks = {}
 
     class Config:
         arbitrary_types_allowed = True
 
     @classmethod
-    def load(cls, config_path: Union[str, Path], secrets_path: Union[str, Path]):
+    def init(cls, config_path: Union[str, Path], secrets_path: Union[str, Path]):
         config_path = cls._resolve_path(config_path, 'config')
         secrets_path = cls._resolve_path(secrets_path, 'config')
 
         with open(config_path, 'r') as file:
             config_data = yaml.safe_load(file)
 
-        debug(f"Loaded main config: {config_data}")
+        l.debug(f"Loaded main config: {config_data}")
 
         try:
             with open(secrets_path, 'r') as file:
                 secrets_data = yaml.safe_load(file)
         except FileNotFoundError:
-            warn(f"Secrets file not found: {secrets_path}")
+            l.warning(f"Secrets file not found: {secrets_path}")
             secrets_data = {}
         except yaml.YAMLError as e:
-            err(f"Error parsing secrets YAML: {e}")
+            l.error(f"Error parsing secrets YAML: {e}")
             secrets_data = {}
 
         config_data = cls.resolve_placeholders(config_data)
-        debug(f"Resolved config: {config_data}")
+        l.debug(f"Resolved config: {config_data}")
+
         if isinstance(config_data.get('KEYS'), list) and len(config_data['KEYS']) == 1:
             placeholder = config_data['KEYS'][0]
             if placeholder.startswith('{{') and placeholder.endswith('}}'):
@@ -631,14 +270,19 @@ class APIConfig(BaseModel):
                     secret_key = parts[1]
                     if secret_key in secrets_data:
                         config_data['KEYS'] = secrets_data[secret_key]
-                        debug(f"Replaced KEYS with secret: {config_data['KEYS']}")
+                        l.debug(f"Replaced KEYS with secret: {config_data['KEYS']}")
                     else:
-                        warn(f"Secret key '{secret_key}' not found in secrets file")
+                        l.warning(f"Secret key '{secret_key}' not found in secrets file")
                 else:
-                    warn(f"Invalid secret placeholder format: {placeholder}")
+                    l.warning(f"Invalid secret placeholder format: {placeholder}")
 
         config_data['MODULES'] = cls._create_dynamic_config(config_data.get('MODULES', {}), 'DynamicModulesConfig')
         config_data['EXTENSIONS'] = cls._create_dynamic_config(config_data.get('EXTENSIONS', {}), 'DynamicExtensionsConfig')
+
+        # Set MAX_CPU_CORES if not present in config_data
+        if 'MAX_CPU_CORES' not in config_data:
+            config_data['MAX_CPU_CORES'] = max(1, min(int(multiprocessing.cpu_count() / 2), multiprocessing.cpu_count()))
+
         return cls(**config_data)
 
     @classmethod
@@ -709,911 +353,8 @@ class APIConfig(BaseModel):
         return [extension for extension, is_active in self.EXTENSIONS.__dict__.items() if is_active]
 
     @property
-    def local_db(self):
-        ts_id = os.environ.get('TS_ID')
-        local_db = next((db for db in self.POOL if db['ts_id'] == ts_id), None)
-        if local_db is None:
-            raise ValueError(f"No database configuration found for TS_ID: {ts_id}")
-        return local_db
-
-    async def get_online_hosts(self) -> List[Dict[str, Any]]:
-        current_time = time.time()
-        cache_key = "online_hosts"
-
-        if cache_key in self.online_hosts_cache:
-            cached_hosts, cache_time = self.online_hosts_cache[cache_key]
-            if current_time - cache_time < self.online_hosts_cache_ttl:
-                return cached_hosts
-
-        online_hosts = []
-        local_ts_id = os.environ.get('TS_ID')
-
-        for pool_entry in self.POOL:
-            # omit self from online hosts
-            # if pool_entry['ts_id'] != local_ts_id:
-            pool_key = f"{pool_entry['ts_ip']}:{pool_entry['db_port']}"
-            if pool_key in self.offline_servers:
-                if current_time - self.offline_servers[pool_key] < self.offline_timeout:
-                    continue
-                else:
-                    del self.offline_servers[pool_key]
-
-            conn = await self.get_connection(pool_entry)
-            if conn is not None:
-                online_hosts.append(pool_entry)
-                await conn.close()
-
-        self.online_hosts_cache[cache_key] = (online_hosts, current_time)
-        return online_hosts
-
-    async def get_connection(self, pool_entry: Dict[str, Any] = None):
-        if pool_entry is None:
-            pool_entry = self.local_db
-
-        pool_key = f"{pool_entry['ts_ip']}:{pool_entry['db_port']}"
-
-        # Check if the server is marked as offline
-        if pool_key in self.offline_servers:
-            if time.time() - self.offline_servers[pool_key] < self.offline_timeout:
-                return None
-            else:
-                del self.offline_servers[pool_key]
-
-        if pool_key not in self.db_pools:
-            try:
-                self.db_pools[pool_key] = await asyncpg.create_pool(
-                    host=pool_entry['ts_ip'],
-                    port=pool_entry['db_port'],
-                    user=pool_entry['db_user'],
-                    password=pool_entry['db_pass'],
-                    database=pool_entry['db_name'],
-                    min_size=1,
-                    max_size=10,
-                    timeout=5
-                )
-            except Exception as e:
-                warn(f"Failed to create connection pool for {pool_key}: {str(e)}")
-                self.offline_servers[pool_key] = time.time()
-                return None
-
-        try:
-            return await asyncio.wait_for(self.db_pools[pool_key].acquire(), timeout=5)
-        except asyncio.TimeoutError:
-            warn(f"Timeout acquiring connection from pool for {pool_key}")
-            self.offline_servers[pool_key] = time.time()
-            return None
-        except Exception as e:
-            warn(f"Failed to acquire connection for {pool_key}: {str(e)}")
-            self.offline_servers[pool_key] = time.time()
-            return None
-
-
-    async def initialize_sync(self):
-        local_ts_id = os.environ.get('TS_ID')
-        online_hosts = await self.get_online_hosts()
-
-        for pool_entry in online_hosts:
-            if pool_entry['ts_id'] == local_ts_id:
-                continue  # Skip local database
-            try:
-                conn = await self.get_connection(pool_entry)
-                if conn is None:
-                    continue  # Skip this database if connection failed
-
-                debug(f"Starting sync initialization for {pool_entry['ts_ip']}...")
-
-                # Check PostGIS installation
-                postgis_installed = await self.check_postgis(conn)
-                if not postgis_installed:
-                    warn(f"PostGIS is not installed on {pool_entry['ts_id']} ({pool_entry['ts_ip']}). Some spatial operations may fail.")
-
-                tables = await conn.fetch("""
-                    SELECT tablename FROM pg_tables
-                    WHERE schemaname = 'public'
-                """)
-
-                for table in tables:
-                    table_name = table['tablename']
-                    await self.ensure_sync_columns(conn, table_name)
-
-                debug(f"Sync initialization complete for {pool_entry['ts_ip']}. All tables now have necessary sync columns and triggers.")
-
-            except Exception as e:
-                err(f"Error initializing sync for {pool_entry['ts_ip']}: {str(e)}")
-                err(f"Traceback: {traceback.format_exc()}")
-
-    def _schedule_sync_task(self, table_name: str, pk_value: Any, version: int, server_id: str):
-        # Use a background task manager to handle syncing
-        task_key = f"{table_name}:{pk_value}" if pk_value else table_name
-        if task_key not in self._sync_tasks:
-            self._sync_tasks[task_key] = asyncio.create_task(self._sync_changes(table_name, pk_value, version, server_id))
-
-
-    async def ensure_sync_columns(self, conn, table_name):
-        if conn is None or table_name in self.SPECIAL_TABLES:
-            return None
-
-        try:
-            # Check if primary key exists
-            primary_key = await conn.fetchval(f"""
-                SELECT a.attname
-                FROM   pg_index i
-                JOIN   pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
-                WHERE  i.indrelid = '{table_name}'::regclass AND i.indisprimary;
-            """)
-
-            if not primary_key:
-                # Add an id column as primary key if it doesn't exist
-                await conn.execute(f"""
-                    ALTER TABLE "{table_name}"
-                    ADD COLUMN IF NOT EXISTS id SERIAL PRIMARY KEY;
-                """)
-                primary_key = 'id'
-
-            # Ensure version column exists
-            await conn.execute(f"""
-                ALTER TABLE "{table_name}"
-                ADD COLUMN IF NOT EXISTS version INTEGER DEFAULT 1;
-            """)
-
-            # Ensure server_id column exists
-            await conn.execute(f"""
-                ALTER TABLE "{table_name}"
-                ADD COLUMN IF NOT EXISTS server_id TEXT DEFAULT '{os.environ.get('TS_ID')}';
-            """)
-
-            # Create or replace the trigger function
-            await conn.execute(f"""
-                CREATE OR REPLACE FUNCTION update_version_and_server_id()
-                RETURNS TRIGGER AS $$
-                BEGIN
-                    NEW.version = COALESCE(OLD.version, 0) + 1;
-                    NEW.server_id = '{os.environ.get('TS_ID')}';
-                    RETURN NEW;
-                END;
-                $$ LANGUAGE plpgsql;
-            """)
-
-            # Check if the trigger exists and create it if it doesn't
-            trigger_exists = await conn.fetchval(f"""
-                SELECT EXISTS (
-                    SELECT 1
-                    FROM pg_trigger
-                    WHERE tgname = 'update_version_and_server_id_trigger'
-                    AND tgrelid = '{table_name}'::regclass
-                )
-            """)
-
-            if not trigger_exists:
-                await conn.execute(f"""
-                    CREATE TRIGGER update_version_and_server_id_trigger
-                    BEFORE INSERT OR UPDATE ON "{table_name}"
-                    FOR EACH ROW EXECUTE FUNCTION update_version_and_server_id();
-                """)
-
-            debug(f"Successfully ensured sync columns and trigger for table {table_name}")
-            return primary_key
-
-        except Exception as e:
-            err(f"Error ensuring sync columns for table {table_name}: {str(e)}")
-            err(f"Traceback: {traceback.format_exc()}")
-            return None
-
-    async def check_postgis(self, conn):
-        if conn is None:
-            debug(f"Skipping offline server...")
-            return None
-
-        try:
-            result = await conn.fetchval("SELECT PostGIS_version();")
-            if result:
-                debug(f"PostGIS version: {result}")
-                return True
-            else:
-                warn("PostGIS is not installed or not working properly")
-                return False
-        except Exception as e:
-            err(f"Error checking PostGIS: {str(e)}")
-            return False
-
-
-    async def pull_changes(self, source_pool_entry, batch_size=10000):
-        if source_pool_entry['ts_id'] == os.environ.get('TS_ID'):
-            debug("Skipping self-sync")
-            return 0
-
-        total_changes = 0
-        source_id = source_pool_entry['ts_id']
-        source_ip = source_pool_entry['ts_ip']
-        dest_id = os.environ.get('TS_ID')
-        dest_ip = self.local_db['ts_ip']
-
-        info(f"Starting sync from source {source_id} ({source_ip}) to destination {dest_id} ({dest_ip})")
-
-        source_conn = None
-        dest_conn = None
-        try:
-            source_conn = await self.get_connection(source_pool_entry)
-            if source_conn is None:
-                warn(f"Unable to connect to source {source_id} ({source_ip}). Skipping sync.")
-                return 0
-
-            dest_conn = await self.get_connection(self.local_db)
-            if dest_conn is None:
-                warn(f"Unable to connect to local database. Skipping sync.")
-                return 0
-
-            tables = await source_conn.fetch("""
-                SELECT tablename FROM pg_tables
-                WHERE schemaname = 'public'
-            """)
-
-            for table in tables:
-                table_name = table['tablename']
-                try:
-                    if table_name in self.SPECIAL_TABLES:
-                        await self.sync_special_table(source_conn, dest_conn, table_name)
-                    else:
-                        primary_key = await self.ensure_sync_columns(dest_conn, table_name)
-                        last_synced_version = await self.get_last_synced_version(dest_conn, table_name, source_id)
-
-                        while True:
-                            changes = await source_conn.fetch(f"""
-                                SELECT * FROM "{table_name}"
-                                WHERE version > $1 AND server_id = $2
-                                ORDER BY version ASC
-                                LIMIT $3
-                            """, last_synced_version, source_id, batch_size)
-
-                            if not changes:
-                                break  # No more changes for this table
-
-                            changes_count = await self.apply_batch_changes(dest_conn, table_name, changes, primary_key)
-                            total_changes += changes_count
-
-                            if changes_count > 0:
-                                info(f"Synced batch for {table_name}: {changes_count} changes. Total so far: {total_changes}")
-
-                            last_synced_version = changes[-1]['version']  # Update last synced version
-
-                except Exception as e:
-                    err(f"Error syncing table {table_name}: {str(e)}")
-                    err(f"Traceback: {traceback.format_exc()}")
-
-            info(f"Sync complete from {source_id} ({source_ip}) to {dest_id} ({dest_ip}). Total changes: {total_changes}")
-
-        except Exception as e:
-            err(f"Error during sync process: {str(e)}")
-            err(f"Traceback: {traceback.format_exc()}")
-
-        finally:
-            if source_conn:
-                await source_conn.close()
-            if dest_conn:
-                await dest_conn.close()
-
-        info(f"Sync summary:")
-        info(f"  Total changes: {total_changes}")
-        info(f"  Tables synced: {len(tables) if 'tables' in locals() else 0}")
-        info(f"  Source: {source_id} ({source_ip})")
-        info(f"  Destination: {dest_id} ({dest_ip})")
-
-        return total_changes
-
-
-    async def get_last_synced_version(self, conn, table_name, server_id):
-        if conn is None:
-            debug(f"Skipping offline server...")
-            return 0
-
-        if table_name in self.SPECIAL_TABLES:
-            debug(f"Skipping get_last_synced_version because {table_name} is special.")
-            return 0  # Special handling for tables without version column
-
-        try:
-            last_version = await conn.fetchval(f"""
-                SELECT COALESCE(MAX(version), 0)
-                FROM "{table_name}"
-                WHERE server_id = $1
-            """, server_id)
-            return last_version
-        except Exception as e:
-            err(f"Error getting last synced version for table {table_name}: {str(e)}")
-            err(f"Traceback: {traceback.format_exc()}")
-            return 0
-
-
-    async def get_most_recent_source(self):
-        most_recent_source = None
-        max_version = -1
-        local_ts_id = os.environ.get('TS_ID')
-        online_hosts = await self.get_online_hosts()
-        num_online_hosts = len(online_hosts)
-
-        if num_online_hosts > 0:
-            online_ts_ids = [host['ts_id'] for host in online_hosts if host['ts_id'] != local_ts_id]
-            crit(f"Online hosts: {', '.join(online_ts_ids)}")
-
-            for pool_entry in online_hosts:
-                if pool_entry['ts_id'] == local_ts_id:
-                    continue  # Skip local database
-
-                try:
-                    conn = await self.get_connection(pool_entry)
-                    if conn is None:
-                        warn(f"Unable to connect to {pool_entry['ts_id']}. Skipping.")
-                        continue
-
-                    tables = await conn.fetch("""
-                        SELECT tablename FROM pg_tables
-                        WHERE schemaname = 'public'
-                    """)
-
-                    for table in tables:
-                        table_name = table['tablename']
-                        if table_name in self.SPECIAL_TABLES:
-                            continue
-                        try:
-                            result = await conn.fetchrow(f"""
-                                SELECT MAX(version) as max_version, server_id
-                                FROM "{table_name}"
-                                WHERE version = (SELECT MAX(version) FROM "{table_name}")
-                                GROUP BY server_id
-                                ORDER BY MAX(version) DESC
-                                LIMIT 1
-                            """)
-                            if result:
-                                version, server_id = result['max_version'], result['server_id']
-                                info(f"Max version for {pool_entry['ts_id']}, table {table_name}: {version} (from server {server_id})")
-                                if version > max_version:
-                                    max_version = version
-                                    most_recent_source = pool_entry
-                            else:
-                                debug(f"No data in table {table_name} for {pool_entry['ts_id']}")
-                        except asyncpg.exceptions.UndefinedColumnError:
-                            warn(f"Version or server_id column does not exist in table {table_name} for {pool_entry['ts_id']}. Skipping.")
-                        except Exception as e:
-                            err(f"Error checking version for {pool_entry['ts_id']}, table {table_name}: {str(e)}")
-
-                except asyncpg.exceptions.ConnectionFailureError:
-                    warn(f"Failed to connect to database: {pool_entry['ts_ip']}:{pool_entry['db_port']}. Skipping.")
-                except Exception as e:
-                    err(f"Unexpected error occurred while checking version for {pool_entry['ts_id']}: {str(e)}")
-                    err(f"Traceback: {traceback.format_exc()}")
-                finally:
-                    if conn:
-                        await conn.close()
-
-        if most_recent_source is None:
-            if num_online_hosts > 0:
-                warn("Could not determine most recent source. Using first available online host.")
-                most_recent_source = next(host for host in online_hosts if host['ts_id'] != local_ts_id)
-            else:
-                crit("No other online hosts available for sync.")
-
-        return most_recent_source
-
-
-
-    async def _sync_changes(self, table_name: str, primary_key: str):
-        try:
-            local_conn = await self.get_connection()
-            if local_conn is None:
-                return
-
-            # Get the latest changes
-            changes = await local_conn.fetch(f"""
-                SELECT * FROM "{table_name}"
-                WHERE version > (SELECT COALESCE(MAX(version), 0) FROM "{table_name}" WHERE server_id != $1)
-                OR (version = (SELECT COALESCE(MAX(version), 0) FROM "{table_name}" WHERE server_id != $1) AND server_id = $1)
-                ORDER BY version ASC
-            """, os.environ.get('TS_ID'))
-
-            if changes:
-                online_hosts = await self.get_online_hosts()
-                for pool_entry in online_hosts:
-                    if pool_entry['ts_id'] != os.environ.get('TS_ID'):
-                        remote_conn = await self.get_connection(pool_entry)
-                        if remote_conn is None:
-                            continue
-                        try:
-                            await self.apply_batch_changes(remote_conn, table_name, changes, primary_key)
-                        finally:
-                            await remote_conn.close()
-        except Exception as e:
-            err(f"Error syncing changes for {table_name}: {str(e)}")
-            err(f"Traceback: {traceback.format_exc()}")
-        finally:
-            if 'local_conn' in locals():
-                await local_conn.close()
-
-
-    async def execute_read_query(self, query: str, *args, table_name: str):
-        online_hosts = await self.get_online_hosts()
-        results = []
-        max_version = -1
-        latest_result = None
-        
-        for pool_entry in online_hosts:
-            conn = await self.get_connection(pool_entry)
-            if conn is None:
-                warn(f"Unable to connect to {pool_entry['ts_id']}. Skipping read.")
-                continue
-        
-            try:
-                # Execute the query
-                result = await conn.fetch(query, *args)
-                
-                if not result:
-                    continue
-        
-                # Check version if it's not a special table
-                if table_name not in self.SPECIAL_TABLES:
-                    try:
-                        version_query = f"""
-                            SELECT MAX(version) as max_version, server_id
-                            FROM "{table_name}"
-                            WHERE version = (SELECT MAX(version) FROM "{table_name}")
-                            GROUP BY server_id
-                            ORDER BY MAX(version) DESC
-                            LIMIT 1
-                        """
-                        version_result = await conn.fetchrow(version_query)
-                        if version_result:
-                            version = version_result['max_version']
-                            server_id = version_result['server_id']
-                            info(f"Max version for {pool_entry['ts_id']}, table {table_name}: {version} (from server {server_id})")
-                            if version > max_version:
-                                max_version = version
-                                latest_result = result
-                        else:
-                            debug(f"No version data in table {table_name} for {pool_entry['ts_id']}")
-                            if latest_result is None:
-                                latest_result = result
-                    except asyncpg.exceptions.UndefinedColumnError:
-                        warn(f"Version column does not exist in table {table_name} for {pool_entry['ts_id']}. Using result without version check.")
-                        if latest_result is None:
-                            latest_result = result
-                else:
-                    # For special tables, just use the first result
-                    if latest_result is None:
-                        latest_result = result
-        
-                results.append((pool_entry['ts_id'], result))
-        
-            except Exception as e:
-                err(f"Error executing read query on {pool_entry['ts_id']}: {str(e)}")
-                err(f"Traceback: {traceback.format_exc()}")
-            finally:
-                await conn.close()
-        
-        if not latest_result:
-            warn(f"No results found for query on table {table_name}")
-            return []
-        
-        # Log results from all databases
-        for ts_id, result in results:
-            info(f"Read result from {ts_id}: {result}")
-        
-        return [dict(r) for r in latest_result]  # Convert Record objects to dictionaries
-
-
-    async def execute_write_query(self, query: str, *args, table_name: str):
-        conn = await self.get_connection(self.local_db)
-        if conn is None:
-            err(f"Unable to connect to local database. Write operation failed.")
-            return []
-        
-        try:
-            # Execute the original query
-            result = await conn.fetch(query, *args)
-            
-            if result:
-                # Update version and server_id
-                update_query = f"""
-                UPDATE {table_name}
-                SET version = COALESCE(version, 0) + 1,
-                    server_id = $1
-                WHERE id = $2
-                RETURNING id, version
-                """
-                update_result = await conn.fetch(update_query, os.environ.get('TS_ID'), result[0]['id'])
-                return update_result
-            return result
-        except Exception as e:
-            err(f"Error executing write query: {str(e)}")
-            err(f"Query: {query}")
-            err(f"Args: {args}")
-            err(f"Traceback: {traceback.format_exc()}")
-            return []
-        finally:
-            await conn.close()
-
-
-    
-    async def get_table_columns(self, conn, table_name: str) -> List[str]:
-        query = """
-        SELECT column_name
-        FROM information_schema.columns
-        WHERE table_schema = 'public' AND table_name = $1
-        ORDER BY ordinal_position
-        """
-        columns = await conn.fetch(query, table_name)
-        return [col['column_name'] for col in columns]
-
-    
-    async def get_primary_key(self, conn, table_name: str) -> str:
-        query = """
-        SELECT a.attname
-        FROM   pg_index i
-        JOIN   pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
-        WHERE  i.indrelid = $1::regclass AND i.indisprimary
-        """
-        result = await conn.fetchval(query, table_name)
-        return result
-
-
-
-    async def _sync_write_to_other_dbs(self, query: str, args: tuple, table_name: str):
-        local_ts_id = os.environ.get('TS_ID')
-        online_hosts = await self.get_online_hosts()
-        
-        for pool_entry in online_hosts:
-            if pool_entry['ts_id'] != local_ts_id:
-                remote_conn = await self.get_connection(pool_entry)
-                if remote_conn is None:
-                    warn(f"Unable to connect to {pool_entry['ts_id']}. Skipping write operation.")
-                    continue
-        
-                try:
-                    await remote_conn.execute(query, *args)
-                    debug(f"Successfully synced write operation to {pool_entry['ts_id']} for table {table_name}")
-                except Exception as e:
-                    err(f"Error executing write query on {pool_entry['ts_id']}: {str(e)}")
-                finally:
-                    await remote_conn.close()
-
-
-    async def _run_sync_tasks(self, tasks):
-        for task in tasks:
-            try:
-                await task
-            except Exception as e:
-                err(f"Error during background sync: {str(e)}")
-                err(f"Traceback: {traceback.format_exc()}")
-
-
-    async def push_change(self, table_name: str, pk_value: Any, version: int, server_id: str):
-        asyncio.create_task(self._push_change_background(table_name, pk_value, version, server_id))
-
-    async def _push_change_background(self, table_name: str, pk_value: Any, version: int, server_id: str):
-        online_hosts = await self.get_online_hosts()
-        successful_pushes = 0
-        failed_pushes = 0
-
-        for pool_entry in online_hosts:
-            if pool_entry['ts_id'] != os.environ.get('TS_ID'):
-                remote_conn = await self.get_connection(pool_entry)
-                if remote_conn is None:
-                    continue
-
-                try:
-                    local_conn = await self.get_connection()
-                    if local_conn is None:
-                        continue
-
-                    try:
-                        updated_row = await local_conn.fetchrow(f'SELECT * FROM "{table_name}" WHERE "{self.get_primary_key(table_name)}" = $1', pk_value)
-                    finally:
-                        await local_conn.close()
-
-                    if updated_row:
-                        columns = updated_row.keys()
-                        placeholders = [f'${i+1}' for i in range(len(columns))]
-                        primary_key = self.get_primary_key(table_name)
-
-                        remote_version = await remote_conn.fetchval(f"""
-                            SELECT version FROM "{table_name}"
-                            WHERE "{primary_key}" = $1
-                        """, updated_row[primary_key])
-
-                        if remote_version is not None and remote_version >= updated_row['version']:
-                            debug(f"Remote version for {table_name} in {pool_entry['ts_id']} is already up to date. Skipping push.")
-                            successful_pushes += 1
-                            continue
-
-                        insert_query = f"""
-                            INSERT INTO "{table_name}" ({', '.join(f'"{col}"' for col in columns)})
-                            VALUES ({', '.join(placeholders)})
-                            ON CONFLICT ("{primary_key}") DO UPDATE SET
-                            {', '.join(f'"{col}" = EXCLUDED."{col}"' for col in columns if col != primary_key)},
-                            version = EXCLUDED.version,
-                            server_id = EXCLUDED.server_id
-                            WHERE "{table_name}".version < EXCLUDED.version
-                            OR ("{table_name}".version = EXCLUDED.version AND "{table_name}".server_id < EXCLUDED.server_id)
-                        """
-                        await remote_conn.execute(insert_query, *updated_row.values())
-                        successful_pushes += 1
-                except Exception as e:
-                    err(f"Error pushing change to {pool_entry['ts_id']}: {str(e)}")
-                    failed_pushes += 1
-                finally:
-                    if remote_conn:
-                        await remote_conn.close()
-
-        if successful_pushes > 0:
-            info(f"Successfully pushed changes to {successful_pushes} server(s) for {table_name}")
-        if failed_pushes > 0:
-            warn(f"Failed to push changes to {failed_pushes} server(s) for {table_name}")
-
-
-    async def push_all_changes(self, table_name: str):
-        online_hosts = await self.get_online_hosts()
-        tasks = []
-
-        for pool_entry in online_hosts:
-            if pool_entry['ts_id'] != os.environ.get('TS_ID'):
-                task = asyncio.create_task(self._push_changes_to_host(pool_entry, table_name))
-                tasks.append(task)
-
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        successful_pushes = sum(1 for r in results if r is True)
-        failed_pushes = sum(1 for r in results if r is False or isinstance(r, Exception))
-
-        info(f"Push all changes summary for {table_name}: Successful: {successful_pushes}, Failed: {failed_pushes}")
-        if failed_pushes > 0:
-            warn(f"Failed to push all changes to {failed_pushes} server(s). Data may be out of sync.")
-
-    async def _push_changes_to_host(self, pool_entry: Dict[str, Any], table_name: str) -> bool:
-        remote_conn = None
-        try:
-            remote_conn = await self.get_connection(pool_entry)
-            if remote_conn is None:
-                warn(f"Unable to connect to {pool_entry['ts_id']}. Skipping push.")
-                return False
-
-            local_conn = await self.get_connection()
-            if local_conn is None:
-                warn(f"Unable to connect to local database. Skipping push.")
-                return False
-
-            try:
-                all_rows = await local_conn.fetch(f'SELECT * FROM "{table_name}"')
-            finally:
-                await local_conn.close()
-
-            if all_rows:
-                columns = list(all_rows[0].keys())
-                placeholders = [f'${i+1}' for i in range(len(columns))]
-
-                insert_query = f"""
-                    INSERT INTO "{table_name}" ({', '.join(f'"{col}"' for col in columns)})
-                    VALUES ({', '.join(placeholders)})
-                    ON CONFLICT DO NOTHING
-                """
-
-                async with remote_conn.transaction():
-                    for row in all_rows:
-                        await remote_conn.execute(insert_query, *row.values())
-
-                return True
-            else:
-                debug(f"No rows to push for table {table_name}")
-                return True
-        except Exception as e:
-            err(f"Error pushing all changes to {pool_entry['ts_id']}: {str(e)}")
-            err(f"Traceback: {traceback.format_exc()}")
-            return False
-        finally:
-            if remote_conn:
-                await remote_conn.close()
-
-    async def _execute_special_table_write(self, conn, query: str, *args, table_name: str):
-        if table_name == 'spatial_ref_sys':
-            return await self._execute_spatial_ref_sys_write(conn, query, *args)
-
-    async def _execute_spatial_ref_sys_write(self, local_conn, query: str, *args):
-        # Execute the query locally
-        result = await local_conn.execute(query, *args)
-
-        # Sync the entire spatial_ref_sys table with all online hosts
-        online_hosts = await self.get_online_hosts()
-        for pool_entry in online_hosts:
-            if pool_entry['ts_id'] != os.environ.get('TS_ID'):
-                remote_conn = await self.get_connection(pool_entry)
-                if remote_conn is None:
-                    continue
-                try:
-                    await self.sync_spatial_ref_sys(local_conn, remote_conn)
-                except Exception as e:
-                    err(f"Error syncing spatial_ref_sys to {pool_entry['ts_id']}: {str(e)}")
-                    err(f"Traceback: {traceback.format_exc()}")
-                finally:
-                    await remote_conn.close()
-
-        return result
-
-    async def apply_batch_changes(self, conn, table_name, changes, primary_key):
-        if conn is None or not changes:
-            debug(f"Skipping apply_batch_changes because conn is none or there are no changes.")
-            return 0
-
-        try:
-            columns = list(changes[0].keys())
-            placeholders = [f'${i+1}' for i in range(len(columns))]
-
-            if primary_key:
-                insert_query = f"""
-                    INSERT INTO "{table_name}" ({', '.join(f'"{col}"' for col in columns)})
-                    VALUES ({', '.join(placeholders)})
-                    ON CONFLICT ("{primary_key}") DO UPDATE SET
-                    {', '.join(f'"{col}" = EXCLUDED."{col}"' for col in columns if col not in [primary_key, 'version', 'server_id'])},
-                    version = EXCLUDED.version,
-                    server_id = EXCLUDED.server_id
-                    WHERE "{table_name}".version < EXCLUDED.version
-                    OR ("{table_name}".version = EXCLUDED.version AND "{table_name}".server_id < EXCLUDED.server_id)
-                """
-            else:
-                warn(f"Possible source of issue #4")
-                # For tables without a primary key, we'll use all columns for conflict resolution
-                insert_query = f"""
-                    INSERT INTO "{table_name}" ({', '.join(f'"{col}"' for col in columns)})
-                    VALUES ({', '.join(placeholders)})
-                    ON CONFLICT DO NOTHING
-                """
-
-            affected_rows = 0
-            async for change in tqdm(changes, desc=f"Syncing {table_name}", unit="row"):
-                values = [change[col] for col in columns]
-                result = await conn.execute(insert_query, *values)
-                affected_rows += int(result.split()[-1])
-
-            return affected_rows
-
-        except Exception as e:
-            err(f"Error applying batch changes to {table_name}: {str(e)}")
-            err(f"Traceback: {traceback.format_exc()}")
-            return 0
-
-    async def sync_special_table(self, source_conn, dest_conn, table_name):
-        if table_name == 'spatial_ref_sys':
-            return await self.sync_spatial_ref_sys(source_conn, dest_conn)
-        # Add more special cases as needed
-
-    async def sync_spatial_ref_sys(self, source_conn, dest_conn):
-        try:
-            # Get all entries from the source
-            source_entries = await source_conn.fetch("""
-                SELECT * FROM spatial_ref_sys
-                ORDER BY srid
-            """)
-
-            # Get all entries from the destination
-            dest_entries = await dest_conn.fetch("""
-                SELECT * FROM spatial_ref_sys
-                ORDER BY srid
-            """)
-
-            # Convert to dictionaries for easier comparison
-            source_dict = {entry['srid']: entry for entry in source_entries}
-            dest_dict = {entry['srid']: entry for entry in dest_entries}
-
-            updates = 0
-            inserts = 0
-
-            for srid, source_entry in source_dict.items():
-                if srid not in dest_dict:
-                    # Insert new entry
-                    columns = source_entry.keys()
-                    placeholders = [f'${i+1}' for i in range(len(columns))]
-                    insert_query = f"""
-                        INSERT INTO spatial_ref_sys ({', '.join(f'"{col}"' for col in columns)})
-                        VALUES ({', '.join(placeholders)})
-                    """
-                    await dest_conn.execute(insert_query, *source_entry.values())
-                    inserts += 1
-                elif source_entry != dest_dict[srid]:
-                    # Update existing entry
-                    update_query = f"""
-                        UPDATE spatial_ref_sys
-                        SET auth_name = $1::text,
-                            auth_srid = $2::integer,
-                            srtext = $3::text,
-                            proj4text = $4::text
-                        WHERE srid = $5::integer
-                    """
-                    await dest_conn.execute(update_query,
-                        source_entry['auth_name'],
-                        source_entry['auth_srid'],
-                        source_entry['srtext'],
-                        source_entry['proj4text'],
-                        srid
-                    )
-                    updates += 1
-
-            info(f"spatial_ref_sys sync complete. Inserts: {inserts}, Updates: {updates}")
-            return inserts + updates
-
-        except Exception as e:
-            err(f"Error syncing spatial_ref_sys table: {str(e)}")
-            err(f"Traceback: {traceback.format_exc()}")
-            return 0
-
-
-
-
-    async def add_primary_keys_to_local_tables(self):
-        conn = await self.get_connection()
-
-        debug(f"Adding primary keys to existing tables...")
-        if conn is None:
-            raise ConnectionError("Failed to connect to local database")
-
-        try:
-            tables = await conn.fetch("""
-                SELECT tablename FROM pg_tables
-                WHERE schemaname = 'public'
-            """)
-
-            for table in tables:
-                table_name = table['tablename']
-                if table_name not in self.SPECIAL_TABLES:
-                    await self.ensure_sync_columns(conn, table_name)
-        finally:
-            await conn.close()
-
-    async def add_primary_keys_to_remote_tables(self):
-        online_hosts = await self.get_online_hosts()
-
-        for pool_entry in online_hosts:
-            conn = await self.get_connection(pool_entry)
-            if conn is None:
-                warn(f"Unable to connect to {pool_entry['ts_id']}. Skipping primary key addition.")
-                continue
-
-            try:
-                info(f"Adding primary keys to existing tables on {pool_entry['ts_id']}...")
-                tables = await conn.fetch("""
-                    SELECT tablename FROM pg_tables
-                    WHERE schemaname = 'public'
-                """)
-
-                for table in tables:
-                    table_name = table['tablename']
-                    if table_name not in self.SPECIAL_TABLES:
-                        primary_key = await self.ensure_sync_columns(conn, table_name)
-                        if primary_key:
-                            info(f"Added/ensured primary key '{primary_key}' for table '{table_name}' on {pool_entry['ts_id']}")
-                        else:
-                            warn(f"Failed to add/ensure primary key for table '{table_name}' on {pool_entry['ts_id']}")
-
-                info(f"Completed adding primary keys to existing tables on {pool_entry['ts_id']}")
-            except Exception as e:
-                err(f"Error adding primary keys to existing tables on {pool_entry['ts_id']}: {str(e)}")
-                err(f"Traceback: {traceback.format_exc()}")
-            finally:
-                await conn.close()
-
-
-    async def close_db_pools(self):
-        info("Closing database connection pools...")
-        close_tasks = []
-        for pool_key, pool in self.db_pools.items():
-            close_tasks.append(self.close_pool_with_timeout(pool, pool_key))
-
-        await asyncio.gather(*close_tasks)
-        self.db_pools.clear()
-        info("All database connection pools closed.")
-
-    async def close_pool_with_timeout(self, pool, pool_key, timeout=10):
-        try:
-            await asyncio.wait_for(pool.close(), timeout=timeout)
-            debug(f"Closed pool for {pool_key}")
-        except asyncio.TimeoutError:
-            err(f"Timeout closing pool for {pool_key}")
-        except Exception as e:
-            err(f"Error closing pool for {pool_key}: {str(e)}")
-
+    def max_cpu_cores(self) -> int:
+        return self.MAX_CPU_CORES
 
 class Location(BaseModel):
     latitude: float

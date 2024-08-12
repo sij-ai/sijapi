@@ -15,17 +15,13 @@ from typing import Dict
 from datetime import datetime as dt_datetime, date as dt_date
 from shapely.wkb import loads
 from binascii import unhexlify
-from sijapi import L, VISUALCROSSING_API_KEY, TZ, API, GEO
+from sijapi import VISUALCROSSING_API_KEY, TZ, Sys, GEO, Db
 from sijapi.utilities import haversine
 from sijapi.routers import gis
+from sijapi.logs import get_logger
+l = get_logger(__name__)
 
 weather = APIRouter()
-logger = L.get_module_logger("weather")
-def debug(text: str): logger.debug(text)
-def info(text: str): logger.info(text)
-def warn(text: str): logger.warning(text)
-def err(text: str): logger.error(text)
-def crit(text: str): logger.critical(text)
 
 
 @weather.get("/weather/refresh", response_class=JSONResponse)
@@ -48,7 +44,7 @@ async def get_refreshed_weather(
             tz = await GEO.tz_at(lat, lon)
             date_time = await gis.dt(date, tz)
 
-        debug(f"Passing date_time {date_time.strftime('%Y-%m-%d %H:%M:%S')}, {lat}/{lon} into get_weather")
+        l.debug(f"Passing date_time {date_time.strftime('%Y-%m-%d %H:%M:%S')}, {lat}/{lon} into get_weather")
         day = await get_weather(date_time, lat, lon, force_refresh=True)
         
         if day is None:
@@ -67,12 +63,12 @@ async def get_refreshed_weather(
         return JSONResponse(content={"weather": day_dict}, status_code=200)
 
     except HTTPException as e:
-        err(f"HTTP Exception in get_refreshed_weather: {e.detail}")
+        l.error(f"HTTP Exception in get_refreshed_weather: {e.detail}")
         return JSONResponse(content={"detail": str(e.detail)}, status_code=e.status_code)
 
     except Exception as e:
-        err(f"Unexpected error in get_refreshed_weather: {str(e)}")
-        err(f"Traceback: {traceback.format_exc()}")
+        l.error(f"Unexpected error in get_refreshed_weather: {str(e)}")
+        l.error(f"Traceback: {traceback.format_exc()}")
         return JSONResponse(content={"detail": "An unexpected error occurred"}, status_code=500)
 
 
@@ -84,7 +80,7 @@ async def get_weather(date_time: dt_datetime, latitude: float, longitude: float,
         try:
             daily_weather_data = await get_weather_from_db(date_time, latitude, longitude)
             if daily_weather_data:
-                debug(f"Daily weather data from db: {daily_weather_data}")
+                l.debug(f"Daily weather data from db: {daily_weather_data}")
                 last_updated = str(daily_weather_data['DailyWeather'].get('last_updated'))
                 last_updated = await gis.dt(last_updated)
                 stored_loc_data = unhexlify(daily_weather_data['DailyWeather'].get('location'))
@@ -93,19 +89,19 @@ async def get_weather(date_time: dt_datetime, latitude: float, longitude: float,
                 
                 hourly_weather = daily_weather_data.get('HourlyWeather')
                 request_haversine = haversine(latitude, longitude, stored_lat, stored_lon)
-                debug(f"\nINFO:\nlast updated {last_updated}\nstored lat: {stored_lat} - requested lat: {latitude}\nstored lon: {stored_lon} - requested lon: {longitude}\nHaversine: {request_haversine}")
+                l.debug(f"\nINFO:\nlast updated {last_updated}\nstored lat: {stored_lat} - requested lat: {latitude}\nstored lon: {stored_lon} - requested lon: {longitude}\nHaversine: {request_haversine}")
                 
                 if last_updated and (date_time <= dt_datetime.now(TZ) and last_updated > date_time and request_haversine < 8) and hourly_weather and len(hourly_weather) > 0:
-                    debug(f"Using existing data")
+                    l.debug(f"Using existing data")
                     fetch_new_data = False
                 else:
                     fetch_new_data = True
         except Exception as e:
-            err(f"Error checking existing weather data: {e}")
+            l.error(f"Error checking existing weather data: {e}")
             fetch_new_data = True
 
     if fetch_new_data:
-        debug(f"Fetching new weather data")
+        l.debug(f"Fetching new weather data")
         request_date_str = date_time.strftime("%Y-%m-%d")
         url = f"https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/{latitude},{longitude}/{request_date_str}/{request_date_str}?unitGroup=us&key={VISUALCROSSING_API_KEY}"
         
@@ -114,9 +110,14 @@ async def get_weather(date_time: dt_datetime, latitude: float, longitude: float,
                 response = await client.get(url)
                 if response.status_code == 200:
                     weather_data = response.json()
-                    store_result = await store_weather_to_db(date_time, weather_data)
-                    if store_result != "SUCCESS":
-                        raise HTTPException(status_code=500, detail=f"Failed to store weather data: {store_result}")
+
+                    try:
+                        store_result = await store_weather_to_db(date_time, weather_data)
+                        if store_result != "SUCCESS":
+                            raise HTTPException(status_code=500, detail=f"Failed to store weather data: {store_result}")
+                    except Exception as e:
+                        l.error(f"Error storing weather data: {str(e)}")
+                        raise HTTPException(status_code=500, detail=f"Error storing weather data: {str(e)}")
 
                     daily_weather_data = await get_weather_from_db(date_time, latitude, longitude)
                     if daily_weather_data is None:
@@ -126,8 +127,8 @@ async def get_weather(date_time: dt_datetime, latitude: float, longitude: float,
         except HTTPException:
             raise
         except Exception as e:
-            err(f"Exception during API call or data storage: {e}")
-            err(f"Traceback: {traceback.format_exc()}")
+            l.error(f"Exception during API call or data storage: {e}")
+            l.error(f"Traceback: {traceback.format_exc()}")
             raise HTTPException(status_code=500, detail=f"Error fetching or storing weather data: {str(e)}")
 
     if daily_weather_data is None:
@@ -136,7 +137,7 @@ async def get_weather(date_time: dt_datetime, latitude: float, longitude: float,
     return daily_weather_data
 
 
-
+# weather.py
 
 async def store_weather_to_db(date_time: dt_datetime, weather_data: dict):
     try:
@@ -154,46 +155,46 @@ async def store_weather_to_db(date_time: dt_datetime, weather_data: dict):
         elevation = await GEO.elevation(latitude, longitude)
         location_point = f"POINTZ({longitude} {latitude} {elevation})" if elevation else None
     
-        daily_weather_params = [
-            location_point,
-            await gis.dt(day_data.get('sunriseEpoch')),
-            day_data.get('sunriseEpoch'),
-            await gis.dt(day_data.get('sunsetEpoch')),
-            day_data.get('sunsetEpoch'),
-            day_data.get('description'),
-            day_data.get('tempmax'),
-            day_data.get('tempmin'),
-            day_data.get('uvindex'),
-            day_data.get('winddir'),
-            day_data.get('windspeed'),
-            day_data.get('icon'),
-            dt_datetime.now(tz),
-            await gis.dt(day_data.get('datetimeEpoch')),
-            day_data.get('datetimeEpoch'),
-            day_data.get('temp'),
-            day_data.get('feelslikemax'),
-            day_data.get('feelslikemin'),
-            day_data.get('feelslike'),
-            day_data.get('dew'),
-            day_data.get('humidity'),
-            day_data.get('precip'),
-            day_data.get('precipprob'),
-            day_data.get('precipcover'),
-            preciptype_array,
-            day_data.get('snow'),
-            day_data.get('snowdepth'),
-            day_data.get('windgust'),
-            day_data.get('pressure'),
-            day_data.get('cloudcover'),
-            day_data.get('visibility'),
-            day_data.get('solarradiation'),
-            day_data.get('solarenergy'),
-            day_data.get('severerisk', 0),
-            day_data.get('moonphase'),
-            day_data.get('conditions'),
-            stations_array,
-            day_data.get('source')
-        ]
+        daily_weather_params = {
+            'location': location_point,
+            'sunrise': await gis.dt(day_data.get('sunriseEpoch')),
+            'sunriseepoch': day_data.get('sunriseEpoch'),
+            'sunset': await gis.dt(day_data.get('sunsetEpoch')),
+            'sunsetepoch': day_data.get('sunsetEpoch'),
+            'description': day_data.get('description'),
+            'tempmax': day_data.get('tempmax'),
+            'tempmin': day_data.get('tempmin'),
+            'uvindex': day_data.get('uvindex'),
+            'winddir': day_data.get('winddir'),
+            'windspeed': day_data.get('windspeed'),
+            'icon': day_data.get('icon'),
+            'last_updated': dt_datetime.now(tz),
+            'datetime': await gis.dt(day_data.get('datetimeEpoch')),
+            'datetimeepoch': day_data.get('datetimeEpoch'),
+            'temp': day_data.get('temp'),
+            'feelslikemax': day_data.get('feelslikemax'),
+            'feelslikemin': day_data.get('feelslikemin'),
+            'feelslike': day_data.get('feelslike'),
+            'dew': day_data.get('dew'),
+            'humidity': day_data.get('humidity'),
+            'precip': day_data.get('precip'),
+            'precipprob': day_data.get('precipprob'),
+            'precipcover': day_data.get('precipcover'),
+            'preciptype': preciptype_array,
+            'snow': day_data.get('snow'),
+            'snowdepth': day_data.get('snowdepth'),
+            'windgust': day_data.get('windgust'),
+            'pressure': day_data.get('pressure'),
+            'cloudcover': day_data.get('cloudcover'),
+            'visibility': day_data.get('visibility'),
+            'solarradiation': day_data.get('solarradiation'),
+            'solarenergy': day_data.get('solarenergy'),
+            'severerisk': day_data.get('severerisk', 0),
+            'moonphase': day_data.get('moonphase'),
+            'conditions': day_data.get('conditions'),
+            'stations': stations_array,
+            'source': day_data.get('source')
+        }
     
         daily_weather_query = '''
         INSERT INTO dailyweather (
@@ -205,54 +206,58 @@ async def store_weather_to_db(date_time: dt_datetime, weather_data: dict):
             solarradiation, solarenergy, severerisk, moonphase, conditions,
             stations, source
         ) VALUES (
-            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
-            $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28,
-            $29, $30, $31, $32, $33, $34, $35, $36, $37, $38
+            :location, :sunrise, :sunriseepoch, :sunset, :sunsetepoch, :description,
+            :tempmax, :tempmin, :uvindex, :winddir, :windspeed, :icon, :last_updated,
+            :datetime, :datetimeepoch, :temp, :feelslikemax, :feelslikemin, :feelslike,
+            :dew, :humidity, :precip, :precipprob, :precipcover, :preciptype,
+            :snow, :snowdepth, :windgust, :pressure, :cloudcover, :visibility,
+            :solarradiation, :solarenergy, :severerisk, :moonphase, :conditions,
+            :stations, :source
         ) RETURNING id
         '''
     
-        daily_weather_result = await API.execute_write_query(daily_weather_query, *daily_weather_params, table_name="dailyweather")
+        daily_weather_result = await Db.write(daily_weather_query, **daily_weather_params, table_name="dailyweather")
             
-        if not daily_weather_result:
+        if daily_weather_result is None:
             raise ValueError("Failed to insert daily weather data: no result returned")
         
-        daily_weather_id = daily_weather_result[0]['id']
-        debug(f"Inserted daily weather data with id: {daily_weather_id}")
+        daily_weather_id = daily_weather_result.fetchone()[0]
+        l.debug(f"Inserted daily weather data with id: {daily_weather_id}")
     
         # Hourly weather insertion
         if 'hours' in day_data:
-            debug(f"Processing {len(day_data['hours'])} hourly records")
+            l.debug(f"Processing {len(day_data['hours'])} hourly records")
             for hour_data in day_data['hours']:
                 hour_preciptype_array = hour_data.get('preciptype', []) or []
                 hour_stations_array = hour_data.get('stations', []) or []
-                hourly_weather_params = [
-                    daily_weather_id,
-                    await gis.dt(hour_data.get('datetimeEpoch')),
-                    hour_data.get('datetimeEpoch'),
-                    hour_data.get('temp'),
-                    hour_data.get('feelslike'),
-                    hour_data.get('humidity'),
-                    hour_data.get('dew'),
-                    hour_data.get('precip'),
-                    hour_data.get('precipprob'),
-                    hour_preciptype_array,
-                    hour_data.get('snow'),
-                    hour_data.get('snowdepth'),
-                    hour_data.get('windgust'),
-                    hour_data.get('windspeed'),
-                    hour_data.get('winddir'),
-                    hour_data.get('pressure'),
-                    hour_data.get('cloudcover'),
-                    hour_data.get('visibility'),
-                    hour_data.get('solarradiation'),
-                    hour_data.get('solarenergy'),
-                    hour_data.get('uvindex'),
-                    hour_data.get('severerisk', 0),
-                    hour_data.get('conditions'),
-                    hour_data.get('icon'),
-                    hour_stations_array,
-                    hour_data.get('source', '')
-                ]
+                hourly_weather_params = {
+                    'daily_weather_id': str(daily_weather_id),  # Convert UUID to string
+                    'datetime': await gis.dt(hour_data.get('datetimeEpoch')),
+                    'datetimeepoch': hour_data.get('datetimeEpoch'),
+                    'temp': hour_data.get('temp'),
+                    'feelslike': hour_data.get('feelslike'),
+                    'humidity': hour_data.get('humidity'),
+                    'dew': hour_data.get('dew'),
+                    'precip': hour_data.get('precip'),
+                    'precipprob': hour_data.get('precipprob'),
+                    'preciptype': hour_preciptype_array,
+                    'snow': hour_data.get('snow'),
+                    'snowdepth': hour_data.get('snowdepth'),
+                    'windgust': hour_data.get('windgust'),
+                    'windspeed': hour_data.get('windspeed'),
+                    'winddir': hour_data.get('winddir'),
+                    'pressure': hour_data.get('pressure'),
+                    'cloudcover': hour_data.get('cloudcover'),
+                    'visibility': hour_data.get('visibility'),
+                    'solarradiation': hour_data.get('solarradiation'),
+                    'solarenergy': hour_data.get('solarenergy'),
+                    'uvindex': hour_data.get('uvindex'),
+                    'severerisk': hour_data.get('severerisk', 0),
+                    'conditions': hour_data.get('conditions'),
+                    'icon': hour_data.get('icon'),
+                    'stations': hour_stations_array,
+                    'source': hour_data.get('source', '')
+                }
     
                 hourly_weather_query = '''
                 INSERT INTO hourlyweather (
@@ -262,61 +267,68 @@ async def store_weather_to_db(date_time: dt_datetime, weather_data: dict):
                     solarradiation, solarenergy, uvindex, severerisk, conditions, 
                     icon, stations, source
                 ) VALUES (
-                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 
-                    $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26
+                    :daily_weather_id, :datetime, :datetimeepoch, :temp, :feelslike, 
+                    :humidity, :dew, :precip, :precipprob, :preciptype, :snow, :snowdepth, 
+                    :windgust, :windspeed, :winddir, :pressure, :cloudcover, :visibility, 
+                    :solarradiation, :solarenergy, :uvindex, :severerisk, :conditions, 
+                    :icon, :stations, :source
                 ) RETURNING id
                 '''
-                hourly_result = await API.execute_write_query(hourly_weather_query, *hourly_weather_params, table_name="hourlyweather")
-                if not hourly_result:
-                    warn(f"Failed to insert hourly weather data for {hour_data.get('datetimeEpoch')}")
+                hourly_result = await Db.write(hourly_weather_query, **hourly_weather_params, table_name="hourlyweather")
+                if hourly_result is None:
+                    l.warning(f"Failed to insert hourly weather data for {hour_data.get('datetimeEpoch')}")
                 else:
-                    debug(f"Inserted hourly weather data with id: {hourly_result[0]['id']}")
+                    hourly_id = hourly_result.fetchone()[0]
+                    l.debug(f"Inserted hourly weather data with id: {hourly_id}")
     
         return "SUCCESS"
     except Exception as e:
-        err(f"Error in weather storage: {e}")
-        err(f"Traceback: {traceback.format_exc()}")
+        l.error(f"Error in weather storage: {e}")
+        l.error(f"Traceback: {traceback.format_exc()}")
         return "FAILURE"
 
 
+
 async def get_weather_from_db(date_time: dt_datetime, latitude: float, longitude: float):
-    debug(f"Using {date_time.strftime('%Y-%m-%d %H:%M:%S')} as our datetime in get_weather_from_db.")
+    l.debug(f"Using {date_time.strftime('%Y-%m-%d %H:%M:%S')} as our datetime in get_weather_from_db.")
     query_date = date_time.date()
     try:
         # Query to get daily weather data
         daily_query = '''
-            SELECT * FROM dailyweather
-            WHERE DATE(datetime) = $1
-            AND ST_DWithin(location::geography, ST_MakePoint($2,$3)::geography, 8046.72) 
-            ORDER BY ST_Distance(location, ST_MakePoint($4, $5)::geography) ASC
-            LIMIT 1
-        '''
-    
-        daily_weather_records = await API.execute_read_query(daily_query, query_date, longitude, latitude, longitude, latitude, table_name='dailyweather')
-    
+    SELECT * FROM dailyweather
+    WHERE DATE(datetime) = :query_date
+    AND ST_DWithin(location::geography, ST_MakePoint(:longitude,:latitude)::geography, 8046.72) 
+    ORDER BY ST_Distance(location, ST_MakePoint(:longitude2, :latitude2)::geography) ASC
+    LIMIT 1
+'''    
+        daily_weather_records = await Db.read(daily_query, query_date=query_date, longitude=longitude, latitude=latitude, longitude2=longitude, latitude2=latitude, table_name='dailyweather')
+
         if not daily_weather_records:
-            debug(f"No daily weather data retrieved from database.")
+            l.debug(f"No daily weather data retrieved from database.")
             return None
     
         daily_weather_data = daily_weather_records[0]
         
-        # Query to get hourly weather data
         hourly_query = '''
-            SELECT * FROM hourlyweather
-            WHERE daily_weather_id = $1
-            ORDER BY datetime ASC
-        '''
-        
-        hourly_weather_records = await API.execute_read_query(hourly_query, daily_weather_data['id'], table_name='hourlyweather')
-        
+    SELECT * FROM hourlyweather
+    WHERE daily_weather_id::text = :daily_weather_id
+    ORDER BY datetime ASC
+'''
+        hourly_weather_records = await Db.read(
+            hourly_query, 
+            daily_weather_id=str(daily_weather_data['id']), 
+            table_name='hourlyweather'
+        )
+
         day = {
             'DailyWeather': daily_weather_data,
             'HourlyWeather': hourly_weather_records,
         }
         
-        debug(f"Retrieved weather data for {date_time.date()}")
+        l.debug(f"Retrieved weather data for {date_time.date()}")
         return day
+    
     except Exception as e:
-        err(f"Unexpected error occurred in get_weather_from_db: {e}")
-        err(f"Traceback: {traceback.format_exc()}")
+        l.error(f"Unexpected error occurred in get_weather_from_db: {e}")
+        l.error(f"Traceback: {traceback.format_exc()}")
         return None

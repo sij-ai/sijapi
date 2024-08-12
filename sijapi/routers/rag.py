@@ -5,15 +5,11 @@ NOTES: Haven't yet decided if this should depend on the Obsidian and Chat module
 #routers/rag.py
 
 from fastapi import APIRouter
-from sijapi import L
+from sijapi.logs import get_logger
+l = get_logger(__name__)
 
 rag = APIRouter()
-logger = L.get_module_logger("rag")
-def debug(text: str): logger.debug(text)
-def info(text: str): logger.info(text)
-def warn(text: str): logger.warning(text)
-def err(text: str): logger.error(text)
-def crit(text: str): logger.critical(text)
+
 
 rag.get("/rag/search")
 async def rag_search_endpoint(query: str, scope: str):

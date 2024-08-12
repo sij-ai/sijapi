@@ -1,8 +1,12 @@
+# CaPLSS_downloader_and_importer.py
 import requests
 import json
 import time
 import os
 import subprocess
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 def get_feature_count(url):
     params = {
@@ -10,10 +14,16 @@ def get_feature_count(url):
         'returnCountOnly': 'true',
         'f': 'json'
     }
-    response = requests.get(url, params=params)
+    retries = Retry(total=10, backoff_factor=0.5)
+    adapter = HTTPAdapter(max_retries=retries)
+    session = requests.Session()
+    session.mount("https://", adapter)
+
+    response = session.get(url, params=params, timeout=15)  # Add timeout parameter
     response.raise_for_status()
     data = response.json()
     return data.get('count', 0)
+
 
 def fetch_features(url, offset, num):
     params = {
@@ -70,13 +80,19 @@ def download_layer(layer_num, layer_name):
         "features": geojson_features
     }
 
+    # Define a base directory that exists on both macOS and Debian
+    base_dir = os.path.expanduser('~/data')
+    os.makedirs(base_dir, exist_ok=True)  # Create the directory if it doesn't exist
+    
+    # Use os.path.join to construct the file path
+    file_path = os.path.join(base_dir, f'PLSS_{layer_name}.geojson')
+    
     # Save to file
-    file_path = f'/Users/sij/workshop/sijapi/sijapi/data/PLSS_{layer_name}.geojson'
     with open(file_path, 'w') as f:
         json.dump(full_geojson, f)
-
+    
     print(f"GeoJSON file saved as '{file_path}'")
-
+    
     return file_path
 
 def import_to_postgis(file_path, table_name):

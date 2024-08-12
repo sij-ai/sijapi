@@ -1,0 +1,69 @@
+POOL:
+  - ts_id: 'server1'
+    ts_ip: '192.168.0.10'
+    app_port: 4444
+    db_port: 5432
+    db_name: mydb
+    db_user: dbuser
+    db_pass: 'password123'
+    ssh_port: 22
+    ssh_user: sshuser
+    ssh_pass: 'password456'
+    path: '/Users/sij/workshop/sijapi'
+    tmux: '/opt/homebrew/bin/tmux'
+    tailscale: '/usr/local/bin/tailscale'
+    conda: '/Users/sij/miniforge3/bin/mamba'
+    conda_env: '/Users/sij/miniforge3/envs/sijapi'
+    vitals: '/Users/sij/workshop/scripts/gitea/pathScripts/vitals'
+    vpn: '/Users/sij/workshop/scripts/gitea/pathScripts/vpn'
+  - ts_id: 'server2'
+    ts_ip: '192.168.0.11'
+    app_port: 4444
+    db_port: 5432
+    db_name: mydb
+    db_user: dbuser
+    db_pass: 'password123'
+    ssh_port: 22
+    ssh_user: sshuser
+    ssh_pass: 'password456'
+    path: '/Users/sij/workshop/sijapi'
+    tmux: '/opt/homebrew/bin/tmux'
+    tailscale: '/usr/local/bin/tailscale'
+    conda: '/Users/sij/miniforge3/bin/mamba'
+    conda_env: '/Users/sij/miniforge3/envs/sijapi'
+    vitals: '/Users/sij/workshop/scripts/gitea/pathScripts/vitals'
+    vpn: '/Users/sij/workshop/scripts/gitea/pathScripts/vpn'
+  - ts_id: 'server3'
+    ts_ip: '192.168.0.12'
+    app_port: 4444
+    db_port: 5432
+    db_name: mydb
+    db_user: dbuser
+    db_pass: 'password123'
+    ssh_port: 22
+    ssh_user: sshuser
+    ssh_pass: 'password456'
+    path: '/Users/sij/workshop/sijapi'
+    tmux: '/opt/homebrew/bin/tmux'
+    tailscale: '/usr/local/bin/tailscale'
+    conda: '/Users/sij/miniforge3/bin/mamba'
+    conda_env: '/Users/sij/miniforge3/envs/sijapi'
+    vitals: '/Users/sij/workshop/scripts/gitea/pathScripts/vitals'
+    vpn: '/Users/sij/workshop/scripts/gitea/pathScripts/vpn'
+
+TABLES:
+  locations:
+    primary_key: id
+    use_guid: true
+  dailyweather:
+    primary_key: id
+    use_guid: true
+  hourlyweather:
+    primary_key: id
+    use_guid: true
+  click_logs:
+    primary_key: id
+    use_guid: true
+  short_urls:
+    primary_key: id
+    use_guid: true

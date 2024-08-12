@@ -1,0 +1,1103 @@
+click_logs:
+  clicked_at:
+    data_type: timestamp without time zone
+    is_nullable: 'YES'
+    max_length: null
+  id:
+    data_type: uuid
+    is_nullable: 'NO'
+    max_length: null
+  ip_address:
+    data_type: text
+    is_nullable: 'YES'
+    max_length: null
+  short_code:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: 3
+  user_agent:
+    data_type: text
+    is_nullable: 'YES'
+    max_length: null
+dailyweather:
+  cloudcover:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  conditions:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  datetime:
+    data_type: timestamp with time zone
+    is_nullable: 'YES'
+    max_length: null
+  datetimeepoch:
+    data_type: bigint
+    is_nullable: 'YES'
+    max_length: null
+  description:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  dew:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  feelslike:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  feelslikemax:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  feelslikemin:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  humidity:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  icon:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  id:
+    data_type: integer
+    is_nullable: 'NO'
+    max_length: null
+  last_updated:
+    data_type: timestamp with time zone
+    is_nullable: 'YES'
+    max_length: null
+  location:
+    data_type: USER-DEFINED
+    is_nullable: 'YES'
+    max_length: null
+  moonphase:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  precip:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  precipcover:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  precipprob:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  preciptype:
+    data_type: ARRAY
+    is_nullable: 'YES'
+    max_length: null
+  pressure:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  severerisk:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  snow:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  snowdepth:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  solarenergy:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  solarradiation:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  source:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  stations:
+    data_type: ARRAY
+    is_nullable: 'YES'
+    max_length: null
+  sunrise:
+    data_type: timestamp with time zone
+    is_nullable: 'YES'
+    max_length: null
+  sunriseepoch:
+    data_type: bigint
+    is_nullable: 'YES'
+    max_length: null
+  sunset:
+    data_type: timestamp with time zone
+    is_nullable: 'YES'
+    max_length: null
+  sunsetepoch:
+    data_type: bigint
+    is_nullable: 'YES'
+    max_length: null
+  temp:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  tempmax:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  tempmin:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  uvindex:
+    data_type: integer
+    is_nullable: 'YES'
+    max_length: null
+  visibility:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  winddir:
+    data_type: integer
+    is_nullable: 'YES'
+    max_length: null
+  windgust:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  windspeed:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+dailyweather_uuid:
+  cloudcover:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  conditions:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  datetime:
+    data_type: timestamp with time zone
+    is_nullable: 'YES'
+    max_length: null
+  datetimeepoch:
+    data_type: bigint
+    is_nullable: 'YES'
+    max_length: null
+  description:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  dew:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  feelslike:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  feelslikemax:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  feelslikemin:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  humidity:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  icon:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  id:
+    data_type: uuid
+    is_nullable: 'NO'
+    max_length: null
+  last_updated:
+    data_type: timestamp with time zone
+    is_nullable: 'YES'
+    max_length: null
+  location:
+    data_type: USER-DEFINED
+    is_nullable: 'YES'
+    max_length: null
+  moonphase:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  precip:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  precipcover:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  precipprob:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  preciptype:
+    data_type: ARRAY
+    is_nullable: 'YES'
+    max_length: null
+  pressure:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  severerisk:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  snow:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  snowdepth:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  solarenergy:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  solarradiation:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  source:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  stations:
+    data_type: ARRAY
+    is_nullable: 'YES'
+    max_length: null
+  sunrise:
+    data_type: timestamp with time zone
+    is_nullable: 'YES'
+    max_length: null
+  sunriseepoch:
+    data_type: bigint
+    is_nullable: 'YES'
+    max_length: null
+  sunset:
+    data_type: timestamp with time zone
+    is_nullable: 'YES'
+    max_length: null
+  sunsetepoch:
+    data_type: bigint
+    is_nullable: 'YES'
+    max_length: null
+  temp:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  tempmax:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  tempmin:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  uvindex:
+    data_type: integer
+    is_nullable: 'YES'
+    max_length: null
+  visibility:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  winddir:
+    data_type: integer
+    is_nullable: 'YES'
+    max_length: null
+  windgust:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  windspeed:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+geography_columns:
+  coord_dimension:
+    data_type: integer
+    is_nullable: 'YES'
+    max_length: null
+  f_geography_column:
+    data_type: name
+    is_nullable: 'YES'
+    max_length: null
+  f_table_catalog:
+    data_type: name
+    is_nullable: 'YES'
+    max_length: null
+  f_table_name:
+    data_type: name
+    is_nullable: 'YES'
+    max_length: null
+  f_table_schema:
+    data_type: name
+    is_nullable: 'YES'
+    max_length: null
+  srid:
+    data_type: integer
+    is_nullable: 'YES'
+    max_length: null
+  type:
+    data_type: text
+    is_nullable: 'YES'
+    max_length: null
+geometry_columns:
+  coord_dimension:
+    data_type: integer
+    is_nullable: 'YES'
+    max_length: null
+  f_geometry_column:
+    data_type: name
+    is_nullable: 'YES'
+    max_length: null
+  f_table_catalog:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: 256
+  f_table_name:
+    data_type: name
+    is_nullable: 'YES'
+    max_length: null
+  f_table_schema:
+    data_type: name
+    is_nullable: 'YES'
+    max_length: null
+  srid:
+    data_type: integer
+    is_nullable: 'YES'
+    max_length: null
+  type:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: 30
+hourlyweather:
+  cloudcover:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  conditions:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  daily_weather_id:
+    data_type: integer
+    is_nullable: 'YES'
+    max_length: null
+  datetime:
+    data_type: timestamp with time zone
+    is_nullable: 'YES'
+    max_length: null
+  datetimeepoch:
+    data_type: bigint
+    is_nullable: 'YES'
+    max_length: null
+  dew:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  feelslike:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  humidity:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  icon:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  id:
+    data_type: integer
+    is_nullable: 'NO'
+    max_length: null
+  precip:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  precipprob:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  preciptype:
+    data_type: ARRAY
+    is_nullable: 'YES'
+    max_length: null
+  pressure:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  severerisk:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  snow:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  snowdepth:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  solarenergy:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  solarradiation:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  source:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  stations:
+    data_type: ARRAY
+    is_nullable: 'YES'
+    max_length: null
+  temp:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  uvindex:
+    data_type: integer
+    is_nullable: 'YES'
+    max_length: null
+  visibility:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  winddir:
+    data_type: integer
+    is_nullable: 'YES'
+    max_length: null
+  windgust:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  windspeed:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+hourlyweather_uuid:
+  cloudcover:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  conditions:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  daily_weather_id:
+    data_type: integer
+    is_nullable: 'YES'
+    max_length: null
+  datetime:
+    data_type: timestamp with time zone
+    is_nullable: 'YES'
+    max_length: null
+  datetimeepoch:
+    data_type: bigint
+    is_nullable: 'YES'
+    max_length: null
+  dew:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  feelslike:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  humidity:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  icon:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  id:
+    data_type: uuid
+    is_nullable: 'NO'
+    max_length: null
+  precip:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  precipprob:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  preciptype:
+    data_type: ARRAY
+    is_nullable: 'YES'
+    max_length: null
+  pressure:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  severerisk:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  snow:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  snowdepth:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  solarenergy:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  solarradiation:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  source:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  stations:
+    data_type: ARRAY
+    is_nullable: 'YES'
+    max_length: null
+  temp:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  uvindex:
+    data_type: integer
+    is_nullable: 'YES'
+    max_length: null
+  visibility:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  winddir:
+    data_type: integer
+    is_nullable: 'YES'
+    max_length: null
+  windgust:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  windspeed:
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+locations:
+  action:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  amenity:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  boundingbox:
+    data_type: ARRAY
+    is_nullable: 'YES'
+    max_length: null
+  city:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: 255
+  class:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  class_:
+    data_type: text
+    is_nullable: 'YES'
+    max_length: null
+  context:
+    data_type: jsonb
+    is_nullable: 'YES'
+    max_length: null
+  country:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  country_code:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  county:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  daily_weather_id:
+    data_type: integer
+    is_nullable: 'YES'
+    max_length: null
+  datetime:
+    data_type: timestamp with time zone
+    is_nullable: 'YES'
+    max_length: null
+  device_model:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  device_name:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  device_os:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  device_type:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  display_name:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  house_number:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  id:
+    data_type: integer
+    is_nullable: 'NO'
+    max_length: null
+  location:
+    data_type: USER-DEFINED
+    is_nullable: 'YES'
+    max_length: null
+  name:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  neighbourhood:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  quarter:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  road:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  state:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: 255
+  street:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: 255
+  suburb:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  type:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  zip:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: 255
+locations_uuid:
+  action:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  amenity:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  boundingbox:
+    data_type: ARRAY
+    is_nullable: 'YES'
+    max_length: null
+  city:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: 255
+  class:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  class_:
+    data_type: text
+    is_nullable: 'YES'
+    max_length: null
+  context:
+    data_type: jsonb
+    is_nullable: 'YES'
+    max_length: null
+  country:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  country_code:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  county:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  daily_weather_id:
+    data_type: integer
+    is_nullable: 'YES'
+    max_length: null
+  datetime:
+    data_type: timestamp with time zone
+    is_nullable: 'YES'
+    max_length: null
+  device_model:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  device_name:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  device_os:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  device_type:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  display_name:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  house_number:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  id:
+    data_type: uuid
+    is_nullable: 'NO'
+    max_length: null
+  location:
+    data_type: USER-DEFINED
+    is_nullable: 'YES'
+    max_length: null
+  name:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  neighbourhood:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  quarter:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  road:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  state:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: 255
+  street:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: 255
+  suburb:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  type:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  zip:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: 255
+plss_sections:
+  frstdivdup:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  frstdivid:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  frstdivlab:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  frstdivno:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  frstdivtxt:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  frstdivtyp:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  objectid:
+    data_type: integer
+    is_nullable: 'YES'
+    max_length: null
+  ogc_fid:
+    data_type: integer
+    is_nullable: 'NO'
+    max_length: null
+  plssid:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  shape.starea():
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  shape.stlength():
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  sourcedate:
+    data_type: bigint
+    is_nullable: 'YES'
+    max_length: null
+  sourceref:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  survtyp:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  survtyptxt:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  wkb_geometry:
+    data_type: USER-DEFINED
+    is_nullable: 'YES'
+    max_length: null
+plss_townships:
+  created_date:
+    data_type: bigint
+    is_nullable: 'YES'
+    max_length: null
+  created_user:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  globalid:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  last_edited_date:
+    data_type: bigint
+    is_nullable: 'YES'
+    max_length: null
+  last_edited_user:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  objectid:
+    data_type: integer
+    is_nullable: 'YES'
+    max_length: null
+  ogc_fid:
+    data_type: integer
+    is_nullable: 'NO'
+    max_length: null
+  origid:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  partcount:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  plssid:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  prinmer:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  prinmercd:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  rangedir:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  rangefrac:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  rangeno:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  secsrvname:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  shape.starea():
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  shape.stlength():
+    data_type: double precision
+    is_nullable: 'YES'
+    max_length: null
+  sourcedate:
+    data_type: bigint
+    is_nullable: 'YES'
+    max_length: null
+  sourceref:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  srvname:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  stateabbr:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  steward:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  survtyp:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  survtyptxt:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  twnshpdir:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  twnshpdpcd:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  twnshpfrac:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  twnshplab:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  twnshpno:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: null
+  wkb_geometry:
+    data_type: USER-DEFINED
+    is_nullable: 'YES'
+    max_length: null
+relations:
+  id:
+    data_type: bigint
+    is_nullable: 'NO'
+    max_length: null
+  members:
+    data_type: jsonb
+    is_nullable: 'YES'
+    max_length: null
+  tags:
+    data_type: jsonb
+    is_nullable: 'YES'
+    max_length: null
+short_urls:
+  created_at:
+    data_type: timestamp without time zone
+    is_nullable: 'YES'
+    max_length: null
+  id:
+    data_type: integer
+    is_nullable: 'NO'
+    max_length: null
+  long_url:
+    data_type: text
+    is_nullable: 'NO'
+    max_length: null
+  short_code:
+    data_type: character varying
+    is_nullable: 'NO'
+    max_length: 3
+short_urls_uuid:
+  created_at:
+    data_type: timestamp without time zone
+    is_nullable: 'YES'
+    max_length: null
+  id:
+    data_type: uuid
+    is_nullable: 'NO'
+    max_length: null
+  long_url:
+    data_type: text
+    is_nullable: 'NO'
+    max_length: null
+  short_code:
+    data_type: character varying
+    is_nullable: 'NO'
+    max_length: 3
+spatial_ref_sys:
+  auth_name:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: 256
+  auth_srid:
+    data_type: integer
+    is_nullable: 'YES'
+    max_length: null
+  proj4text:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: 2048
+  srid:
+    data_type: integer
+    is_nullable: 'NO'
+    max_length: null
+  srtext:
+    data_type: character varying
+    is_nullable: 'YES'
+    max_length: 2048

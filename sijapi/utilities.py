@@ -1,56 +1,47 @@
 # utilities.py
 import re
 import os
-from fastapi import Form
-import re
+import json
 import io
-from io import BytesIO
 import base64
 import math
 import paramiko
-from dateutil import parser
-from pathlib import Path
 import filetype
 import shutil
 import uuid
 import hashlib
 import requests
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
+import asyncio
+import aiohttp
+import pandas as pd
+import ipaddress
+from io import BytesIO
+from pathlib import Path
+from dateutil import parser
 from urllib.parse import urlparse
 from PyPDF2 import PdfReader
 from better_profanity import profanity
 from adblockparser import AdblockRules
 from pdfminer.high_level import extract_text as pdfminer_extract_text
-import pytesseract
-from readability import Document
+from readability import Document as ReadabilityDocument
 from pdf2image import convert_from_path
 from datetime import datetime as dt_datetime, date, time
 from typing import Optional, Union, Tuple, List, Any
-import asyncio
 from PIL import Image
-import pandas as pd
-import ipaddress
 from scipy.spatial import cKDTree
 from dateutil.parser import parse as dateutil_parse
 from docx import Document
-import aiohttp
 from bs4 import BeautifulSoup
-from readability import Document as ReadabilityDocument
 from markdownify import markdownify as md
 from sshtunnel import SSHTunnelForwarder
-from urllib.parse import urlparse
-from fastapi import Depends, HTTPException, Request, UploadFile
+from fastapi import Depends, HTTPException, Request, UploadFile, Form
 from fastapi.security.api_key import APIKeyHeader
-
-from sijapi import L, API, Archivist, YEAR_FMT, MONTH_FMT, DAY_FMT, DAY_SHORT_FMT, OBSIDIAN_VAULT_DIR, ALLOWED_FILENAME_CHARS, MAX_PATH_LENGTH, ARCHIVE_DIR
-
-logger = L.get_module_logger('utilities')
-def debug(text: str): logger.debug(text)
-def info(text: str): logger.info(text)
-def warn(text: str): logger.warning(text)
-def err(text: str): logger.error(text)
-def crit(text: str): logger.critical(text)
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+import pytesseract
+from sijapi import Sys, Dir, YEAR_FMT, MONTH_FMT, DAY_FMT, DAY_SHORT_FMT, OBSIDIAN_VAULT_DIR, ALLOWED_FILENAME_CHARS, MAX_PATH_LENGTH, ARCHIVE_DIR
+from sijapi.logs import get_logger
+l = get_logger(__name__)
 
 
 def assemble_archive_path(filename: str, extension: str = None, date_time: dt_datetime = None, subdir: str = None) -> Tuple[Path, Path]:
@@ -79,7 +70,7 @@ def assemble_archive_path(filename: str, extension: str = None, date_time: dt_da
     filename = f"{day_short} {timestamp} {sanitized_base}{final_extension}"
     
     relative_path = Path(year) / month / day / filename
-    absolute_path = Archivist.dir / relative_path
+    absolute_path = Dir.ARCHIVE / relative_path
     
     # Ensure the total path length doesn't exceed MAX_PATH_LENGTH
     while len(str(absolute_path)) > MAX_PATH_LENGTH and len(sanitized_base) > 0:
@@ -138,7 +129,7 @@ def assemble_journal_path(date_time: dt_datetime, subdir: str = None, filename: 
             relative_path = relative_path / filename
 
         else:
-            debug(f"This only happens, theoretically, when no filename nor subdirectory are provided, but an extension is. Which is kinda silly.")
+            l.debug(f"This only happens, theoretically, when no filename nor subdirectory are provided, but an extension is. Which is kinda silly.")
             return None, None
 
     absolute_path = OBSIDIAN_VAULT_DIR / relative_path
@@ -194,7 +185,7 @@ def contains_profanity(content: str, threshold: float = 0.01, custom_words: Opti
     content_profanity_count = sum(1 for word in word_list if profanity.contains_profanity(word))
     content_profanity_ratio = content_profanity_count / len(word_list) if word_list else 0
     
-    debug(f"Profanity ratio for content: {content_profanity_ratio}")
+    l.debug(f"Profanity ratio for content: {content_profanity_ratio}")
     return content_profanity_ratio >= threshold
 
 
@@ -204,15 +195,15 @@ def load_filter_lists(blocklists_dir: Path):
             try:
                 with open(file_path, 'r', encoding='utf-8') as file:
                     rules.extend(file.read().splitlines())
-                info(f"Loaded blocklist: {file_path.name}")
+                l.info(f"Loaded blocklist: {file_path.name}")
             except Exception as e:
-                err(f"Error loading blocklist {file_path.name}: {str(e)}")
+                l.error(f"Error loading blocklist {file_path.name}: {str(e)}")
         return rules
     
     
 def initialize_adblock_rules(blocklists_dir: Path):
     rules = load_filter_lists(blocklists_dir)
-    info(f"Initialized AdblockRules with {len(rules)} rules")
+    l.info(f"Initialized AdblockRules with {len(rules)} rules")
     return AdblockRules(rules)
 
 
@@ -228,14 +219,14 @@ def get_extension(file):
         return file_extension
 
     except Exception as e:
-        err(f"Unable to get extension of {file}")
+        l.error(f"Unable to get extension of {file}")
         raise e
 
 
 
 def sanitize_filename(text, extension: str = None, max_length: int = MAX_PATH_LENGTH):
     """Sanitize a string to be used as a safe filename while protecting the file extension."""
-    debug(f"Filename before sanitization: {text}")
+    l.debug(f"Filename before sanitization: {text}")
 
     # Ensure text is a string
     text = str(text)
@@ -253,7 +244,7 @@ def sanitize_filename(text, extension: str = None, max_length: int = MAX_PATH_LE
         base_name = base_name[:max_base_length - 5].rstrip()
     final_filename = base_name + extension
 
-    debug(f"Filename after sanitization: {final_filename}")
+    l.debug(f"Filename after sanitization: {final_filename}")
     return final_filename
 
 
@@ -264,16 +255,16 @@ def check_file_name(file_name, max_length=255):
     needs_sanitization = False
 
     if len(file_name) > max_length:
-        debug(f"Filename exceeds maximum length of {max_length}: {file_name}")
+        l.debug(f"Filename exceeds maximum length of {max_length}: {file_name}")
         needs_sanitization = True
     if re.search(ALLOWED_FILENAME_CHARS, file_name):
-        debug(f"Filename contains non-word characters (except space, dot, and hyphen): {file_name}")
+        l.debug(f"Filename contains non-word characters (except space, dot, and hyphen): {file_name}")
         needs_sanitization = True
     if re.search(r'\s{2,}', file_name):
-        debug(f"Filename contains multiple consecutive spaces: {file_name}")
+        l.debug(f"Filename contains multiple consecutive spaces: {file_name}")
         needs_sanitization = True
     if file_name != file_name.strip():
-        debug(f"Filename has leading or trailing spaces: {file_name}")
+        l.debug(f"Filename has leading or trailing spaces: {file_name}")
         needs_sanitization = True
 
     return needs_sanitization
@@ -316,13 +307,13 @@ async def ocr_pdf(file_path: str) -> str:
         texts = await asyncio.gather(*(asyncio.to_thread(pytesseract.image_to_string, image) for image in images))
         return ' '.join(texts)
     except Exception as e:
-        err(f"Error during OCR: {str(e)}")
+        l.error(f"Error during OCR: {str(e)}")
         return ""
 
 
 async def extract_text_from_pdf(file_path: str) -> str:
     if not await is_valid_pdf(file_path):
-        err(f"Invalid PDF file: {file_path}")
+        l.error(f"Invalid PDF file: {file_path}")
         return ""
 
     text = ''
@@ -340,7 +331,7 @@ async def extract_text_from_pdf(file_path: str) -> str:
         if text and not should_use_ocr(text, num_pages):
             return clean_text(text)
     except Exception as e:
-        err(f"Error extracting text with PyPDF2: {str(e)}")
+        l.error(f"Error extracting text with PyPDF2: {str(e)}")
 
     # If PyPDF2 extraction fails or is insufficient, fall back to pdfminer.six
     try:
@@ -348,10 +339,10 @@ async def extract_text_from_pdf(file_path: str) -> str:
         if text_pdfminer and not should_use_ocr(text_pdfminer, num_pages):
             return clean_text(text_pdfminer)
     except Exception as e:
-        err(f"Error extracting text with pdfminer.six: {e}")
+        l.error(f"Error extracting text with pdfminer.six: {e}")
 
     # If both methods fail or are deemed insufficient, use OCR as the last resort
-    debug("Falling back to OCR for text extraction...")
+    l.debug("Falling back to OCR for text extraction...")
     return await ocr_pdf(file_path)
 
 async def is_valid_pdf(file_path: str) -> bool:
@@ -360,12 +351,12 @@ async def is_valid_pdf(file_path: str) -> bool:
         kind = filetype.guess(file_path)
         return kind.mime == 'application/pdf'
     except Exception as e:
-        err(f"Error checking file type: {e}")
+        l.error(f"Error checking file type: {e}")
         return False
 
 async def extract_text_from_pdf(file_path: str) -> str:
     if not await is_valid_pdf(file_path):
-        err(f"Invalid PDF file: {file_path}")
+        l.error(f"Invalid PDF file: {file_path}")
         return ""
 
     text = ''
@@ -377,23 +368,23 @@ async def extract_text_from_pdf(file_path: str) -> str:
         if text.strip():  # Successfully extracted text
             return clean_text(text)
     except Exception as e:
-        err(f"Error extracting text with PyPDF2: {str(e)}")
+        l.error(f"Error extracting text with PyPDF2: {str(e)}")
 
     try:
         text_pdfminer = await asyncio.to_thread(pdfminer_extract_text, file_path)
         if text_pdfminer.strip():  # Successfully extracted text
             return clean_text(text_pdfminer)
     except Exception as e:
-        err(f"Error extracting text with pdfminer.six: {str(e)}")
+        l.error(f"Error extracting text with pdfminer.six: {str(e)}")
 
     # Fall back to OCR
-    debug("Falling back to OCR for text extraction...")
+    l.debug("Falling back to OCR for text extraction...")
     try:
         images = convert_from_path(file_path)
         ocr_texts = await asyncio.gather(*(asyncio.to_thread(pytesseract.image_to_string, img) for img in images))
         return ' '.join(ocr_texts).strip()
     except Exception as e:
-        err(f"OCR failed: {str(e)}")
+        l.error(f"OCR failed: {str(e)}")
         return ""
 
 async def extract_text_from_docx(file_path: str) -> str:
@@ -496,7 +487,7 @@ def encode_image_to_base64(image_path):
             base64_str = base64.b64encode(byte_data).decode('utf-8')
         return base64_str
     else:
-        debug(f"Error: File does not exist at {image_path}")
+        l.debug(f"Error: File does not exist at {image_path}")
 
 def resize_and_convert_image(image_path, max_size=2160, quality=80):
     with Image.open(image_path) as img:
@@ -534,13 +525,13 @@ def download_file(url, folder):
                 with open(filepath, 'wb') as f:
                     f.write(response.content)
             else:
-                err(f"Failed to download image: {url}, invalid content type: {response.headers.get('Content-Type')}")
+                l.error(f"Failed to download image: {url}, invalid content type: {response.headers.get('Content-Type')}")
                 return None
         else:
-            err(f"Failed to download image: {url}, status code: {response.status_code}")
+            l.error(f"Failed to download image: {url}, status code: {response.status_code}")
             return None
     except Exception as e:
-        err(f"Failed to download image: {url}, error: {str(e)}")
+        l.error(f"Failed to download image: {url}, error: {str(e)}")
         return None
     return filename
 
@@ -599,7 +590,7 @@ async def run_ssh_command(server, command):
         ssh.close()
         return output, error
     except Exception as e:
-        err(f"SSH command failed for server {server.id}: {str(e)}")
+        l.error(f"SSH command failed for server {server.id}: {str(e)}")
         raise
 
 
@@ -611,7 +602,7 @@ async def html_to_markdown(url: str = None, source: str = None) -> Optional[str]
             async with session.get(url) as response:
                 html_content = await response.text()
     else:
-        err(f"Unable to convert nothing to markdown.")
+        l.error(f"Unable to convert nothing to markdown.")
         return None
     
     # Use readability to extract the main content
@@ -630,33 +621,3 @@ async def html_to_markdown(url: str = None, source: str = None) -> Optional[str]
     
     return markdown_content
 
-
-def json_serial(obj: Any) -> Any:
-    """JSON serializer for objects not serializable by default json code"""
-    if isinstance(obj, (datetime, date)):
-        return obj.isoformat()
-    if isinstance(obj, time):
-        return obj.isoformat()
-    if isinstance(obj, Decimal):
-        return float(obj)
-    if isinstance(obj, UUID):
-        return str(obj)
-    if isinstance(obj, bytes):
-        return obj.decode('utf-8')
-    if isinstance(obj, Path):
-        return str(obj)
-    if hasattr(obj, '__dict__'):
-        return obj.__dict__
-    raise TypeError(f"Type {type(obj)} not serializable")
-
-def json_dumps(obj: Any) -> str:
-    """
-    Serialize obj to a JSON formatted str using the custom serializer.
-    """
-    return json.dumps(obj, default=json_serial)
-
-def json_loads(json_str: str) -> Any:
-    """
-    Deserialize json_str to a Python object.
-    """
-    return json.loads(json_str)

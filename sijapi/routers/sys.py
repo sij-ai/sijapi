@@ -8,15 +8,12 @@ import httpx
 import socket
 from fastapi import APIRouter
 from tailscale import Tailscale
-from sijapi import L, API, TS_ID
+from sijapi import Sys, TS_ID
+from sijapi.logs import get_logger
+l = get_logger(__name__)
 
-sys = APIRouter(tags=["public", "trusted", "private"])
-logger = L.get_module_logger("health")
-def debug(text: str): logger.debug(text)
-def info(text: str): logger.info(text)
-def warn(text: str): logger.warning(text)
-def err(text: str): logger.error(text)
-def crit(text: str): logger.critical(text)
+sys = APIRouter()
+
 
 @sys.get("/health")
 def get_health():
@@ -28,7 +25,7 @@ def get_health() -> str:
 
 @sys.get("/routers")
 def get_routers() -> str:
-    active_modules = [module for module, is_active in API.MODULES.__dict__.items() if is_active]
+    active_modules = [module for module, is_active in Sys.MODULES.__dict__.items() if is_active]
     return active_modules
 
 @sys.get("/ip")
@@ -36,7 +33,7 @@ def get_local_ip():
     """Get the server's local IP address."""
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
-        s.connect((f'{API.SUBNET_BROADCAST}', 1))
+        s.connect((f'{Sys.SUBNET_BROADCAST}', 1))
         IP = s.getsockname()[0]
     except Exception:
         IP = '127.0.0.1'
@@ -54,7 +51,7 @@ async def get_wan_ip():
             wan_info = response.json()
             return wan_info.get('ip', 'Unavailable')
         except Exception as e:
-            err(f"Error fetching WAN IP: {e}")
+            l.error(f"Error fetching WAN IP: {e}")
             return "Unavailable"
 
 @sys.get("/ts_ip")

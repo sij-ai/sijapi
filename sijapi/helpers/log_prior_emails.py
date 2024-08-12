@@ -1,8 +1,12 @@
 import asyncio
 from pathlib import Path
-from sijapi import L, EMAIL_CONFIG, EMAIL_LOGS
-from sijapi.classes import EmailAccount
+from sijapi import EMAIL_CONFIG, EMAIL_LOGS
+from sijapi.utilities import EmailAccount
 from sijapi.routers import email
+from sijapi.logs import get_logger
+
+l = get_logger(__name__)
+
 
 async def initialize_log_files():
     summarized_log = EMAIL_LOGS / "summarized.txt"
@@ -11,13 +15,13 @@ async def initialize_log_files():
     for log_file in [summarized_log, autoresponded_log, diagnostic_log]:
         log_file.parent.mkdir(parents=True, exist_ok=True)
         log_file.write_text("")
-    L.DEBUG(f"Log files initialized: {summarized_log}, {autoresponded_log}, {diagnostic_log}")
+    l.debug(f"Log files initialized: {summarized_log}, {autoresponded_log}, {diagnostic_log}")
     return summarized_log, autoresponded_log, diagnostic_log
 
 async def process_all_emails(account: EmailAccount, summarized_log: Path, autoresponded_log: Path, diagnostic_log: Path):
     try:
         with email.get_imap_connection(account) as inbox:
-            L.DEBUG(f"Connected to {account.name}, processing all emails...")
+            l.debug(f"Connected to {account.name}, processing all emails...")
             all_messages = inbox.messages()
             unread_messages = set(uid for uid, _ in inbox.messages(unread=True))
             
@@ -41,15 +45,15 @@ async def process_all_emails(account: EmailAccount, summarized_log: Path, autore
                         with open(log_file, 'a') as f:
                             f.write(f"{id_str}\n")
             
-            L.INFO(f"Processed {processed_count} non-unread emails for account {account.name}")
+            l.info(f"Processed {processed_count} non-unread emails for account {account.name}")
     except Exception as e:
-        L.logger.error(f"An error occurred while processing emails for account {account.name}: {e}")
+        l.logger.error(f"An error occurred while processing emails for account {account.name}: {e}")
 
 async def main():
     email_accounts = email.load_email_accounts(EMAIL_CONFIG)
     summarized_log, autoresponded_log, diagnostic_log = await initialize_log_files()
 
-    L.DEBUG(f"Processing {len(email_accounts)} email accounts")
+    l.debug(f"Processing {len(email_accounts)} email accounts")
 
     tasks = [process_all_emails(account, summarized_log, autoresponded_log, diagnostic_log) for account in email_accounts]
     await asyncio.gather(*tasks)
@@ -57,7 +61,7 @@ async def main():
     # Final verification
     with open(summarized_log, 'r') as f:
         final_count = len(f.readlines())
-    L.INFO(f"Final non-unread email count: {final_count}")
+    l.info(f"Final non-unread email count: {final_count}")
 
 if __name__ == "__main__":
     asyncio.run(main())

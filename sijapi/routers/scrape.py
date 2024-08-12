@@ -15,14 +15,9 @@ from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from pathlib import Path
-from sijapi import Scrape, L, Dir
-
-logger = L.get_module_logger('scrape')
-def debug(text: str): logger.debug(text)
-def info(text: str): logger.info(text)
-def warn(text: str): logger.warning(text)
-def err(text: str): logger.error(text)
-def crit(text: str): logger.critical(text)
+from sijapi import Scrape,Dir
+from sijapi.logs import get_logger
+l = get_logger(__name__)
 
 scrape = APIRouter()
 
@@ -31,24 +26,24 @@ Dir.DATA = Path(Dir.DATA).expanduser()
 
 def save_to_json(data: List[Dict], output_file: str):
     output_path = Dir.DATA / output_file
-    info(f"Saving data to {output_path}")
+    l.info(f"Saving data to {output_path}")
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with open(output_path, 'w') as f:
         json.dump(data, f, indent=2)
-    info(f"Data saved successfully to {output_path}")
+    l.info(f"Data saved successfully to {output_path}")
 
 def load_from_json(output_file: str) -> List[Dict]:
     output_path = Dir.DATA / output_file
-    info(f"Loading data from {output_path}")
+    l.info(f"Loading data from {output_path}")
     try:
         with open(output_path, 'r') as f:
             return json.load(f)
     except FileNotFoundError:
-        warn(f"File {output_path} not found")
+        l.warning(f"File {output_path} not found")
         return []
 
 async def fetch_content(config: Any) -> str:
-    info(f"Fetching content from {config.url}")
+    l.info(f"Fetching content from {config.url}")
     if config.content.js_render:
         return await fetch_with_selenium(config.url)
     
@@ -63,7 +58,7 @@ async def fetch_content(config: Any) -> str:
             elif config.content.type == 'txt':
                 return await response.text()
             else:
-                warn(f"Unsupported content type: {config.content.type}")
+                l.warning(f"Unsupported content type: {config.content.type}")
                 return await response.text()
 
 async def fetch_with_selenium(url: str) -> str:
@@ -92,7 +87,7 @@ async def handle_json(response):
     return await response.json()
 
 def apply_processing_step(data: Any, step: Any) -> Any:
-    info(f"Applying processing step: {step.type}")
+    l.info(f"Applying processing step: {step.type}")
     if step.type == 'regex_split':
         return re.split(step.pattern, data)[1:]
     elif step.type == 'keyword_filter':
@@ -101,11 +96,11 @@ def apply_processing_step(data: Any, step: Any) -> Any:
         if isinstance(data, list):
             return [apply_regex_extract(item, step.extractions) for item in data]
         return apply_regex_extract(data, step.extractions)
-    debug(f"Unknown processing step type: {step.type}")
+    l.debug(f"Unknown processing step type: {step.type}")
     return data
 
 def apply_regex_extract(text: str, extractions: List[Any]) -> Dict:
-    debug(f"Applying regex extraction on text of length {len(text)}")
+    l.debug(f"Applying regex extraction on text of length {len(text)}")
     result = {}
     for extraction in extractions:
         extraction_dict = extraction.dict() if hasattr(extraction, 'dict') else extraction
@@ -122,11 +117,11 @@ def apply_regex_extract(text: str, extractions: List[Any]) -> Dict:
             else:
                 result[extraction_dict['name']] = matches[-1].strip()  # Take the last match
     
-    debug(f"Extracted {len(result)} items")
+    l.debug(f"Extracted {len(result)} items")
     return result
 
 def apply_post_processing(data: List[Dict], post_processing: List[Any]) -> List[Dict]:
-    info("Applying post-processing steps")
+    l.info("Applying post-processing steps")
     for step in post_processing:
         if step.type == 'custom':
             data = globals()[step.function](data)
@@ -137,7 +132,7 @@ def data_has_changed(new_data: List[Dict], old_data: List[Dict]) -> bool:
 
 @scrape.get("/scrape/{config_name}")
 async def scrape_site(config_name: str):
-    info(f"Starting scrape operation for {config_name}")
+    l.info(f"Starting scrape operation for {config_name}")
     
     if not hasattr(Scrape, 'configurations'):
         # If 'configurations' doesn't exist, assume the entire Scrape object is the configuration
@@ -162,14 +157,14 @@ async def scrape_site(config_name: str):
     
     if data_has_changed(processed_data, previous_data):
         save_to_json(processed_data, output_file)
-        info("Scrape completed with updates")
+        l.info("Scrape completed with updates")
         return {"message": "Site updated", "data": processed_data}
     else:
-        info("Scrape completed with no updates")
+        l.info("Scrape completed with no updates")
         return {"message": "No updates", "data": processed_data}
 
 def apply_post_processing(data: List[Dict], post_processing: List[Any]) -> List[Dict]:
-    info("Applying post-processing steps")
+    l.info("Applying post-processing steps")
     for step in post_processing:
         if step.type == 'regex_extract':
             for entry in data:

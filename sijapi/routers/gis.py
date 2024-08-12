@@ -16,17 +16,14 @@ from folium.plugins import Fullscreen, MiniMap, MousePosition, Geocoder, Draw, M
 from zoneinfo import ZoneInfo
 from dateutil.parser import parse as dateutil_parse
 from typing import Optional, List, Union
-from sijapi import L, API, Db, TZ, GEO
+from sijapi import Sys, Db, TZ, GEO
 from sijapi.classes import Location
-from sijapi.utilities import haversine, assemble_journal_path, json_serial
+from sijapi.utilities import haversine, assemble_journal_path
+from sijapi.serialization import json_dumps
+from sijapi.logs import get_logger
+l = get_logger(__name__)
 
 gis = APIRouter()
-logger = L.get_module_logger("gis")
-def debug(text: str): logger.debug(text)
-def info(text: str): logger.info(text)
-def warn(text: str): logger.warning(text)
-def err(text: str): logger.error(text)
-def crit(text: str): logger.critical(text)
 
 async def dt(
     date_time: Union[str, int, datetime],
@@ -36,12 +33,12 @@ async def dt(
         # Convert integer (epoch time) to UTC datetime
         if isinstance(date_time, int):
             date_time = datetime.fromtimestamp(date_time, tz=timezone.utc)
-            debug(f"Converted epoch time {date_time} to UTC datetime object.")
+            l.debug(f"Converted epoch time {date_time} to UTC datetime object.")
 
         # Convert string to datetime if necessary
         elif isinstance(date_time, str):
             date_time = dateutil_parse(date_time)
-            debug(f"Converted string '{date_time}' to datetime object.")
+            l.debug(f"Converted string '{date_time}' to datetime object.")
         
         if not isinstance(date_time, datetime):
             raise ValueError(f"Input must be a string, integer (epoch time), or datetime object. What we received: {date_time}, type {type(date_time)}")
@@ -49,7 +46,7 @@ async def dt(
         # Ensure the datetime is timezone-aware (UTC if not specified)
         if date_time.tzinfo is None:
             date_time = date_time.replace(tzinfo=timezone.utc)
-            debug("Added UTC timezone to naive datetime.")
+            l.debug("Added UTC timezone to naive datetime.")
 
         # Handle provided timezone
         if tz is not None:
@@ -57,12 +54,12 @@ async def dt(
                 if tz == "local":
                     last_loc = await get_timezone_without_timezone(date_time)
                     tz = await GEO.tz_at(last_loc.latitude, last_loc.longitude)
-                    debug(f"Using local timezone: {tz}")
+                    l.debug(f"Using local timezone: {tz}")
                 else:
                     try:
                         tz = ZoneInfo(tz)
                     except Exception as e:
-                        err(f"Invalid timezone string '{tz}'. Error: {e}")
+                        l.error(f"Invalid timezone string '{tz}'. Error: {e}")
                         raise ValueError(f"Invalid timezone string: {tz}")
             elif isinstance(tz, ZoneInfo):
                 pass  # tz is already a ZoneInfo object
@@ -71,14 +68,14 @@ async def dt(
             
             # Convert to the provided or determined timezone
             date_time = date_time.astimezone(tz)
-            debug(f"Converted datetime to timezone: {tz}")
+            l.debug(f"Converted datetime to timezone: {tz}")
         
         return date_time
     except ValueError as e:
-        err(f"Error in dt: {e}")
+        l.error(f"Error in dt: {e}")
         raise
     except Exception as e:
-        err(f"Unexpected error in dt: {e}")
+        l.error(f"Unexpected error in dt: {e}")
         raise ValueError(f"Failed to process datetime: {e}")
 
 
@@ -112,12 +109,12 @@ async def get_timezone_without_timezone(date_time):
 
 async def get_last_location() -> Optional[Location]:
     query_datetime = datetime.now(TZ)
-    debug(f"Query_datetime: {query_datetime}")
+    l.debug(f"Query_datetime: {query_datetime}")
 
     this_location = await fetch_last_location_before(query_datetime)
 
     if this_location:
-        debug(f"location: {this_location}")
+        l.debug(f"location: {this_location}")
         return this_location
     
     return None
@@ -164,15 +161,15 @@ Generate a heatmap for the given date range and save it as a PNG file using Foli
     
             m.save(str(output_path))
     
-            info(f"Heatmap saved as PNG: {output_path}")
+            l.info(f"Heatmap saved as PNG: {output_path}")
             return output_path
             
         except Exception as e:
-            err(f"Error saving heatmap: {str(e)}")
+            l.error(f"Error saving heatmap: {str(e)}")
             raise
 
     except Exception as e:
-        err(f"Error generating heatmap: {str(e)}")
+        l.error(f"Error generating heatmap: {str(e)}")
         raise
 
 async def generate_map(start_date: datetime, end_date: datetime, max_points: int):
@@ -180,7 +177,7 @@ async def generate_map(start_date: datetime, end_date: datetime, max_points: int
     if not locations:
         raise HTTPException(status_code=404, detail="No locations found for the given date range")
 
-    info(f"Found {len(locations)} locations for the given date range")
+    l.info(f"Found {len(locations)} locations for the given date range")
 
     if len(locations) > max_points:
         locations = random.sample(locations, max_points)
@@ -291,18 +288,19 @@ map.on(L.Draw.Event.CREATED, function (event) {
     return m.get_root().render()
 
 
+    
 async def fetch_locations(start: Union[str, int, datetime], end: Union[str, int, datetime, None] = None) -> List[Location]:
     start_datetime = await dt(start)
     if end is None:
         end_datetime = await dt(start_datetime.replace(hour=23, minute=59, second=59))
     else:
         end_datetime = await dt(end) if not isinstance(end, datetime) else end
-
+    
     if start_datetime.time() == datetime.min.time() and end_datetime.time() == datetime.min.time():
         end_datetime = await dt(end_datetime.replace(hour=23, minute=59, second=59))
-
-    debug(f"Fetching locations between {start_datetime} and {end_datetime}")
-
+    
+    l.debug(f"Fetching locations between {start_datetime} and {end_datetime}")
+    
     query = '''
         SELECT id, datetime,
         ST_X(ST_AsText(location)::geometry) AS longitude,
@@ -315,10 +313,13 @@ async def fetch_locations(start: Union[str, int, datetime], end: Union[str, int,
         ORDER BY datetime DESC
     '''
     
-    locations = await Db.execute_read(query, start_datetime=start_datetime.replace(tzinfo=None), end_datetime=end_datetime.replace(tzinfo=None))
+    try:
+        locations = await Db.read(query, start_datetime=start_datetime, end_datetime=end_datetime)
+        l.debug(f"Range locations query returned: {locations}")
+    except Exception as e:
+        l.error(f"Error executing range locations query: {str(e)}")
+        locations = []
     
-    debug(f"Range locations query returned: {locations}")
-
     if not locations and (end is None or start_datetime.date() == end_datetime.date()):
         fallback_query = '''
             SELECT id, datetime,
@@ -332,12 +333,19 @@ async def fetch_locations(start: Union[str, int, datetime], end: Union[str, int,
             ORDER BY datetime DESC
             LIMIT 1
         '''
-        location_data = await Db.execute_read(fallback_query, start_datetime=start_datetime.replace(tzinfo=None))
-        debug(f"Fallback query returned: {location_data}")
-        if location_data:
-            locations = location_data
+        try:
+            location_data = await Db.read(fallback_query, start_datetime=start_datetime)
+            l.debug(f"Fallback query returned: {location_data}")
+            if location_data:
+                locations = location_data
+        except Exception as e:
+            l.error(f"Error executing fallback locations query: {str(e)}")
+            locations = []
 
-    debug(f"Locations found: {locations}")
+    l.debug(f"Locations found: {locations}")
+
+    if not locations:
+        return []
 
     # Sort location_data based on the datetime field in descending order
     sorted_locations = sorted(locations, key=lambda x: x['datetime'], reverse=True)
@@ -365,12 +373,14 @@ async def fetch_locations(start: Union[str, int, datetime], end: Union[str, int,
 
     return location_objects if location_objects else []
 
+
+
     
 async def fetch_last_location_before(datetime: datetime) -> Optional[Location]:
     try:
         datetime = await dt(datetime)
         
-        debug(f"Fetching last location before {datetime}")
+        l.debug(f"Fetching last location before {datetime}")
     
         query = '''
             SELECT id, datetime,
@@ -385,16 +395,16 @@ async def fetch_last_location_before(datetime: datetime) -> Optional[Location]:
             LIMIT 1
         '''
         
-        location_data = await Db.execute_read(query, datetime=datetime.replace(tzinfo=None))
+        location_data = await Db.read(query, datetime=datetime)
     
         if location_data:
-            debug(f"Last location found: {location_data[0]}")
+            l.debug(f"Last location found: {location_data[0]}")
             return Location(**location_data[0])
         else:
-            debug("No location found before the specified datetime")
+            l.debug("No location found before the specified datetime")
             return None
     except Exception as e:
-        error(f"Error fetching last location: {str(e)}")
+        l.error(f"Error fetching last location: {str(e)}")
         return None
     
     
@@ -452,9 +462,9 @@ async def post_location(location: Location):
             'country': location.country
         }
         
-        await Db.execute_write(query, **params)
+        await Db.write(query, **params)
             
-        info(f"Successfully posted location: {location.latitude}, {location.longitude}, {location.elevation} on {localized_datetime}")
+        l.info(f"Successfully posted location: {location.latitude}, {location.longitude}, {location.elevation} on {localized_datetime}")
         
         # Create a serializable version of params for the return value
         serializable_params = {
@@ -463,15 +473,15 @@ async def post_location(location: Location):
         }
         return serializable_params
     except Exception as e:
-        err(f"Error posting location {e}")
-        err(traceback.format_exc())
+        l.error(f"Error posting location {e}")
+        l.error(traceback.format_exc())
         return None
 
 
 
 async def get_date_range():
     query = "SELECT MIN(datetime) as min_date, MAX(datetime) as max_date FROM locations"
-    row = await Db.execute_read(query)
+    row = await Db.read(query)
     if row and row[0]['min_date'] and row[0]['max_date']:
         return row[0]['min_date'], row[0]['max_date']
     else:
@@ -498,26 +508,26 @@ async def post_locate_endpoint(locations: Union[Location, List[Location]]):
                 "device_name": "Unknown",
                 "device_os": "Unknown"
             }
-        debug(f"Location received for processing: {lcn}")
+        l.debug(f"Location received for processing: {lcn}")
 
     geocoded_locations = await GEO.code(locations)
 
     responses = []
     if isinstance(geocoded_locations, List):
         for location in geocoded_locations:
-            debug(f"Final location to be submitted to database: {location}")
+            l.debug(f"Final location to be submitted to database: {location}")
             location_entry = await post_location(location)
             if location_entry:
                 responses.append({"location_data": location_entry})
             else:
-                warn(f"Posting location to database appears to have failed.")
+                l.warning(f"Posting location to database appears to have failed.")
     else:
-        debug(f"Final location to be submitted to database: {geocoded_locations}")
+        l.debug(f"Final location to be submitted to database: {geocoded_locations}")
         location_entry = await post_location(geocoded_locations)
         if location_entry:
             responses.append({"location_data": location_entry})
         else:
-            warn(f"Posting location to database appears to have failed.")
+            l.warning(f"Posting location to database appears to have failed.")
 
     return {"message": "Locations and weather updated", "results": responses}
 
@@ -540,7 +550,7 @@ async def get_locate(datetime_str: str, all: bool = False):
     try:
         date_time = await dt(datetime_str)
     except ValueError as e:
-        err(f"Invalid datetime string provided: {datetime_str}")
+        l.error(f"Invalid datetime string provided: {datetime_str}")
         return ["ERROR: INVALID DATETIME PROVIDED. USE YYYYMMDDHHmmss or YYYYMMDD format."]
     
     locations = await fetch_locations(date_time)
@@ -565,6 +575,6 @@ async def generate_map_endpoint(
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format")
 
-    info(f"Generating map for {start_date} to {end_date}")
+    l.info(f"Generating map for {start_date} to {end_date}")
     html_content = await generate_map(start_date, end_date, max_points)
     return HTMLResponse(content=html_content)

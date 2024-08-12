@@ -26,17 +26,12 @@ import tempfile
 import random
 import re
 import os
-from sijapi import L, API, Dir, Tts, TTS_SEGMENTS_DIR, VOICE_DIR, TTS_OUTPUT_DIR
+from sijapi import Sys, Dir, Tts, TTS_SEGMENTS_DIR, VOICE_DIR, TTS_OUTPUT_DIR
 from sijapi.utilities import sanitize_filename
+from sijapi.logs import get_logger
+l = get_logger(__name__)
 
-### INITIALIZATIONS ###
-tts = APIRouter(tags=["trusted", "private"])
-logger = L.get_module_logger("tts")
-def debug(text: str): logger.debug(text)
-def info(text: str): logger.info(text)
-def warn(text: str): logger.warning(text)
-def err(text: str): logger.error(text)
-def crit(text: str): logger.critical(text)
+tts = APIRouter()
 
 DEVICE = torch.device('cpu')
 
@@ -53,7 +48,7 @@ async def list_11l_voices():
     async with httpx.AsyncClient() as client:
         try:
             response = await client.get(url, headers=headers)
-            debug(f"Response: {response}")
+            l.debug(f"Response: {response}")
             if response.status_code == 200:
                 voices_data = response.json().get("voices", [])
                 formatted_list = ""
@@ -63,7 +58,7 @@ async def list_11l_voices():
                     formatted_list += f"{name}: `{id}`\n"
 
         except Exception as e:
-            err(f"Error determining voice ID: {e}")
+            l.error(f"Error determining voice ID: {e}")
 
     return PlainTextResponse(formatted_list, status_code=200)   
      
@@ -73,18 +68,18 @@ async def select_voice(voice_name: str) -> str:
     try:
         # Case Insensitive comparison
         voice_name_lower = voice_name.lower()
-        debug(f"Looking for {voice_name_lower}")
+        l.debug(f"Looking for {voice_name_lower}")
         for item in VOICE_DIR.iterdir():
-            debug(f"Checking {item.name.lower()}")
+            l.debug(f"Checking {item.name.lower()}")
             if item.name.lower() == f"{voice_name_lower}.wav":
-                debug(f"select_voice received query to use voice: {voice_name}. Found {item} inside {VOICE_DIR}.")
+                l.debug(f"select_voice received query to use voice: {voice_name}. Found {item} inside {VOICE_DIR}.")
                 return item
 
-        err(f"Voice file not found")
+        l.error(f"Voice file not found")
         raise HTTPException(status_code=404, detail="Voice file not found")
 
     except Exception as e:
-        err(f"Voice file not found: {e}")
+        l.error(f"Voice file not found: {e}")
         return None
 
 
@@ -119,51 +114,51 @@ async def generate_speech_endpoint(
         else:
             return await generate_speech(bg_tasks, text_content, voice, voice_file, model, speed, podcast)
     except Exception as e:
-        err(f"Error in TTS: {e}")
-        err(traceback.format_exc())
+        l.error(f"Error in TTS: {e}")
+        l.error(traceback.format_exc())
         raise HTTPException(status_code=666, detail="error in TTS")
 
     
 
 async def determine_voice_id(voice_name: str) -> str:
-    debug(f"Searching for voice id for {voice_name}")
-    debug(f"Tts.elevenlabs.voices: {Tts.elevenlabs.voices}")
+    l.debug(f"Searching for voice id for {voice_name}")
+    l.debug(f"Tts.elevenlabs.voices: {Tts.elevenlabs.voices}")
     
     # Check if the voice is in the configured voices
     if voice_name and Tts.has_key(f'elevenlabs.voices.{voice_name}'):
         voice_id = Tts.get_value(f'elevenlabs.voices.{voice_name}')
-        debug(f"Found voice ID in config - {voice_id}")
+        l.debug(f"Found voice ID in config - {voice_id}")
         return voice_id
     
-    debug(f"Requested voice not among the voices specified in config/tts.yaml. Checking with ElevenLabs API using api_key: {Tts.elevenlabs.key}.")
+    l.debug(f"Requested voice not among the voices specified in config/tts.yaml. Checking with ElevenLabs API using api_key: {Tts.elevenlabs.key}.")
     url = "https://api.elevenlabs.io/v1/voices"
     headers = {"xi-api-key": Tts.elevenlabs.key}
     async with httpx.AsyncClient() as client:
         try:
             response = await client.get(url, headers=headers)
-            debug(f"Response status: {response.status_code}")
+            l.debug(f"Response status: {response.status_code}")
             if response.status_code == 200:
                 voices_data = response.json().get("voices", [])
                 for voice in voices_data:
                     if voice_name == voice["voice_id"] or (voice_name and voice_name.lower() == voice["name"].lower()):
-                        debug(f"Found voice ID from API - {voice['voice_id']}")
+                        l.debug(f"Found voice ID from API - {voice['voice_id']}")
                         return voice["voice_id"]
             else:
-                err(f"Failed to get voices from ElevenLabs API. Status code: {response.status_code}")
-                err(f"Response content: {response.text}")
+                l.error(f"Failed to get voices from ElevenLabs API. Status code: {response.status_code}")
+                l.error(f"Response content: {response.text}")
         except Exception as e:
-            err(f"Error determining voice ID: {e}")
+            l.error(f"Error determining voice ID: {e}")
     
-    warn(f"Voice '{voice_name}' not found; using the default specified in config/tts.yaml: {Tts.elevenlabs.default}")
+    l.warning(f"Voice '{voice_name}' not found; using the default specified in config/tts.yaml: {Tts.elevenlabs.default}")
     if Tts.has_key(f'elevenlabs.voices.{Tts.elevenlabs.default}'):
         return Tts.get_value(f'elevenlabs.voices.{Tts.elevenlabs.default}')
     else:
-        err(f"Default voice '{Tts.elevenlabs.default}' not found in configuration. Using first available voice.")
+        l.error(f"Default voice '{Tts.elevenlabs.default}' not found in configuration. Using first available voice.")
         first_voice = next(iter(vars(Tts.elevenlabs.voices)))
         return Tts.get_value(f'elevenlabs.voices.{first_voice}')
 
 async def elevenlabs_tts(model: str, input_text: str, voice: Optional[str], title: str = None, output_dir: str = None):
-    if getattr(API.EXTENSIONS, 'elevenlabs', False):
+    if getattr(Sys.EXTENSIONS, 'elevenlabs', False):
         voice_id = await determine_voice_id(voice)
     
         url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
@@ -187,11 +182,11 @@ async def elevenlabs_tts(model: str, input_text: str, voice: Optional[str], titl
                     raise HTTPException(status_code=response.status_code, detail="Error from ElevenLabs API")
                 
         except Exception as e:
-            err(f"Error from Elevenlabs API: {e}")
+            l.error(f"Error from Elevenlabs API: {e}")
             raise HTTPException(status_code=500, detail=f"Error from ElevenLabs API: {e}")
     
     else:
-        warn(f"elevenlabs_tts called but ElevenLabs module is not enabled in config.")
+        l.warning(f"elevenlabs_tts called but ElevenLabs module is not enabled in config.")
         raise HTTPException(status_code=400, detail="ElevenLabs TTS is not enabled")
 
 async def generate_speech(
@@ -205,13 +200,13 @@ async def generate_speech(
     title: str = None,
     output_dir = None,
 ) -> str:
-    debug(f"Entering generate_speech function")
-    debug(f"API.EXTENSIONS: {API.EXTENSIONS}")
-    debug(f"Type of API.EXTENSIONS: {type(API.EXTENSIONS)}")
-    debug(f"Dir of API.EXTENSIONS: {dir(API.EXTENSIONS)}")
-    debug(f"Tts config: {Tts}")
-    debug(f"Type of Tts: {type(Tts)}")
-    debug(f"Dir of Tts: {dir(Tts)}")
+    l.debug(f"Entering generate_speech function")
+    l.debug(f"Sys.EXTENSIONS: {Sys.EXTENSIONS}")
+    l.debug(f"Type of Sys.EXTENSIONS: {type(Sys.EXTENSIONS)}")
+    l.debug(f"Dir of Sys.EXTENSIONS: {dir(Sys.EXTENSIONS)}")
+    l.debug(f"Tts config: {Tts}")
+    l.debug(f"Type of Tts: {type(Tts)}")
+    l.debug(f"Dir of Tts: {dir(Tts)}")
 
     
     use_output_dir = Path(output_dir) if output_dir else TTS_OUTPUT_DIR
@@ -222,26 +217,26 @@ async def generate_speech(
         title = title if title else "TTS audio"
         output_path = use_output_dir / f"{dt_datetime.now().strftime('%Y%m%d%H%M%S')} {title}.wav"
         
-        debug(f"Model: {model}")
-        debug(f"Voice: {voice}")
-        debug(f"Tts.elevenlabs: {Tts.elevenlabs}")
+        l.debug(f"Model: {model}")
+        l.debug(f"Voice: {voice}")
+        l.debug(f"Tts.elevenlabs: {Tts.elevenlabs}")
 
-        if model == "eleven_turbo_v2" and getattr(API.EXTENSIONS, 'elevenlabs', False):
-            info("Using ElevenLabs.")
+        if model == "eleven_turbo_v2" and getattr(Sys.EXTENSIONS, 'elevenlabs', False):
+            l.info("Using ElevenLabs.")
             audio_file_path = await elevenlabs_tts(model, text, voice, title, use_output_dir)
-        elif getattr(API.EXTENSIONS, 'xtts', False):
-            info("Using XTTS2")
+        elif getattr(Sys.EXTENSIONS, 'xtts', False):
+            l.info("Using XTTS2")
             audio_file_path = await local_tts(text, speed, voice, voice_file, podcast, bg_tasks, title, output_path)
         else:
-            err(f"No TTS module enabled!")
+            l.error(f"No TTS module enabled!")
             raise ValueError("No TTS module enabled")
 
         if not audio_file_path:
             raise ValueError("TTS generation failed: audio_file_path is empty or None")
         elif audio_file_path.exists():
-            info(f"Saved to {audio_file_path}")
+            l.info(f"Saved to {audio_file_path}")
         else:
-            warn(f"No file exists at {audio_file_path}")
+            l.warning(f"No file exists at {audio_file_path}")
 
         if podcast:
             podcast_path = Dir.PODCAST / audio_file_path.name
@@ -249,18 +244,18 @@ async def generate_speech(
             if podcast_path != audio_file_path:
                 shutil.copy(audio_file_path, podcast_path)
                 if podcast_path.exists():
-                    info(f"Saved to podcast path: {podcast_path}")
+                    l.info(f"Saved to podcast path: {podcast_path}")
                 else:
-                    warn(f"Podcast mode enabled, but failed to save to {podcast_path}")
+                    l.warning(f"Podcast mode enabled, but failed to save to {podcast_path}")
                 
                 if output_dir and Path(output_dir) == use_output_dir:
-                    debug(f"Keeping {audio_file_path} because it was specified")
+                    l.debug(f"Keeping {audio_file_path} because it was specified")
                     
                 else:
-                    info(f"Podcast mode enabled and output_dir not specified so we will remove {audio_file_path}")
+                    l.info(f"Podcast mode enabled and output_dir not specified so we will remove {audio_file_path}")
                     bg_tasks.add_task(os.remove, audio_file_path)
             else:
-                warn(f"Podcast path is the same as audio file path. Using existing file.")
+                l.warning(f"Podcast path is the same as audio file path. Using existing file.")
         
             return podcast_path
         
@@ -268,20 +263,20 @@ async def generate_speech(
 
 
     except Exception as e:
-        err(f"Failed to generate speech: {e}")
-        err(f"Traceback: {traceback.format_exc()}")
+        l.error(f"Failed to generate speech: {e}")
+        l.error(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Failed to generate speech: {e}")
 
 
 async def get_model(voice: str = None, voice_file: UploadFile = None):
-    if (voice_file or (voice and await select_voice(voice))) and API.EXTENSIONS.xtts:
+    if (voice_file or (voice and await select_voice(voice))) and Sys.EXTENSIONS.xtts:
         return "xtts"
     
-    elif voice and await determine_voice_id(voice) and API.EXTENSIONS.elevenlabs:
+    elif voice and await determine_voice_id(voice) and Sys.EXTENSIONS.elevenlabs:
         return "eleven_turbo_v2"
     
     else:
-        err(f"No model or voice specified, or no TTS module loaded")
+        l.error(f"No model or voice specified, or no TTS module loaded")
         raise HTTPException(status_code=400, detail="No model or voice specified, or no TTS module loaded")
 
 
@@ -296,7 +291,7 @@ async def get_text_content(text: Optional[str], file: Optional[UploadFile]) -> s
 
 async def get_voice_file_path(voice: str = None, voice_file: UploadFile = None) -> str:
     if voice:
-        debug(f"Looking for voice: {voice}")
+        l.debug(f"Looking for voice: {voice}")
         selected_voice = await select_voice(voice)
         return selected_voice
         
@@ -326,7 +321,7 @@ async def get_voice_file_path(voice: str = None, voice_file: UploadFile = None) 
         return new_file
     
     else:
-        debug(f"No voice specified or file provided, using default voice: {Tts.xtts.default}")
+        l.debug(f"No voice specified or file provided, using default voice: {Tts.xtts.default}")
         selected_voice = await select_voice(Tts.xtts.default)
         return selected_voice
 
@@ -343,7 +338,7 @@ async def local_tts(
     output_path: Optional[Path] = None
 ) -> str:
 
-    if API.EXTENSIONS.xtts:
+    if Sys.EXTENSIONS.xtts:
         from TTS.api import TTS
         
         if output_path:
@@ -368,7 +363,7 @@ async def local_tts(
     
         for i, segment in enumerate(segments):
             segment_file_path = TTS_SEGMENTS_DIR / f"segment_{i}.wav"
-            debug(f"Segment file path: {segment_file_path}")
+            l.debug(f"Segment file path: {segment_file_path}")
             
             # Run TTS in a separate thread
             await asyncio.to_thread(
@@ -379,7 +374,7 @@ async def local_tts(
                 speaker_wav=[voice_file_path],
                 language="en"
             )
-            debug(f"Segment file generated: {segment_file_path}")
+            l.debug(f"Segment file generated: {segment_file_path}")
             
             # Load and combine audio in a separate thread
             segment_audio = await asyncio.to_thread(AudioSegment.from_wav, segment_file_path)
@@ -398,7 +393,7 @@ async def local_tts(
         return file_path
         
     else:
-        warn(f"local_tts called but xtts module disabled!")
+        l.warning(f"local_tts called but xtts module disabled!")
         return None
 
 
@@ -421,7 +416,7 @@ async def stream_tts(text_content: str, speed: float, voice: str, voice_file) ->
 
 async def generate_tts(text: str, speed: float, voice_file_path: str) -> str:
     
-    if API.EXTENSIONS.xtts:
+    if Sys.EXTENSIONS.xtts:
         from TTS.api import TTS
         
         output_dir = tempfile.mktemp(suffix=".wav", dir=tempfile.gettempdir())
@@ -432,7 +427,7 @@ async def generate_tts(text: str, speed: float, voice_file_path: str) -> str:
         return output_dir
         
     else:
-        warn(f"generate_tts called but xtts module disabled!")
+        l.warning(f"generate_tts called but xtts module disabled!")
         return None
 
 
@@ -466,7 +461,7 @@ def split_text(text, target_length=35, max_length=50):
 
         if segment_length + len(sentence_words) > max_length:
             segments.append(' '.join(current_segment))
-            debug(f"split_text - segment: {' '.join(current_segment)}, word count: {segment_length}")
+            l.debug(f"split_text - segment: {' '.join(current_segment)}, word count: {segment_length}")
 
             current_segment = [sentence]
         else:
@@ -474,7 +469,7 @@ def split_text(text, target_length=35, max_length=50):
 
     if current_segment:
         segments.append(' '.join(current_segment))
-        debug(f"split_text - segment: {' '.join(current_segment)}, word count: {len(current_segment)}")
+        l.debug(f"split_text - segment: {' '.join(current_segment)}, word count: {len(current_segment)}")
 
     return segments
 
@@ -486,7 +481,7 @@ def clean_text_for_tts(text: str) -> str:
         text = re.sub(r'\s+', ' ', text).strip()
         return text
     else:
-        debug(f"No text received.")
+        l.debug(f"No text received.")
 
 
 def copy_to_podcast_dir(file_path):

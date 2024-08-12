@@ -11,6 +11,8 @@ import json
 import yaml
 import jwt
 from sijapi import GHOST_API_KEY, GHOST_API_URL
+from sijapi.logs import get_logger
+l = get_logger(__name__)
 
 ghost = APIRouter()
 

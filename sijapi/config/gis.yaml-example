@@ -1,0 +1,13 @@
+custom_locations:
+  - name: Echo Valley Ranch
+    latitude: 42.8098216
+    longitude: -123.049396
+    radius: 2
+
+layers:
+    - url: "https://gis.blm.gov/arcgis/rest/services/Cadastral/BLM_Natl_PLSS_CadNSDI/MapServer/1/query"
+      table_name: "public.plss_townships"
+      layer_name: "Townships"
+    - url: "https://gis.blm.gov/arcgis/rest/services/Cadastral/BLM_Natl_PLSS_CadNSDI/MapServer/2/query"
+      table_name: "public.plss_sections"
+      layer_name: "Sections"
