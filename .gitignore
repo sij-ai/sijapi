@@ -39,6 +39,7 @@ podcast/sideloads/*
 **/.ipynb_checkpoints/
 **/*.pem
 **/*.key
+**/*.sql
 venv/
 env/
 .venv/
