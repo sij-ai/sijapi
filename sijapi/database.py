@@ -1,9 +1,11 @@
 # database.py
+
 import json
 import yaml
 import time
 import aiohttp
 import asyncio
+import traceback
 from datetime import datetime as dt_datetime, date
 from tqdm.asyncio import tqdm
 import reverse_geocoder as rg
@@ -19,11 +21,11 @@ from srtm import get_data
 import os
 import sys
 from loguru import logger
-from sqlalchemy import text
+from sqlalchemy import text, select, func, and_
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy.exc import OperationalError
-from sqlalchemy import Column, Integer, String, DateTime, JSON, Text, select, func
+from sqlalchemy import Column, Integer, String, DateTime, JSON, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from urllib.parse import urljoin
 import hashlib
@@ -40,7 +42,6 @@ CONFIG_DIR = BASE_DIR / "config"
 ENV_PATH = CONFIG_DIR / ".env"
 load_dotenv(ENV_PATH)
 TS_ID = os.environ.get('TS_ID')
-
 
 class QueryTracking(Base):
     __tablename__ = 'query_tracking'
@@ -85,19 +86,16 @@ class Database:
                 self.engines[db_info['ts_id']] = engine
                 self.sessions[db_info['ts_id']] = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
                 l.info(f"Initialized engine and session for {db_info['ts_id']}")
+                
+                # Create tables if they don't exist
+                async with engine.begin() as conn:
+                    await conn.run_sync(Base.metadata.create_all)
+                l.info(f"Ensured tables exist for {db_info['ts_id']}")
             except Exception as e:
                 l.error(f"Failed to initialize engine for {db_info['ts_id']}: {str(e)}")
 
         if self.local_ts_id not in self.sessions:
             l.error(f"Failed to initialize session for local server {self.local_ts_id}")
-        else:
-            try:
-                # Create tables if they don't exist
-                async with self.engines[self.local_ts_id].begin() as conn:
-                    await conn.run_sync(Base.metadata.create_all)
-                l.info(f"Initialized tables for local server {self.local_ts_id}")
-            except Exception as e:
-                l.error(f"Failed to create tables for local server {self.local_ts_id}: {str(e)}")
 
     async def get_online_servers(self) -> List[str]:
         online_servers = []
@@ -119,7 +117,6 @@ class Database:
         async with self.sessions[self.local_ts_id]() as session:
             try:
                 result = await session.execute(text(query), kwargs)
-                # Convert the result to a list of dictionaries
                 rows = result.fetchall()
                 if rows:
                     columns = result.keys()
@@ -138,17 +135,17 @@ class Database:
 
         async with self.sessions[self.local_ts_id]() as session:
             try:
-                # Serialize the kwargs using 
+                # Serialize the kwargs
                 serialized_kwargs = {key: serialize(value) for key, value in kwargs.items()}
 
                 # Execute the write query
                 result = await session.execute(text(query), serialized_kwargs)
                 
-                # Log the query (use json_dumps for logging purposes)
+                # Log the query
                 new_query = QueryTracking(
                     ts_id=self.local_ts_id,
                     query=query,
-                    args=json_dumps(kwargs)  # Use original kwargs for logging
+                    args=json_dumps(kwargs)  # Use json_dumps for logging
                 )
                 session.add(new_query)
                 await session.flush()
@@ -162,13 +159,10 @@ class Database:
                 # Update query_tracking with checksum
                 await self.update_query_checksum(query_id, checksum)
 
-                # Replicate to online servers
-                online_servers = await self.get_online_servers()
-                for ts_id in online_servers:
-                    if ts_id != self.local_ts_id:
-                        asyncio.create_task(self._replicate_write(ts_id, query_id, query, serialized_kwargs, checksum))
+                # Perform sync operations asynchronously
+                asyncio.create_task(self._async_sync_operations(query_id, query, serialized_kwargs, checksum))
 
-                return result  # Return the CursorResult
+                return result
             
             except Exception as e:
                 l.error(f"Failed to execute write query: {str(e)}")
@@ -177,6 +171,27 @@ class Database:
                 l.error(f"Serialized kwargs: {serialized_kwargs}")
                 l.error(f"Traceback: {traceback.format_exc()}")
                 return None
+
+    async def _async_sync_operations(self, query_id: int, query: str, params: dict, checksum: str):
+        try:
+            await self.sync_query_tracking()
+        except Exception as e:
+            l.error(f"Failed to sync query_tracking: {str(e)}")
+
+        try:
+            await self.call_db_sync_on_servers()
+        except Exception as e:
+            l.error(f"Failed to call db_sync on other servers: {str(e)}")
+
+        # Replicate write to other servers
+        online_servers = await self.get_online_servers()
+        for ts_id in online_servers:
+            if ts_id != self.local_ts_id:
+                try:
+                    await self._replicate_write(ts_id, query_id, query, params, checksum)
+                except Exception as e:
+                    l.error(f"Failed to replicate write to {ts_id}: {str(e)}")
+
 
     async def get_primary_server(self) -> str:
         url = urljoin(self.config['URL'], '/id')
@@ -194,7 +209,6 @@ class Database:
                 l.error(f"Error connecting to load balancer: {str(e)}")
                 return None
 
-
     async def get_checksum_server(self) -> dict:
         primary_ts_id = await self.get_primary_server()
         online_servers = await self.get_online_servers()
@@ -206,7 +220,6 @@ class Database:
         
         return random.choice(checksum_servers)
 
-
     async def _local_compute_checksum(self, query: str, params: dict):
         async with self.sessions[self.local_ts_id]() as session:
             result = await session.execute(text(query), params)
@@ -216,7 +229,6 @@ class Database:
                 data = str(result.rowcount) + query + str(params)
             checksum = hashlib.md5(str(data).encode()).hexdigest()
             return checksum
-
 
     async def _delegate_compute_checksum(self, server: Dict[str, Any], query: str, params: dict):
         url = f"http://{server['ts_ip']}:{server['app_port']}/sync/checksum"
@@ -234,7 +246,6 @@ class Database:
                 l.error(f"Error connecting to {server['ts_id']} for checksum: {str(e)}")
                 return await self._local_compute_checksum(query, params)
 
-
     async def update_query_checksum(self, query_id: int, checksum: str):
         async with self.sessions[self.local_ts_id]() as session:
             await session.execute(
@@ -242,7 +253,6 @@ class Database:
                 {"checksum": checksum, "id": query_id}
             )
             await session.commit()
-
 
     async def _replicate_write(self, ts_id: str, query_id: int, query: str, params: dict, expected_checksum: str):
         try:
@@ -255,8 +265,8 @@ class Database:
                 await session.commit()
                 l.info(f"Successfully replicated write to {ts_id}")
         except Exception as e:
-            l.error(f"Failed to replicate write on {ts_id}: {str(e)}")
-
+            l.error(f"Failed to replicate write on {ts_id}")
+            l.debug(f"Failed to replicate write on {ts_id}: {str(e)}")
 
     async def mark_query_completed(self, query_id: int, ts_id: str):
         async with self.sessions[self.local_ts_id]() as session:
@@ -266,7 +276,6 @@ class Database:
                 completed_by[ts_id] = True
                 query.completed_by = completed_by
                 await session.commit()
-
 
     async def sync_local_server(self):
         async with self.sessions[self.local_ts_id]() as session:
@@ -295,7 +304,6 @@ class Database:
             await session.commit()
             l.info(f"Local server sync completed. Executed {unexecuted_queries.rowcount} queries.")
 
-
     async def purge_completed_queries(self):
         async with self.sessions[self.local_ts_id]() as session:
             all_ts_ids = [db['ts_id'] for db in self.config['POOL']]
@@ -316,9 +324,106 @@ class Database:
             deleted_count = result.rowcount
             l.info(f"Purged {deleted_count} completed queries.")
 
+    async def sync_query_tracking(self):
+        """Combinatorial sync method for the query_tracking table."""
+        try:
+            online_servers = await self.get_online_servers()
+            
+            for ts_id in online_servers:
+                if ts_id == self.local_ts_id:
+                    continue
+                
+                try:
+                    async with self.sessions[ts_id]() as remote_session:
+                        local_max_id = await self.get_max_query_id(self.local_ts_id)
+                        remote_max_id = await self.get_max_query_id(ts_id)
+                        
+                        # Sync from remote to local
+                        remote_new_queries = await remote_session.execute(
+                            select(QueryTracking).where(QueryTracking.id > local_max_id)
+                        )
+                        for query in remote_new_queries:
+                            await self.add_or_update_query(query)
+                        
+                        # Sync from local to remote
+                        async with self.sessions[self.local_ts_id]() as local_session:
+                            local_new_queries = await local_session.execute(
+                                select(QueryTracking).where(QueryTracking.id > remote_max_id)
+                            )
+                            for query in local_new_queries:
+                                await self.add_or_update_query_remote(ts_id, query)
+                except Exception as e:
+                    l.error(f"Error syncing with {ts_id}: {str(e)}")
+        except Exception as e:
+            l.error(f"Error in sync_query_tracking: {str(e)}")
+            l.error(f"Traceback: {traceback.format_exc()}")
+
+
+    async def get_max_query_id(self, ts_id):
+        async with self.sessions[ts_id]() as session:
+            result = await session.execute(select(func.max(QueryTracking.id)))
+            return result.scalar() or 0
+
+    async def add_or_update_query(self, query):
+        async with self.sessions[self.local_ts_id]() as session:
+            existing_query = await session.get(QueryTracking, query.id)
+            if existing_query:
+                existing_query.completed_by = {**existing_query.completed_by, **query.completed_by}
+            else:
+                session.add(query)
+            await session.commit()
+
+    async def add_or_update_query_remote(self, ts_id, query):
+        async with self.sessions[ts_id]() as session:
+            existing_query = await session.get(QueryTracking, query.id)
+            if existing_query:
+                existing_query.completed_by = {**existing_query.completed_by, **query.completed_by}
+            else:
+                new_query = QueryTracking(
+                    id=query.id,
+                    ts_id=query.ts_id,
+                    query=query.query,
+                    args=query.args,
+                    executed_at=query.executed_at,
+                    completed_by=query.completed_by,
+                    result_checksum=query.result_checksum
+                )
+                session.add(new_query)
+            await session.commit()
+
+    async def ensure_query_tracking_table(self):
+        for ts_id, engine in self.engines.items():
+            try:
+                async with engine.begin() as conn:
+                    await conn.run_sync(Base.metadata.create_all)
+                l.info(f"Ensured query_tracking table exists for {ts_id}")
+            except Exception as e:
+                l.error(f"Failed to create query_tracking table for {ts_id}: {str(e)}")
+
+
+    async def call_db_sync_on_servers(self):
+        """Call /db/sync on all online servers."""
+        online_servers = await self.get_online_servers()
+        tasks = []
+        for server in self.config['POOL']:
+            if server['ts_id'] in online_servers and server['ts_id'] != self.local_ts_id:
+                url = f"http://{server['ts_ip']}:{server['app_port']}/db/sync"
+                tasks.append(self.call_db_sync(url))
+        await asyncio.gather(*tasks)
+
+    async def call_db_sync(self, url):
+        async with aiohttp.ClientSession() as session:
+            try:
+                async with session.post(url, timeout=30) as response:
+                    if response.status == 200:
+                        l.info(f"Successfully called /db/sync on {url}")
+                    else:
+                        l.warning(f"Failed to call /db/sync on {url}. Status: {response.status}")
+            except asyncio.TimeoutError:
+                l.debug(f"Timeout while calling /db/sync on {url}")
+            except Exception as e:
+                l.error(f"Error calling /db/sync on {url}: {str(e)}")
 
     async def close(self):
         for engine in self.engines.values():
             await engine.dispose()
-
-    

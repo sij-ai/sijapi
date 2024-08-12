@@ -1,14 +1,9 @@
-'''
-Uses the VisualCrossing API and Postgres/PostGIS to source local weather forecasts and history.
-'''
-#routers/weather.py
-
 import asyncio
 import traceback
 import os
 from fastapi import APIRouter, HTTPException, Query
-from fastapi import HTTPException
 from fastapi.responses import JSONResponse
+from fastapi.encoders import jsonable_encoder
 from asyncpg.cursor import Cursor
 from httpx import AsyncClient
 from typing import Dict
@@ -19,10 +14,11 @@ from sijapi import VISUALCROSSING_API_KEY, TZ, Sys, GEO, Db
 from sijapi.utilities import haversine
 from sijapi.routers import gis
 from sijapi.logs import get_logger
+from sijapi.serialization import json_dumps, serialize
+
 l = get_logger(__name__)
 
 weather = APIRouter()
-
 
 @weather.get("/weather/refresh", response_class=JSONResponse)
 async def get_refreshed_weather(
@@ -49,18 +45,9 @@ async def get_refreshed_weather(
         
         if day is None:
             raise HTTPException(status_code=404, detail="No weather data found for the given date and location")
-        
-        # Convert the day object to a JSON-serializable format
-        day_dict = {}
-        for k, v in day.items():
-            if k == 'DailyWeather':
-                day_dict[k] = {kk: vv.isoformat() if isinstance(vv, (dt_datetime, dt_date)) else vv for kk, vv in v.items()}
-            elif k == 'HourlyWeather':
-                day_dict[k] = [{kk: vv.isoformat() if isinstance(vv, (dt_datetime, dt_date)) else vv for kk, vv in hour.items()} for hour in v]
-            else:
-                day_dict[k] = v.isoformat() if isinstance(v, (dt_datetime, dt_date)) else v
 
-        return JSONResponse(content={"weather": day_dict}, status_code=200)
+        json_compatible_data = jsonable_encoder({"weather": day})
+        return JSONResponse(content=json_compatible_data)
 
     except HTTPException as e:
         l.error(f"HTTP Exception in get_refreshed_weather: {e.detail}")
@@ -135,9 +122,6 @@ async def get_weather(date_time: dt_datetime, latitude: float, longitude: float,
         raise HTTPException(status_code=404, detail="No weather data found")
 
     return daily_weather_data
-
-
-# weather.py
 
 async def store_weather_to_db(date_time: dt_datetime, weather_data: dict):
     try:
@@ -231,7 +215,7 @@ async def store_weather_to_db(date_time: dt_datetime, weather_data: dict):
                 hour_preciptype_array = hour_data.get('preciptype', []) or []
                 hour_stations_array = hour_data.get('stations', []) or []
                 hourly_weather_params = {
-                    'daily_weather_id': str(daily_weather_id),  # Convert UUID to string
+                    'daily_weather_id': daily_weather_id,
                     'datetime': await gis.dt(hour_data.get('datetimeEpoch')),
                     'datetimeepoch': hour_data.get('datetimeEpoch'),
                     'temp': hour_data.get('temp'),
@@ -287,8 +271,6 @@ async def store_weather_to_db(date_time: dt_datetime, weather_data: dict):
         l.error(f"Traceback: {traceback.format_exc()}")
         return "FAILURE"
 
-
-
 async def get_weather_from_db(date_time: dt_datetime, latitude: float, longitude: float):
     l.debug(f"Using {date_time.strftime('%Y-%m-%d %H:%M:%S')} as our datetime in get_weather_from_db.")
     query_date = date_time.date()
@@ -311,12 +293,12 @@ async def get_weather_from_db(date_time: dt_datetime, latitude: float, longitude
         
         hourly_query = '''
     SELECT * FROM hourlyweather
-    WHERE daily_weather_id::text = :daily_weather_id
+    WHERE daily_weather_id = :daily_weather_id
     ORDER BY datetime ASC
 '''
         hourly_weather_records = await Db.read(
             hourly_query, 
-            daily_weather_id=str(daily_weather_data['id']), 
+            daily_weather_id=daily_weather_data['id'], 
             table_name='hourlyweather'
         )
 

@@ -47,12 +47,6 @@ async def lifespan(app: FastAPI):
     # Startup
     l.critical("sijapi launched")
     l.info(f"Arguments: {args}")
-    
-    # Log the router directory path
-    l.debug(f"Router directory path: {Dir.ROUTER.absolute()}")
-    l.debug(f"Router directory exists: {Dir.ROUTER.exists()}")
-    l.debug(f"Router directory is a directory: {Dir.ROUTER.is_dir()}")
-    l.debug(f"Contents of router directory: {list(Dir.ROUTER.iterdir())}")
 
     # Load routers
     if args.test:
@@ -64,6 +58,7 @@ async def lifespan(app: FastAPI):
 
     try:
         await Db.initialize_engines()
+        await Db.ensure_query_tracking_table()
     except Exception as e:
         l.critical(f"Error during startup: {str(e)}")
         l.critical(f"Traceback: {traceback.format_exc()}")
@@ -81,6 +76,7 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             l.critical(f"Error during shutdown: {str(e)}")
             l.critical(f"Traceback: {traceback.format_exc()}")
+
 
 app = FastAPI(lifespan=lifespan)
 
