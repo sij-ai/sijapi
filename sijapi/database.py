@@ -24,7 +24,10 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy.exc import OperationalError
 from sqlalchemy import Column, Integer, String, DateTime, JSON, Text
-from sqlalchemy.dialects.postgresql import JSONB
+import uuid
+from sqlalchemy import Column, String, DateTime, Text, ARRAY
+from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy.sql import func
 from urllib.parse import urljoin
 import hashlib
 import random
@@ -41,15 +44,17 @@ ENV_PATH = CONFIG_DIR / ".env"
 load_dotenv(ENV_PATH)
 TS_ID = os.environ.get('TS_ID')
 
+
 class QueryTracking(Base):
     __tablename__ = 'query_tracking'
 
-    id = Column(Integer, primary_key=True)
-    ts_id = Column(String, nullable=False)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    origin_ts_id = Column(String, nullable=False)
     query = Column(Text, nullable=False)
     args = Column(JSONB)
     executed_at = Column(DateTime(timezone=True), server_default=func.now())
-    completed_by = Column(JSONB, default={})
+    completed_by = Column(ARRAY(String), default=[])
+    result_checksum = Column(String(32))
 
 class Database:
     @classmethod
