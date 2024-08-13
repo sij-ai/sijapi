@@ -408,13 +408,18 @@ class Database:
         for server in self.config['POOL']:
             if server['ts_id'] in online_servers and server['ts_id'] != self.local_ts_id:
                 url = f"http://{server['ts_ip']}:{server['app_port']}/db/sync"
-                tasks.append(self.call_db_sync(url))
+                tasks.append(self.call_db_sync(server))
         await asyncio.gather(*tasks)
 
-    async def call_db_sync(self, url):
+
+    async def call_db_sync(self, server):
+        url = f"http://{server['ts_ip']}:{server['app_port']}/db/sync"
+        headers = {
+            "Authorization": f"Bearer {server['api_key']}"
+        }
         async with aiohttp.ClientSession() as session:
             try:
-                async with session.post(url, timeout=30) as response:
+                async with session.post(url, headers=headers, timeout=30) as response:
                     if response.status == 200:
                         l.info(f"Successfully called /db/sync on {url}")
                     else:
@@ -423,6 +428,7 @@ class Database:
                 l.debug(f"Timeout while calling /db/sync on {url}")
             except Exception as e:
                 l.error(f"Error calling /db/sync on {url}: {str(e)}")
+
 
     async def close(self):
         for engine in self.engines.values():
