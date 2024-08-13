@@ -53,8 +53,9 @@ class QueryTracking(Base):
     query = Column(Text, nullable=False)
     args = Column(JSONB)
     executed_at = Column(DateTime(timezone=True), server_default=func.now())
-    completed_by = Column(ARRAY(String), default=[])
+    completed_by = Column(JSONB, default={})
     result_checksum = Column(String(32))
+
 
 class Database:
     @classmethod
@@ -169,17 +170,21 @@ class Database:
             l.error(f"Error in async sync operations: {str(e)}")
             l.error(f"Traceback: {traceback.format_exc()}")
 
-    async def add_query_to_tracking(self, query: str, kwargs: dict):
+
+
+    async def add_query_to_tracking(self, query: str, kwargs: dict, result_checksum: str = None):
         async with self.sessions[self.local_ts_id]() as session:
             new_query = QueryTracking(
-                ts_id=self.local_ts_id,
+                origin_ts_id=self.local_ts_id,
                 query=query,
                 args=json_dumps(kwargs),
-                completed_by={self.local_ts_id: True}
+                completed_by={self.local_ts_id: True},
+                result_checksum=result_checksum
             )
             session.add(new_query)
             await session.commit()
         l.info(f"Added query to tracking: {query[:50]}...")
+
 
     async def sync_db(self):
         current_time = time.time()
