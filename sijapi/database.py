@@ -20,8 +20,8 @@ from zoneinfo import ZoneInfo
 from srtm import get_data
 import os
 import sys
-import uuid
 from sqlalchemy.dialects.postgresql import UUID
+import uuid
 from loguru import logger
 from sqlalchemy import text, select, func, and_
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
