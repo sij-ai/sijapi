@@ -67,37 +67,7 @@ async def get_tailscale_ip():
         else:
             return "No devices found"
 
-async def sync_process():
-    async with Db.sessions[TS_ID]() as session:
-        # Find unexecuted queries
-        unexecuted_queries = await session.execute(
-            select(QueryTracking).where(~QueryTracking.completed_by.has_key(TS_ID)).order_by(QueryTracking.id)
-        )
-
-        for query in unexecuted_queries:
-            try:
-                params = json_loads(query.args)
-                await session.execute(text(query.query), params)
-                actual_checksum = await Db._local_compute_checksum(query.query, params)
-                if actual_checksum != query.result_checksum:
-                    l.error(f"Checksum mismatch for query ID {query.id}")
-                    continue
-                
-                # Update the completed_by field
-                query.completed_by[TS_ID] = True
-                await session.commit()
-                
-                l.info(f"Successfully executed and verified query ID {query.id}")
-            except Exception as e:
-                l.error(f"Failed to execute query ID {query.id} during sync: {str(e)}")
-                await session.rollback()
-
-        l.info(f"Sync process completed. Executed {unexecuted_queries.rowcount} queries.")
-
-    # After executing all queries, perform combinatorial sync
-    await Db.sync_query_tracking()
-
 @sys.post("/db/sync")
 async def db_sync(background_tasks: BackgroundTasks):
-    background_tasks.add_task(sync_process)
+    background_tasks.add_task(Db.sync_db)
     return {"message": "Sync process initiated"}
