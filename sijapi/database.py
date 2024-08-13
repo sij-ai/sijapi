@@ -273,6 +273,15 @@ class Database:
             except Exception as e:
                 l.error(f"Error calling /db/sync on {url}: {str(e)}")
 
+    async def ensure_query_tracking_table(self):
+        for ts_id, engine in self.engines.items():
+            try:
+                async with engine.begin() as conn:
+                    await conn.run_sync(Base.metadata.create_all)
+                l.info(f"Ensured query_tracking table exists for {ts_id}")
+            except Exception as e:
+                l.error(f"Failed to create query_tracking table for {ts_id}: {str(e)}")
+    
     async def close(self):
         for engine in self.engines.values():
             await engine.dispose()
