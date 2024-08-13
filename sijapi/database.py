@@ -144,12 +144,8 @@ class Database:
                 result = await session.execute(text(query), serialized_kwargs)
                 await session.commit()
                 
-                # Calculate result checksum
-                result_str = str(result.fetchall())
-                result_checksum = hashlib.md5(result_str.encode()).hexdigest()
-
                 # Add the write query to the query_tracking table
-                await self.add_query_to_tracking(query, serialized_kwargs, result_checksum)
+                await self.add_query_to_tracking(query, kwargs)
 
                 # Initiate async operations
                 asyncio.create_task(self._async_sync_operations())
@@ -165,6 +161,7 @@ class Database:
                 l.error(f"Traceback: {traceback.format_exc()}")
                 return None
 
+
     async def _async_sync_operations(self):
         try:
             # Call /db/sync on all online servers
@@ -174,17 +171,17 @@ class Database:
             l.error(f"Traceback: {traceback.format_exc()}")
 
 
-    async def add_query_to_tracking(self, query: str, kwargs: dict, result_checksum: str):
+    async def add_query_to_tracking(self, query: str, kwargs: dict):
         async with self.sessions[self.local_ts_id]() as session:
             new_query = QueryTracking(
                 ts_id=self.local_ts_id,
                 query=query,
                 args=json_dumps(kwargs),
-                completed_by={self.local_ts_id: True},
-                result_checksum=result_checksum
+                completed_by={self.local_ts_id: True}
             )
             session.add(new_query)
             await session.commit()
+
 
 
 

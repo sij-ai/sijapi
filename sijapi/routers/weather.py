@@ -205,7 +205,12 @@ async def store_weather_to_db(date_time: dt_datetime, weather_data: dict):
         if daily_weather_result is None:
             raise ValueError("Failed to insert daily weather data: no result returned")
         
-        daily_weather_id = daily_weather_result.fetchone()[0]
+        daily_weather_row = daily_weather_result.fetchone()
+        if daily_weather_row is None:
+            raise ValueError("Failed to retrieve inserted daily weather ID: fetchone() returned None")
+
+        daily_weather_id = daily_weather_row[0]
+
         l.debug(f"Inserted daily weather data with id: {daily_weather_id}")
     
         # Hourly weather insertion
@@ -262,14 +267,19 @@ async def store_weather_to_db(date_time: dt_datetime, weather_data: dict):
                 if hourly_result is None:
                     l.warning(f"Failed to insert hourly weather data for {hour_data.get('datetimeEpoch')}")
                 else:
-                    hourly_id = hourly_result.fetchone()[0]
-                    l.debug(f"Inserted hourly weather data with id: {hourly_id}")
+                    hourly_row = hourly_result.fetchone()
+                    if hourly_row is None:
+                        l.warning(f"Failed to retrieve inserted hourly weather ID for {hour_data.get('datetimeEpoch')}")
+                    else:
+                        hourly_id = hourly_row[0]
+                        l.debug(f"Inserted hourly weather data with id: {hourly_id}")
     
         return "SUCCESS"
     except Exception as e:
         l.error(f"Error in weather storage: {e}")
         l.error(f"Traceback: {traceback.format_exc()}")
         return "FAILURE"
+
 
 async def get_weather_from_db(date_time: dt_datetime, latitude: float, longitude: float):
     l.debug(f"Using {date_time.strftime('%Y-%m-%d %H:%M:%S')} as our datetime in get_weather_from_db.")
