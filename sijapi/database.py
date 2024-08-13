@@ -21,7 +21,7 @@ from srtm import get_data
 import os
 import sys
 import uuid
-from uuid import UUID
+from sqlalchemy.dialects.postgresql import UUID
 from loguru import logger
 from sqlalchemy import text, select, func, and_
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
