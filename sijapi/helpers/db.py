@@ -4,7 +4,7 @@ import yaml
 from pathlib import Path
 
 async def load_config():
-    config_path = Path(__file__).parent.parent / 'config' / 'db.yaml'
+    config_path = Path(__file__).parent.parent / 'config' / 'sys.yaml'
     with open(config_path, 'r') as file:
         return yaml.safe_load(file)
 
