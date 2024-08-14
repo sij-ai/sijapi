@@ -5,6 +5,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from .logs import L, get_logger
 
+# Initialize logger before loading any other dependencies
 BASE_DIR = Path(__file__).resolve().parent
 CONFIG_DIR = BASE_DIR / "config"
 ENV_PATH = CONFIG_DIR / ".env"
@@ -21,13 +22,12 @@ from pathlib import Path
 from .database import Database
 from .classes import Config, SysConfig, DirConfig, Geocoder
 
-# API essentials
-Sys = SysConfig.init('sys', 'secrets')
-Dir = DirConfig.init('dirs')
-l.debug(f"Dir configuration initialized: {Dir}")
-l.debug(f"ROUTER path: {Dir.ROUTER}")
-Db = Database.init('db')
+# Load core configurations
+Sys = SysConfig.init('sys', 'secrets') # load configuration from config/sys.yaml and config/secrets.yaml
+Db = Database.init('sys') # load configuration from config/sys.yaml
+Dir = DirConfig.init('dirs') # load configuration from config/dirs.yaml
 
+# Load module configurations
 Img = Config.init('img', 'secrets', Dir)
 Llm = Config.init('llm', 'secrets', Dir)
 News = Config.init('news', 'secrets', Dir)
