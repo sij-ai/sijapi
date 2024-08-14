@@ -149,7 +149,7 @@ def kill_remote_server(server):
 
 def main():
     load_env()
-    db_config = load_config('db')
+    db_config = load_config('sys')
     pool = db_config['POOL']
     local_ts_id = os.environ.get('TS_ID')
 

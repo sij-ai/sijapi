@@ -644,7 +644,7 @@ async def extract_text(file: Union[UploadFile, bytes, bytearray, str, Path], bg_
 
     try:
         if isinstance(file, UploadFile):
-            info("File is an UploadFile object")
+            l.info("File is an UploadFile object")
             file_extension = os.path.splitext(file.filename)[1]
             temp_file_path = tempfile.mktemp(suffix=file_extension)
             with open(temp_file_path, 'wb') as buffer:
