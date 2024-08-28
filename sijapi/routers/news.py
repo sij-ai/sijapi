@@ -195,24 +195,56 @@ async def process_and_save_article(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+
+
+from newspaper import Article as NewspaperArticle
+
 async def fetch_and_parse_article(url: str) -> Article:
+    # Try trafilatura first
     source = trafilatura.fetch_url(url)
-    traf = trafilatura.extract_metadata(filecontent=source, default_url=url)
-
-    article = Article(url)
-    article.set_html(source)
-    article.parse()
-
-    # Update article properties with trafilatura data
-    article.title = article.title or traf.title or url
-    article.authors = article.authors or (traf.author if isinstance(traf.author, list) else [traf.author])
-    article.publish_date = await gis.dt(article.publish_date or traf.date or dt_datetime.now(), "UTC")
-    article.text = trafilatura.extract(source, output_format="markdown", include_comments=False) or article.text
-    article.top_image = article.top_image or traf.image
-    article.source_url = traf.sitename or urlparse(url).netloc.replace('www.', '').title()
-    article.meta_keywords = list(set(article.meta_keywords or traf.categories or traf.tags or []))
-
-    return article
+    
+    if source:
+        try:
+            traf = trafilatura.extract_metadata(filecontent=source, default_url=url)
+            
+            article = Article(url)
+            article.set_html(source)
+            article.parse()
+            
+            # Update article properties with trafilatura data
+            article.title = article.title or traf.title or url
+            article.authors = article.authors or (traf.author if isinstance(traf.author, list) else [traf.author])
+            article.publish_date = await gis.dt(article.publish_date or traf.date or dt_datetime.now(), "UTC")
+            article.text = trafilatura.extract(source, output_format="markdown", include_comments=False) or article.text
+            article.top_image = article.top_image or traf.image
+            article.source_url = traf.sitename or urlparse(url).netloc.replace('www.', '').title()
+            article.meta_keywords = list(set(article.meta_keywords or traf.categories or traf.tags or []))
+            
+            return article
+        except Exception as e:
+            l.warning(f"Trafilatura failed to parse {url}: {str(e)}. Falling back to newspaper3k.")
+    else:
+        l.warning(f"Trafilatura failed to fetch {url}. Falling back to newspaper3k.")
+    
+    # If trafilatura fails, use newspaper3k
+    try:
+        newspaper_article = NewspaperArticle(url)
+        newspaper_article.download()
+        newspaper_article.parse()
+        
+        article = Article(url)
+        article.title = newspaper_article.title
+        article.authors = newspaper_article.authors
+        article.publish_date = await gis.dt(newspaper_article.publish_date or dt_datetime.now(), "UTC")
+        article.text = newspaper_article.text
+        article.top_image = newspaper_article.top_image
+        article.source_url = urlparse(url).netloc.replace('www.', '').title()
+        article.meta_keywords = newspaper_article.keywords
+        
+        return article
+    except Exception as e:
+        l.error(f"Both trafilatura and newspaper3k failed to fetch and parse {url}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to fetch and parse article content")
 
 
 def generate_markdown_content(article, title: str, summary: str, audio_link: Optional[str], site_name: Optional[str] = None) -> str:
