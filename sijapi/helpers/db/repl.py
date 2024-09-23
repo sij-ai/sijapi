@@ -7,17 +7,19 @@ import time
 from tqdm import tqdm
 
 def load_config():
-	script_dir = os.path.dirname(os.path.abspath(__file__))
-	sys_config_path = os.path.join(script_dir, '..', 'config', 'sys.yaml')
-	gis_config_path = os.path.join(script_dir, '..', 'config', 'gis.yaml')
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.abspath(os.path.join(script_dir, '..', '..'))
+    sys_config_path = os.path.join(project_root, 'config', 'sys.yaml')
+    gis_config_path = os.path.join(project_root, 'config', 'gis.yaml')
 
-	with open(sys_config_path, 'r') as f:
-		sys_config = yaml.safe_load(f)
+    with open(sys_config_path, 'r') as f:
+        sys_config = yaml.safe_load(f)
 
-	with open(gis_config_path, 'r') as f:
-		gis_config = yaml.safe_load(f)
+    with open(gis_config_path, 'r') as f:
+        gis_config = yaml.safe_load(f)
 
-	return sys_config, gis_config
+    return sys_config, gis_config
+
 
 def get_table_size(server, table_name):
 	env = os.environ.copy()
