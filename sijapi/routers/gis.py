@@ -510,6 +510,7 @@ async def post_locate_endpoint(locations: Union[Location, List[Location]]):
             }
         l.debug(f"Location received for processing: {lcn}")
 
+    # This will geocode locations before inserting them to the database... this can take a very long time!
     geocoded_locations = await GEO.code(locations)
 
     responses = []
