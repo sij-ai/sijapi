@@ -116,6 +116,8 @@ async def fetch_and_prepare_timing_data(start: datetime, end: Optional[datetime]
         'X-Time-Zone': 'America/Los_Angeles'
     }
 
+    l.info(f"Fetching timing data from {url}, using headers: {headers}")
+
     processed_timing_data = []
     async with httpx.AsyncClient() as client:
         response = await client.get(url, headers=headers)
