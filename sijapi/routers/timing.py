@@ -369,7 +369,6 @@ def process_timing_markdown3(timing_data, queried_start_date, queried_end_date):
 
     return "\n".join(markdown_output)
 
-
 @timing.get("/time/markdown")
 async def get_timing_markdown(
     request: Request,
@@ -377,12 +376,16 @@ async def get_timing_markdown(
     end: Optional[str] = Query(None, regex=r"\d{4}-\d{2}-\d{2}")
 ):
     start_date = await gis.dt(start)
-    end_date = await gis.dt(end)
+    
+    if end is None:
+        # If end is not provided, use the start date as the end date
+        end_date = start_date
+    else:
+        end_date = await gis.dt(end)
+    
     markdown_formatted_data = await process_timing_markdown(start_date, end_date)
 
     return Response(content=markdown_formatted_data, media_type="text/markdown")
-
-    #return JSONResponse(content={"markdown": markdown_formatted_data}, media_type="text/markdown")
 
 
 async def process_timing_markdown(start_date: datetime, end_date: datetime): # timing_data, queried_start_date, queried_end_date)
