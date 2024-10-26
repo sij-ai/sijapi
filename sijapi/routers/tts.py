@@ -61,7 +61,6 @@ async def list_11l_voices():
             l.error(f"Error determining voice ID: {e}")
 
     return PlainTextResponse(formatted_list, status_code=200)   
-     
         
 
 async def select_voice(voice_name: str) -> str:
