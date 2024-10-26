@@ -151,7 +151,6 @@ MAC_UN = os.getenv("MAC_UN")
 MAC_PW = os.getenv("MAC_PW")
 TIMING_API_KEY = os.getenv("TIMING_API_KEY")
 TIMING_API_URL = os.getenv("TIMING_API_URL", "https://web.timingapp.com/api/v1")
-l.info(f"TIMING_API_KEY: {TIMING_API_KEY}; TIMING_API_URL: {TIMING_API_URL}")
 
 PHOTOPRISM_URL = os.getenv("PHOTOPRISM_URL")
 PHOTOPRISM_USER = os.getenv("PHOTOPRISM_USER")
