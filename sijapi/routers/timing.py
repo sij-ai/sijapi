@@ -659,8 +659,20 @@ async def process_att_csv(
     """Process AT&T CSV file and post phone calls to Timing."""
     
     # Load the phone lookup data from file
-    cleaned_lookup = load_phone_lookup()
-    
+    try:
+        with open(PHONE_LOOKUP_PATH, 'r') as f:
+            phone_lookup = json.load(f)
+            cleaned_lookup = {
+                clean_phone_number(phone): name 
+                for phone, name in phone_lookup.items()
+            }
+    except FileNotFoundError:
+        l.warning(f"Phone lookup file not found at {PHONE_LOOKUP_PATH}")
+        cleaned_lookup = {}
+    except json.JSONDecodeError:
+        l.error(f"Invalid JSON in phone lookup file at {PHONE_LOOKUP_PATH}")
+        cleaned_lookup = {}
+
     # Read and process the CSV
     content = await file.read()
     content = content.decode('utf-8')
@@ -682,6 +694,9 @@ async def process_att_csv(
     csv_reader = csv.DictReader(lines[start_index:])
     
     entries = []
+    successes = 0
+    failures = 0
+    
     for row in csv_reader:
         if not row.get('Contact'):  # Skip empty rows
             continue
@@ -697,8 +712,10 @@ async def process_att_csv(
         time_str = row['Time'].strip()
         try:
             dt = datetime.strptime(f"{date_str} {time_str}", "%b %d, %Y %I:%M %p")
+            dt = pacific.localize(dt)  # Make timezone-aware
         except ValueError as e:
             l.warning(f"Failed to parse date/time: {date_str} {time_str}")
+            failures += 1
             continue
         
         # Calculate end time based on minutes
@@ -707,33 +724,43 @@ async def process_att_csv(
             end_dt = dt + timedelta(minutes=minutes)
         except ValueError:
             l.warning(f"Invalid minutes value: {row['Minutes']}")
+            failures += 1
             continue
         
         # Create the time entry
         entry = {
-            "start_date": dt.strftime("%Y-%m-%dT%H:%M:%S-07:00"),
-            "end_date": end_dt.strftime("%Y-%m-%dT%H:%M:%S-07:00"),
+            "start_date": dt.isoformat(),
+            "end_date": end_dt.isoformat(),
             "project": "📞 Phone Calls",
             "title": f"{row['Incoming/Outgoing']} - {contact_name}",
             "notes": f"Call via {row['Type']} from {row['Location']}",
             "replace_existing": False
         }
         
-        # Post to Timing API
         try:
-            status, response = await post_time_entry_to_timing(entry)
-            if status != 200:
-                l.warning(f"Failed to post entry: {response}")
+            await post_time_entry_to_timing(entry)
+            entries.append(entry)
+            successes += 1
         except Exception as e:
             l.error(f"Error posting entry: {e}")
-            
-        entries.append(entry)
+            failures += 1
     
     return {
-        "message": f"Processed {len(entries)} phone calls",
+        "message": f"Processed {len(entries)} phone calls ({successes} successes, {failures} failures)",
         "entries": entries,
         "lookup_matches": sum(1 for e in entries if e['title'].split(' - ')[1] in cleaned_lookup.values())
     }
+
+def clean_phone_number(phone: str) -> str:
+    """Clean phone number by removing special characters and handling country code."""
+    # Remove all special characters
+    cleaned = re.sub(r'[\(\)\s\+\-\.]', '', phone)
+    
+    # Handle 11-digit numbers starting with 1
+    if len(cleaned) == 11 and cleaned.startswith('1'):
+        cleaned = cleaned[1:]
+        
+    return cleaned
 
 
 
