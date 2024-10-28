@@ -37,6 +37,8 @@ timing = APIRouter(tags=["private"])
 
 script_directory = os.path.dirname(os.path.abspath(__file__))
 
+PHONE_LOOKUP_PATH = os.path.join(script_directory, "reverse_directory.json")
+
 # Configuration constants
 pacific = pytz.timezone('America/Los_Angeles')
 
@@ -543,6 +545,159 @@ def parse_input(fields, project_name_mappings, start_times_by_date):
     start_times_by_date[billing_date] = start_time
 
     return json_entries
+
+
+
+def clean_phone_number(phone: str) -> str:
+    """Clean phone number by removing special characters and handling country code."""
+    # Remove all special characters
+    cleaned = re.sub(r'[\(\)\s\+\-\.]', '', phone)
+    
+    # Handle 11-digit numbers starting with 1
+    if len(cleaned) == 11 and cleaned.startswith('1'):
+        cleaned = cleaned[1:]
+        
+    return cleaned
+
+def load_phone_lookup() -> Dict[str, str]:
+    """Load and process the phone lookup dictionary from file."""
+    try:
+        with open(PHONE_LOOKUP_PATH, 'r') as f:
+            phone_lookup = json.load(f)
+            # Clean the phone numbers in the lookup dictionary
+            return {
+                clean_phone_number(phone): name 
+                for phone, name in phone_lookup.items()
+            }
+    except FileNotFoundError:
+        l.warning(f"Phone lookup file not found at {PHONE_LOOKUP_PATH}")
+        return {}
+    except json.JSONDecodeError:
+        l.error(f"Invalid JSON in phone lookup file at {PHONE_LOOKUP_PATH}")
+        return {}
+
+async def ensure_project_exists(project_name: str) -> str:
+    """Check if project exists, create if it doesn't, and return project ID."""
+    url = f"{TIMING_API_URL}/projects"
+    headers = {
+        "Authorization": f"Bearer {TIMING_API_KEY}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        'X-Time-Zone': 'America/Los_Angeles'
+    }
+
+    # First check if project exists
+    async with httpx.AsyncClient() as client:
+        response = await client.get(url, headers=headers)
+        projects = response.json().get('data', [])
+        
+        for project in projects:
+            if project['title'] == project_name:
+                return project['id']
+        
+        # Project doesn't exist, create it
+        project_data = {
+            "title": project_name,
+            "color": "#007AFF",  # Nice blue color for phone calls
+            "icon": "📞"
+        }
+        
+        response = await client.post(url, headers=headers, json=project_data)
+        return response.json()['data']['id']
+
+@timing.post("/time/att_csv")
+async def process_att_csv(
+    file: UploadFile = File(...)
+):
+    """Process AT&T CSV file and post phone calls to Timing."""
+    
+    # Load the phone lookup data from file
+    cleaned_lookup = load_phone_lookup()
+    
+    # Ensure the Phone Calls project exists
+    project_name = "📞 Phone Calls"
+    try:
+        project_id = await ensure_project_exists(project_name)
+    except Exception as e:
+        l.error(f"Failed to ensure project exists: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to create or find Phone Calls project"
+        )
+
+    # Read and process the CSV
+    content = await file.read()
+    content = content.decode('utf-8')
+    
+    # Split into lines and find where the actual data starts
+    lines = content.split('\n')
+    try:
+        start_index = next(
+            i for i, line in enumerate(lines) 
+            if line.startswith('Incoming/Outgoing,Date,Time')
+        )
+    except StopIteration:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid AT&T CSV format - couldn't find header row"
+        )
+    
+    # Process only the relevant lines
+    csv_reader = csv.DictReader(lines[start_index:])
+    
+    entries = []
+    for row in csv_reader:
+        if not row.get('Contact'):  # Skip empty rows
+            continue
+            
+        # Clean the phone number for comparison
+        clean_phone = clean_phone_number(row['Contact'])
+        
+        # Look up the name or use the phone number
+        contact_name = cleaned_lookup.get(clean_phone, row['Contact'])
+        
+        # Parse the date and time
+        date_str = row['Date'].strip('"')
+        time_str = row['Time'].strip()
+        try:
+            dt = datetime.strptime(f"{date_str} {time_str}", "%b %d, %Y %I:%M %p")
+        except ValueError as e:
+            l.warning(f"Failed to parse date/time: {date_str} {time_str}")
+            continue
+        
+        # Calculate end time based on minutes
+        try:
+            minutes = int(row['Minutes'])
+            end_dt = dt + timedelta(minutes=minutes)
+        except ValueError:
+            l.warning(f"Invalid minutes value: {row['Minutes']}")
+            continue
+        
+        # Create the time entry
+        entry = {
+            "start_date": dt.strftime("%Y-%m-%dT%H:%M:%S-07:00"),
+            "end_date": end_dt.strftime("%Y-%m-%dT%H:%M:%S-07:00"),
+            "project_id": project_id,
+            "title": f"{row['Incoming/Outgoing']} - {contact_name}",
+            "notes": f"Call via {row['Type']} from {row['Location']}",
+            "replace_existing": False
+        }
+        
+        # Post to Timing API
+        try:
+            status, response = await post_time_entry_to_timing(entry)
+            if status != 200:
+                l.warning(f"Failed to post entry: {response}")
+        except Exception as e:
+            l.error(f"Error posting entry: {e}")
+            
+        entries.append(entry)
+    
+    return {
+        "message": f"Processed {len(entries)} phone calls",
+        "entries": entries,
+        "lookup_matches": sum(1 for e in entries if e['title'].split(' - ')[1] in cleaned_lookup.values())
+    }
 
 
 async def post_time_entry_to_timing(entry):

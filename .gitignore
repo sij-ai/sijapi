@@ -19,6 +19,7 @@ sijapi/testbed/
 khoj/
 r2r/
 podcast/sideloads/*
+sijapi/routers/reverse_directory.json
 
 **/.env
 **/.config.yaml
