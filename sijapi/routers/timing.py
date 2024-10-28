@@ -635,17 +635,6 @@ async def process_att_csv(
     # Load the phone lookup data from file
     cleaned_lookup = load_phone_lookup()
     
-    # Ensure the Phone Calls project exists
-    project_name = "📞 Phone Calls"  # This is correct
-    try:
-        project_id = await ensure_project_exists(project_name)
-    except Exception as e:
-        l.error(f"Failed to ensure project exists: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to create or find project '{project_name}'"  # Fixed error message
-        )
-
     # Read and process the CSV
     content = await file.read()
     content = content.decode('utf-8')
@@ -698,7 +687,7 @@ async def process_att_csv(
         entry = {
             "start_date": dt.strftime("%Y-%m-%dT%H:%M:%S-07:00"),
             "end_date": end_dt.strftime("%Y-%m-%dT%H:%M:%S-07:00"),
-            "project_id": project_id,
+            "project": "📞 Phone Calls",
             "title": f"{row['Incoming/Outgoing']} - {contact_name}",
             "notes": f"Call via {row['Type']} from {row['Location']}",
             "replace_existing": False
