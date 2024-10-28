@@ -589,21 +589,42 @@ async def ensure_project_exists(project_name: str) -> str:
     # First check if project exists
     async with httpx.AsyncClient() as client:
         response = await client.get(url, headers=headers)
+        if response.status_code != 200:
+            l.error(f"Project list response: {response.text}")
+            raise HTTPException(status_code=response.status_code, detail=response.text)
+            
         projects = response.json().get('data', [])
         
+        # Debug log to see what we're getting
+        l.debug(f"Found projects: {json.dumps(projects, indent=2)}")
+        
         for project in projects:
-            if project['title'] == project_name:
-                return project['id']
+            project_title = project.get('attributes', {}).get('title')
+            if project_title == project_name:
+                return project.get('id')  # or project.get('attributes', {}).get('id')
         
         # Project doesn't exist, create it
         project_data = {
-            "title": project_name,
-            "color": "#007AFF",  # Nice blue color for phone calls
-            "icon": "📞"
+            "data": {
+                "type": "projects",
+                "attributes": {
+                    "title": project_name,
+                    "color": "#007AFF",
+                    "icon": "📞"
+                }
+            }
         }
         
+        l.debug(f"Creating project with data: {json.dumps(project_data, indent=2)}")
         response = await client.post(url, headers=headers, json=project_data)
-        return response.json()['data']['id']
+        l.debug(f"Create project response: {response.text}")
+        
+        if response.status_code != 201:
+            raise HTTPException(status_code=response.status_code, detail=response.text)
+            
+        created_project = response.json().get('data', {})
+        return created_project.get('id')
+
 
 @timing.post("/time/att_csv")
 async def process_att_csv(
@@ -615,14 +636,14 @@ async def process_att_csv(
     cleaned_lookup = load_phone_lookup()
     
     # Ensure the Phone Calls project exists
-    project_name = "📞 Phone Calls"
+    project_name = "📞 Phone Calls"  # This is correct
     try:
         project_id = await ensure_project_exists(project_name)
     except Exception as e:
         l.error(f"Failed to ensure project exists: {e}")
         raise HTTPException(
             status_code=500,
-            detail="Failed to create or find Phone Calls project"
+            detail=f"Failed to create or find project '{project_name}'"  # Fixed error message
         )
 
     # Read and process the CSV
