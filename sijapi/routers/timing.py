@@ -736,25 +736,6 @@ async def process_att_csv(
     }
 
 
-async def post_time_entry_to_timing(entry):
-    url = f"{TIMING_API_URL}/time-entries"  # The URL for posting time entries
-    headers = {
-        "Authorization": f"Bearer {TIMING_API_KEY}",
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-        'X-Time-Zone': 'America/Los_Angeles'  # Set the timezone for the API request
-    }
-    data = {
-        "start_date": entry["Start_time"],  # Format these according to the API's requirements
-        "end_date": entry["End_time"],
-        "project": entry["project"],
-        "title": entry["Task"],
-        "notes": "Automatically generated based on Rocketmatter reports.",
-        "replace_existing": False
-    }
-    response = await httpx.post(url, headers=headers, json=data)
-    return response.status_code, response.json()
-
 
 @timing.get("/time/flagemoji/{country_code}")
 def flag_emoji(country_code: str):
