@@ -71,14 +71,14 @@ async def post_time_entry_to_timing(entry: Dict):
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(url, headers=headers, json=entry)
-            response.raise_for_status()  # Raises exception for 4xx/5xx responses
+            response.raise_for_status()
             return response.json()
     except httpx.HTTPStatusError as exc:
         l.debug(f"HTTPStatusError caught: Status code: {exc.response.status_code}, Detail: {exc.response.text}")
-        raise HTTPException(status_code=exc.response.status_code, detail=str(exc.response.text))
+        raise HTTPException(status_code=exc.response.status_code, detail=exc.response.text)
     except Exception as exc:
         l.debug(f"General exception caught: {exc}")
-        raise HTTPException(status_code=500, detail="An unexpected error occurred")
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @timing.post("/time/post_old")
