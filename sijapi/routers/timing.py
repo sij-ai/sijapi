@@ -55,8 +55,34 @@ class TimingRequest(BaseModel):
 ####################
 #### TIMING API ####
 ####################
+
 @timing.post("/time/post")
 async def post_time_entry_to_timing(entry: Dict):
+    """Post a single time entry to Timing API."""
+    url = 'https://web.timingapp.com/api/v1/time-entries'
+    headers = {
+        'Authorization': f'Bearer {TIMING_API_KEY}',
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-Time-Zone': 'America/Los_Angeles'
+    }
+    l.debug(f"Posting entry: {entry}")
+    
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(url, headers=headers, json=entry)
+            response.raise_for_status()  # Raises exception for 4xx/5xx responses
+            return response.json()
+    except httpx.HTTPStatusError as exc:
+        l.debug(f"HTTPStatusError caught: Status code: {exc.response.status_code}, Detail: {exc.response.text}")
+        raise HTTPException(status_code=exc.response.status_code, detail=str(exc.response.text))
+    except Exception as exc:
+        l.debug(f"General exception caught: {exc}")
+        raise HTTPException(status_code=500, detail="An unexpected error occurred")
+
+
+@timing.post("/time/post_old")
+async def old_post_time_entry_to_timing(entry: Dict):
     url = 'https://web.timingapp.com/api/v1/time-entries'
     headers = {
         'Authorization': f'Bearer {TIMING_API_KEY}',
