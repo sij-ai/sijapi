@@ -1,16 +1,17 @@
 # Ignore specific data files and directories
 sijapi/data/calendar.ics
 sijapi/data/asr/
-sijapi/data/geocoder/
 sijapi/data/courtlistener/
-sijapi/data/tts/
 sijapi/data/db/
+sijapi/data/geocoder/
+sijapi/data/geonames.txt
+sijapi/data/img/images/
+sijapi/data/timing/
+sijapi/data/tts/
 sijapi/data/img/workflows/private
 sijapi/data/*.pbf
-sijapi/data/geonames.txt
 sijapi/data/*.json
 sijapi/data/*.geojson
-sijapi/data/img/images/
 sijapi/config/*.yaml
 sijapi/config/ms365/
 sijapi/data/ms365/
@@ -19,7 +20,7 @@ sijapi/testbed/
 khoj/
 r2r/
 podcast/sideloads/*
-sijapi/routers/reverse_directory.json
+
 
 **/.env
 **/.config.yaml

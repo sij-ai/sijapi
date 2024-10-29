@@ -734,7 +734,7 @@ async def process_att_csv(
             "project": "📞 Phone Calls",
             "title": f"{row['Incoming/Outgoing']} - {contact_name}",
             "notes": f"Call via {row['Type']} from {row['Location']}",
-            "replace_existing": False
+            "replace_existing": True
         }
         
         try:
