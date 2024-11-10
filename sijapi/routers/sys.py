@@ -67,7 +67,6 @@ async def get_tailscale_ip():
         else:
             return "No devices found"
 
-
 @sys.post("/db/sync")
 async def db_sync(background_tasks: BackgroundTasks):
     l.info(f"Received request to /db/sync")

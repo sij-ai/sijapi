@@ -58,7 +58,6 @@ async def lifespan(app: FastAPI):
 
     try:
         await Db.initialize_engines()
-        await Db.ensure_query_tracking_table()
     except Exception as e:
         l.critical(f"Error during startup: {str(e)}")
         l.critical(f"Traceback: {traceback.format_exc()}")
