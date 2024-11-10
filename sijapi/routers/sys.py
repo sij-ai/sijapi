@@ -9,7 +9,6 @@ from tailscale import Tailscale
 from sijapi import Sys, Db, TS_ID
 from sijapi.logs import get_logger
 from sijapi.serialization import json_loads
-from sijapi.database import QueryTracking
 
 l = get_logger(__name__)
 
