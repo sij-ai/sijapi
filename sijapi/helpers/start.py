@@ -84,15 +84,29 @@ def kill_local_server():
     except subprocess.CalledProcessError as e:
         logging.error(f"Failed to kill local sijapi tmux session. Error: {e}")
 
-def start_remote_server(server, pull=False, push=False):
+
+def create_ssh_connection(server):
     ssh = paramiko.SSHClient()
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-
+    
     try:
-        # Determine authentication method based on config
         if 'ssh_key' in server:
-            # Use SSH key authentication
-            private_key = paramiko.RSAKey.from_private_key_file(server['ssh_key'])
+            # Try different key types
+            try:
+                # Try RSA first
+                private_key = paramiko.RSAKey.from_private_key_file(server['ssh_key'])
+            except paramiko.SSHException:
+                try:
+                    # Try Ed25519
+                    private_key = paramiko.Ed25519Key.from_private_key_file(server['ssh_key'])
+                except paramiko.SSHException:
+                    try:
+                        # Try ECDSA
+                        private_key = paramiko.ECDSAKey.from_private_key_file(server['ssh_key'])
+                    except paramiko.SSHException:
+                        # Try DSS as last resort
+                        private_key = paramiko.DSSKey.from_private_key_file(server['ssh_key'])
+            
             ssh.connect(
                 server['ts_ip'],
                 port=server['ssh_port'],
@@ -101,7 +115,6 @@ def start_remote_server(server, pull=False, push=False):
                 timeout=10
             )
         elif 'ssh_pass' in server:
-            # Use password authentication
             ssh.connect(
                 server['ts_ip'],
                 port=server['ssh_port'],
@@ -110,9 +123,23 @@ def start_remote_server(server, pull=False, push=False):
                 timeout=10
             )
         else:
-            logging.error(f"No authentication method specified for {server['ts_id']}")
-            return
+            raise ValueError(f"No authentication method specified for {server['ts_id']}")
+        
+        logging.info(f"Successfully connected to {server['ts_id']}")
+        return ssh
+    except Exception as e:
+        logging.error(f"Failed to connect to {server['ts_id']}: {str(e)}")
+        if 'ssh_key' in server:
+            logging.error(f"SSH key path used: {server['ssh_key']}")
+        raise
 
+def start_remote_server(server, pull=False, push=False):
+    try:
+        ssh = create_ssh_connection(server)
+    except Exception:
+        return
+
+    try:
         status, output, error = execute_ssh_command(ssh, f"{server['tmux']} has-session -t sijapi 2>/dev/null && echo 'exists' || echo 'not exists'")
         if output == 'exists':
             logging.info(f"sijapi session already exists on {server['ts_id']}")
@@ -132,42 +159,18 @@ def start_remote_server(server, pull=False, push=False):
         else:
             logging.error(f"Failed to start sijapi session on {server['ts_id']}. Error: {error}")
 
-    except paramiko.SSHException as e:
-        logging.error(f"Failed to connect to {server['ts_id']}: {str(e)}")
     except Exception as e:
-        logging.error(f"Error connecting to {server['ts_id']}: {str(e)}")
+        logging.error(f"Error executing commands on {server['ts_id']}: {str(e)}")
     finally:
         ssh.close()
 
 def kill_remote_server(server):
-    ssh = paramiko.SSHClient()
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    try:
+        ssh = create_ssh_connection(server)
+    except Exception:
+        return
 
     try:
-        # Determine authentication method based on config
-        if 'ssh_key' in server:
-            # Use SSH key authentication
-            private_key = paramiko.RSAKey.from_private_key_file(server['ssh_key'])
-            ssh.connect(
-                server['ts_ip'],
-                port=server['ssh_port'],
-                username=server['ssh_user'],
-                pkey=private_key,
-                timeout=10
-            )
-        elif 'ssh_pass' in server:
-            # Use password authentication
-            ssh.connect(
-                server['ts_ip'],
-                port=server['ssh_port'],
-                username=server['ssh_user'],
-                password=server['ssh_pass'],
-                timeout=10
-            )
-        else:
-            logging.error(f"No authentication method specified for {server['ts_id']}")
-            return
-
         command = f"{server['tmux']} kill-session -t sijapi"
         status, output, error = execute_ssh_command(ssh, command)
 
@@ -176,13 +179,10 @@ def kill_remote_server(server):
         else:
             logging.error(f"Failed to kill sijapi session on {server['ts_id']}. Error: {error}")
 
-    except paramiko.SSHException as e:
-        logging.error(f"Failed to connect to {server['ts_id']}: {str(e)}")
     except Exception as e:
-        logging.error(f"Error connecting to {server['ts_id']}: {str(e)}")
+        logging.error(f"Error executing commands on {server['ts_id']}: {str(e)}")
     finally:
         ssh.close()
-
 
 def main():
     load_env()
