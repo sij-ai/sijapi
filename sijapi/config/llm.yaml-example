@@ -6,7 +6,7 @@ chat:
 vision:
   model: llava-llama3
 summary:
-  model: 'command-r:latest'
+  model: 'llama3.2:3b'
   chunk_size: 16384
   chunk_overlap: 256
   length_ratio: 4
