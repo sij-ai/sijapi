@@ -26,7 +26,7 @@ import tempfile
 import shutil
 import html2text
 import markdown
-from sijapi import Llm, LLM_SYS_MSG, REQUESTS_DIR, OBSIDIAN_CHROMADB_COLLECTION, OBSIDIAN_VAULT_DIR, DOC_DIR, SUMMARY_INSTRUCT, SUMMARY_CHUNK_SIZE, SUMMARY_TPW, SUMMARY_CHUNK_OVERLAP, SUMMARY_LENGTH_RATIO, SUMMARY_TOKEN_LIMIT, SUMMARY_MIN_LENGTH, SUMMARY_MODEL
+from sijapi import Llm, LLM_SYS_MSG, REQUESTS_DIR, OBSIDIAN_CHROMADB_COLLECTION, OBSIDIAN_VAULT_DIR, DOC_DIR
 from sijapi.utilities import convert_to_unix_time, sanitize_filename, ocr_pdf, clean_text, should_use_ocr, extract_text_from_pdf, extract_text_from_docx, read_text_file, str_to_bool, get_extension
 from sijapi.routers import tts
 from sijapi.routers.asr import transcribe_audio
@@ -512,12 +512,12 @@ def gpt4v(image_base64, prompt_sys: str, prompt_usr: str, max_tokens: int = 150)
 
 
 @llm.get("/summarize")
-async def summarize_get(text: str = Form(None), instruction: str = Form(SUMMARY_INSTRUCT)):
+async def summarize_get(text: str = Form(None), instruction: str = Form(Llm.summary.instruct)):
     summarized_text = await summarize_text(text, instruction)
     return summarized_text
 
 @llm.post("/summarize")
-async def summarize_post(file: Optional[UploadFile] = File(None), text: Optional[str] = Form(None), instruction: str = Form(SUMMARY_INSTRUCT)):
+async def summarize_post(file: Optional[UploadFile] = File(None), text: Optional[str] = Form(None), instruction: str = Form(Llm.summary.instruct)):
     text_content = text if text else await extract_text(file)
     summarized_text = await summarize_text(text_content, instruction)
     return summarized_text
@@ -526,7 +526,7 @@ async def summarize_post(file: Optional[UploadFile] = File(None), text: Optional
 @llm.post("/speaksummary")
 async def summarize_tts_endpoint(
     bg_tasks: BackgroundTasks,
-    instruction: str = Form(SUMMARY_INSTRUCT),
+    instruction: str = Form(Llm.summary.instruct),
     file: Optional[UploadFile] = File(None),
     text: Optional[str] = Form(None),
     voice: Optional[str] = Form(None),
@@ -572,7 +572,7 @@ async def summarize_tts_endpoint(
 
 async def summarize_tts(
     text: str, 
-    instruction: str = SUMMARY_INSTRUCT,
+    instruction: str = Llm.summary.instruct,
     voice: Optional[str] = None,
     speed: float = 1.1,
     podcast: bool = False,
@@ -605,9 +605,9 @@ def split_text_into_chunks(text: str) -> List[str]:
     sentences = re.split(r'(?<=[.!?])\s+', text)
     words = text.split()
     total_words = len(words)
-    l.debug(f"Total words: {total_words}. SUMMARY_CHUNK_SIZE: {SUMMARY_CHUNK_SIZE}. SUMMARY_TPW: {SUMMARY_TPW}.")
+    l.debug(f"Total words: {total_words}. Llm.summary.chunk_size: {Llm.summary.chunk_size}. Llm.summary.length_ratio: {Llm.summary.length_ratio}.")
     
-    max_words_per_chunk = int(SUMMARY_CHUNK_SIZE / SUMMARY_TPW)
+    max_words_per_chunk = int(Llm.summary.chunk_size / Llm.summary.length_ratio)
     l.debug(f"Maximum words per chunk: {max_words_per_chunk}")
 
     chunks = []
@@ -633,8 +633,8 @@ def split_text_into_chunks(text: str) -> List[str]:
 
 
 def calculate_max_tokens(text: str) -> int:
-    tokens_count = max(1, int(len(text.split()) * SUMMARY_TPW))  # Ensure at least 1
-    return min(tokens_count // 4, SUMMARY_CHUNK_SIZE)
+    tokens_count = max(1, int(len(text.split()) * Llm.summary.length_ratio))  # Ensure at least 1
+    return min(tokens_count // 4, Llm.summary.chunk_size)
 
 
 
@@ -694,7 +694,7 @@ async def extract_text(file: Union[UploadFile, bytes, bytearray, str, Path], bg_
         raise ValueError(f"Error extracting text: {str(e)}")
 
 
-async def summarize_text(text: str, instruction: str = SUMMARY_INSTRUCT, length_override: int = None, length_quotient: float = SUMMARY_LENGTH_RATIO, LLM: Ollama = None):
+async def summarize_text(text: str, instruction: str = Llm.summary.instruct, length_override: int = None, length_quotient: float = Llm.summary.length_ratio, LLM: Ollama = None):
     LLM = LLM if LLM else Ollama()
 
     chunked_text = split_text_into_chunks(text)
@@ -703,12 +703,12 @@ async def summarize_text(text: str, instruction: str = SUMMARY_INSTRUCT, length_
 
     total_words_count = sum(len(chunk.split()) for chunk in chunked_text)
     l.debug(f"Total words count: {total_words_count}")
-    total_tokens_count = max(1, int(total_words_count * SUMMARY_TPW))
+    total_tokens_count = max(1, int(total_words_count * Llm.summary.length_ratio))
     l.debug(f"Total tokens count: {total_tokens_count}")
 
     total_summary_length = length_override if length_override else total_tokens_count // length_quotient
     l.debug(f"Total summary length: {total_summary_length}")
-    corrected_total_summary_length = min(total_summary_length, SUMMARY_TOKEN_LIMIT)
+    corrected_total_summary_length = min(total_summary_length, Llm.summary.max_tokens)
     l.debug(f"Corrected total summary length: {corrected_total_summary_length}")
 
     summaries = await asyncio.gather(*[
@@ -738,11 +738,11 @@ async def process_chunk(instruction: str, text: str, part: int, total_parts: int
     LLM = LLM if LLM else Ollama()
 
     words_count = len(text.split())
-    tokens_count = max(1, int(words_count * SUMMARY_TPW))
+    tokens_count = max(1, int(words_count * Llm.summary.length_ratio))
 
-    summary_length_ratio = length_ratio if length_ratio else SUMMARY_LENGTH_RATIO
-    max_tokens = min(tokens_count // summary_length_ratio, SUMMARY_CHUNK_SIZE)
-    max_tokens = max(max_tokens, SUMMARY_MIN_LENGTH)
+    Llm.summary.length_ratio = length_ratio if length_ratio else Llm.summary.length_ratio
+    max_tokens = min(tokens_count // Llm.summary.length_ratio, Llm.summary.chunk_size)
+    max_tokens = max(max_tokens, Llm.summary.min_length)
     
     l.debug(f"Processing part {part} of {total_parts}: Words: {words_count}, Estimated tokens: {tokens_count}, Max output tokens: {max_tokens}")
     
@@ -753,7 +753,7 @@ async def process_chunk(instruction: str, text: str, part: int, total_parts: int
     
     l.info(f"Starting LLM.generate for part {part} of {total_parts}")
     response = await LLM.generate(
-        model=SUMMARY_MODEL, 
+        model=Llm.summary.model, 
         prompt=prompt,
         stream=False,
         options={'num_predict': max_tokens, 'temperature': 0.5}
