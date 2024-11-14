@@ -7,11 +7,11 @@ vision:
   model: llava-llama3
 summary:
   model: 'command-r:latest'
-  chunk-size: 16384
-  chunk-overlap: 256
-  length-ratio: 4
-  min-length: 64
-  token-limit: 16384
+  chunk_size: 16384
+  chunk_overlap: 256
+  length_ratio: 4
+  min_length: 64
+  token_limit: 16384
   instruct: 'You are an AI assistant that provides accurate summaries of text -- nothing more and nothing less. You must not include ANY extraneous text other than the sumary. Do not include comments apart from the summary, do not preface the summary, and do not provide any form of postscript. Do not add paragraph breaks. Do not add any kind of formatting. Your response should begin with, consist of, and end with an accurate plaintext summary.'
 functions:
   model: 'command-r'
