@@ -368,7 +368,8 @@ created: "{dt_datetime.now().strftime("%Y-%m-%d %H:%M:%S")}"
     with open(absolute_path, 'wb') as f:
         f.write(body.encode())
 
-    banner = await generate_banner(formatted_day, location, weather_note)
+    if Sys.EXTENSIONS.comfyui:
+        banner = await generate_banner(formatted_day, location, weather_note)
 
     return absolute_path
 
@@ -422,96 +423,103 @@ async def update_frontmatter(date_time: dt_datetime, key: str, value: str):
     return {"message": "Frontmatter updated successfully."}
 
 
-@note.post("/note/banner")
-async def banner_endpoint(dt: str, location: str = None, forecast: str = None, mood: str = None, other_context: str = None):
-    '''
-        Endpoint (POST) that generates a new banner image for the Obsidian daily note for a specified date, taking into account optional additional information, then updates the frontmatter if necessary.
-    '''
-    l.debug(f"banner_endpoint requested with date: {dt} ({type(dt)})")
-    date_time = await gis.dt(dt)
-    l.debug(f"date_time after localization: {date_time} ({type(date_time)})")
-    context = await generate_context(dt, location, forecast, mood, other_context)
-    jpg_path = await generate_banner(date_time, location, mood=mood, other_context=other_context)
-    return jpg_path
+if Sys.EXTENSIONS.comfyui:
+    @note.post("/note/banner")
+    async def banner_endpoint(dt: str, location: str = None, forecast: str = None, mood: str = None, other_context: str = None):
+        '''
+            Endpoint (POST) that generates a new banner image for the Obsidian daily note for a specified date, taking into account optional additional information, then updates the frontmatter if necessary.
+        '''
+        l.debug(f"banner_endpoint requested with date: {dt} ({type(dt)})")
+        date_time = await gis.dt(dt)
+        l.debug(f"date_time after localization: {date_time} ({type(date_time)})")
+        context = await generate_banner_context(dt, location, forecast, mood, other_context)
+        jpg_path = await generate_banner(date_time, location, mood=mood, other_context=other_context)
+        return jpg_path
 
 
 async def generate_banner(dt, location: Location = None, forecast: str = None, mood: str = None, other_context: str = None):
-    date_time = await gis.dt(dt)
-    destination_path, local_path = assemble_journal_path(date_time, filename="Banner", extension=".jpg", no_timestamp = True)
-    if not location or not isinstance(location, Location):
-        locations = await gis.fetch_locations(date_time)
-        if locations:
-            location = locations[0]
-    if not forecast:
-        forecast = await update_dn_weather(date_time, False, location.latitude, location.longitude)
-
-    prompt = await generate_context(date_time, location, forecast, mood, other_context)
-    l.debug(f"Prompt: {prompt}")
-    final_path = await img.workflow(prompt, scene=OBSIDIAN_BANNER_SCENE, destination_path=destination_path)
-    if not str(local_path) in str(final_path):
-        l.info(f"Apparent mismatch between local path, {local_path}, and final_path, {final_path}")
-    jpg_embed = f"\"![[{local_path}]]\""
-    await update_frontmatter(date_time, "banner", jpg_embed)
-    return local_path
-
-
-async def generate_context(date_time, location: Location, forecast: str, mood: str, other_context: str):
-    display_name = "Location: "
-    if location and isinstance(location, Location):
-        lat, lon = location.latitude, location.longitude
-        override_location = GEO.find_override_location(lat, lon)
-        display_name += f"{override_location}, " if override_location else ""
-        if location.display_name:
-            display_name += f"{location.display_name}"
-
-        else:
-            display_name += f"{location.road}, " if location.road else ""
-            display_name += f"the {location.neighbourhood} neighbourhood of " if location.neighbourhood else ""
-            display_name += f"the {location.suburb} suburb of " if location.suburb else ""
-            display_name += f"the {location.quarter} quarter, " if location.quarter else ""
-            display_name += f"{location.city}, " if location.city else ""
-            display_name += f"{location.state} " if location.state else ""
-            display_name += f"{location.country} " if location.country else ""
-
-        if display_name == "Location: ":
-            geocoded_location = await GEO.code((lat, lon))
-            if geocoded_location.display_name or geocoded_location.city or geocoded_location.country:
-                return await generate_context(date_time, geocoded_location, forecast, mood, other_context)
-            else:
-                l.warning(f"Failed to get a useable location for purposes of generating a banner, but we'll generate one anyway.")
-    elif location and isinstance(location, str):
-        display_name = f"Location: {location}\n"
+    if Sys.EXTENSIONS.comfyui:
+        date_time = await gis.dt(dt)
+        destination_path, local_path = assemble_journal_path(date_time, filename="Banner", extension=".jpg", no_timestamp = True)
+        if not location or not isinstance(location, Location):
+            locations = await gis.fetch_locations(date_time)
+            if locations:
+                location = locations[0]
+        if not forecast:
+            forecast = await update_dn_weather(date_time, False, location.latitude, location.longitude)
+    
+        prompt = await generate_banner_context(date_time, location, forecast, mood, other_context)
+        l.debug(f"Prompt: {prompt}")
+        final_path = await img.workflow(prompt, scene=OBSIDIAN_BANNER_SCENE, destination_path=destination_path)
+        if not str(local_path) in str(final_path):
+            l.info(f"Apparent mismatch between local path, {local_path}, and final_path, {final_path}")
+        jpg_embed = f"\"![[{local_path}]]\""
+        await update_frontmatter(date_time, "banner", jpg_embed)
+        return local_path
     else:
-        display_name = ""
+        l.warn(f"generate_banner called, but comfyui extension is disabled")
 
-    if not forecast:
-        forecast = "The weather forecast is: " + await update_dn_weather(date_time)
 
-    sentiment = await sentiment_analysis(date_time)
-    mood = sentiment if not mood else mood
-    mood = f"Mood: {mood}" if mood else ""
-    if mood and sentiment: mood = f"Mood: {mood}, {sentiment}"
-    elif mood and not sentiment: mood = f"Mood: {mood}"
-    elif sentiment and not mood: mood = f"Mood: {sentiment}"
-    else: mood = ""
-
-    events = await cal.get_events(date_time, date_time)
-    formatted_events = []
-    for event in events:
-        event_str = event.get('name')
-        if event.get('location'):
-            event_str += f" at {event.get('location')}"
-        formatted_events.append(event_str)
-
-    additional_info = ', '.join(formatted_events) if formatted_events else ''
-
-    other_context = f"{other_context}, {additional_info}" if other_context else additional_info
-    other_context = f"Additional information: {other_context}" if other_context else ""
-
-    prompt = "Generate an aesthetically appealing banner image for a daily note that helps to visualize the following scene information: "
-    prompt += "\n".join([display_name, forecast, mood, other_context])
-
-    return prompt
+async def generate_banner_context(date_time, location: Location, forecast: str, mood: str, other_context: str):
+    if Sys.EXTENSIONS.comfyui:
+        display_name = "Location: "
+        if location and isinstance(location, Location):
+            lat, lon = location.latitude, location.longitude
+            override_location = GEO.find_override_location(lat, lon)
+            display_name += f"{override_location}, " if override_location else ""
+            if location.display_name:
+                display_name += f"{location.display_name}"
+    
+            else:
+                display_name += f"{location.road}, " if location.road else ""
+                display_name += f"the {location.neighbourhood} neighbourhood of " if location.neighbourhood else ""
+                display_name += f"the {location.suburb} suburb of " if location.suburb else ""
+                display_name += f"the {location.quarter} quarter, " if location.quarter else ""
+                display_name += f"{location.city}, " if location.city else ""
+                display_name += f"{location.state} " if location.state else ""
+                display_name += f"{location.country} " if location.country else ""
+    
+            if display_name == "Location: ":
+                geocoded_location = await GEO.code((lat, lon))
+                if geocoded_location.display_name or geocoded_location.city or geocoded_location.country:
+                    return await generate_banner_context(date_time, geocoded_location, forecast, mood, other_context)
+                else:
+                    l.warning(f"Failed to get a useable location for purposes of generating a banner, but we'll generate one anyway.")
+        elif location and isinstance(location, str):
+            display_name = f"Location: {location}\n"
+        else:
+            display_name = ""
+    
+        if not forecast:
+            forecast = "The weather forecast is: " + await update_dn_weather(date_time)
+    
+        sentiment = await sentiment_analysis(date_time)
+        mood = sentiment if not mood else mood
+        mood = f"Mood: {mood}" if mood else ""
+        if mood and sentiment: mood = f"Mood: {mood}, {sentiment}"
+        elif mood and not sentiment: mood = f"Mood: {mood}"
+        elif sentiment and not mood: mood = f"Mood: {sentiment}"
+        else: mood = ""
+    
+        events = await cal.get_events(date_time, date_time)
+        formatted_events = []
+        for event in events:
+            event_str = event.get('name')
+            if event.get('location'):
+                event_str += f" at {event.get('location')}"
+            formatted_events.append(event_str)
+    
+        additional_info = ', '.join(formatted_events) if formatted_events else ''
+    
+        other_context = f"{other_context}, {additional_info}" if other_context else additional_info
+        other_context = f"Additional information: {other_context}" if other_context else ""
+    
+        prompt = "Generate an aesthetically appealing banner image for a daily note that helps to visualize the following scene information: "
+        prompt += "\n".join([display_name, forecast, mood, other_context])
+    
+        return prompt
+    else:
+        l.warn(f"generate_banner_context called, but comfyui extension disabled")
 
 
 async def get_note(date_time: dt_datetime):
