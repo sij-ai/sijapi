@@ -170,7 +170,6 @@ CF_IP = DATA_DIR / "cf_ip.txt" # to be deprecated soon
 CF_DOMAINS_PATH = DATA_DIR / "cf_domains.json" # to be deprecated soon
 
 # Caddy - not fully implemented
-Sys.URL = os.getenv("Sys.URL")
 CADDY_SERVER = os.getenv('CADDY_SERVER', None)
 CADDYFILE_PATH = os.getenv("CADDYFILE_PATH", "") if CADDY_SERVER is not None else None
 CADDY_API_KEY = os.getenv("CADDY_API_KEY")
