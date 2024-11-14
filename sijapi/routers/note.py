@@ -583,37 +583,38 @@ async def update_dn_weather(date_time: dt_datetime, force_refresh: bool = False,
     try:
         if lat and lon:
             place = await GEO.code((lat, lon))
-
         else:
             l.debug(f"Updating weather for {date_time}")
             places = await gis.fetch_locations(date_time)
             place = places[0]
             lat = place.latitude
             lon = place.longitude
-
-        l.debug(f"lat: {lat}, lon: {lon}, place: {place}")
+    
+        # Get local timezone for the coordinates
+        local_tz = await GEO.timezone(lat, lon)
+        if not local_tz:
+            raise ValueError("Could not determine timezone for coordinates")
+        
+        l.debug(f"lat: {lat}, lon: {lon}, place: {place}, timezone: {local_tz}")
+        
         city = GEO.find_override_location(lat, lon)
         if city:
             l.info(f"Using override location: {city}")
-
         else:
             if place.city and place.city != "":
                 city = place.city
                 l.info(f"City in data: {city}")
-
             else:
                 location = await GEO.code((lat, lon))
                 l.debug(f"location: {location}")
                 city = location.name
                 city = city if city else location.city
                 city = city if city else location.house_number + ' ' + location.road
-
                 l.debug(f"City geocoded: {city}")
-
-        # Assemble journal path
-        absolute_path, relative_path = assemble_journal_path(date_time, filename="Weather", extension=".md", no_timestamp = True)
+    
+        absolute_path, relative_path = assemble_journal_path(date_time, filename="Weather", extension=".md", no_timestamp=True)
         l.debug(f"Journal path: absolute_path={absolute_path}, relative_path={relative_path}")
-
+    
         try:
             l.debug(f"passing date_time {date_time.strftime('%Y-%m-%d %H:%M:%S')}, {lat}/{lon} into get_weather")
             day = await weather.get_weather(date_time, lat, lon, force_refresh)
@@ -622,44 +623,44 @@ async def update_dn_weather(date_time: dt_datetime, force_refresh: bool = False,
                 DailyWeather = day.get('DailyWeather')
                 HourlyWeather = day.get('HourlyWeather')
                 if DailyWeather:
-                    # l.debug(f"Day: {DailyWeather}")
                     icon = DailyWeather.get('icon')
                     l.debug(f"Icon: {icon}")
-
+    
                     weather_icon, admonition = get_icon_and_admonition(icon) if icon else (":LiSunMoon:", "ad-weather")
-
                     temp = DailyWeather.get('feelslike')
-
+    
                     if DailyWeather.get('tempmax', 0) > 85:
                         tempicon = ":RiTempHotLine:"
                     elif DailyWeather.get('tempmin', 65) < 32:
                         tempicon = ":LiThermometerSnowflake:"
                     else:
                         tempicon = ":LiThermometerSun:"
+    
                     wind_direction = convert_degrees_to_cardinal(DailyWeather.get("winddir"))
                     wind_str = f":LiWind: {DailyWeather.get('windspeed')}mph {wind_direction}"
                     gust = DailyWeather.get('windgust', 0)
-
+    
                     if gust and gust > DailyWeather.get('windspeed') * 1.2:
                         wind_str += f", gusts to {DailyWeather.get('windgust')}mph"
-
+    
                     uvindex = DailyWeather.get('uvindex', 0)
                     uvwarn = f" - :LiRadiation: Caution! UVI today is {uvindex}! :LiRadiation:\n" if (uvindex and uvindex > 8) else ""
-
-                    sunrise = DailyWeather.get('sunrise')
-                    sunset = DailyWeather.get('sunset')
-                    srise_str = sunrise.time().strftime("%H:%M")
-                    sset_str = sunset.time().strftime("%H:%M")
-
-
-                    date_str = date_time.strftime("%Y-%m-%d")
-                    now = dt_datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
+    
+                    # Convert sunrise/sunset times to local timezone
+                    sunrise = DailyWeather.get('sunrise').astimezone(local_tz)
+                    sunset = DailyWeather.get('sunset').astimezone(local_tz)
+                    srise_str = sunrise.strftime("%H:%M")
+                    sset_str = sunset.strftime("%H:%M")
+    
+                    date_str = date_time.astimezone(local_tz).strftime("%Y-%m-%d")
+                    now = dt_datetime.now(local_tz).strftime("%Y-%m-%d %H:%M:%S")
+    
                     detailed_forecast = (
                         f"---\n"
                         f"date: {date_str}\n"
                         f"latitude: {lat}\n"
                         f"longitude: {lon}\n"
+                        f"timezone: {local_tz}\n"
                         f"tags:\n"
                         f" - weather\n"
                         f"updated: {now}\n"
@@ -675,68 +676,66 @@ async def update_dn_weather(date_time: dt_datetime, force_refresh: bool = False,
                         f"title: {DailyWeather.get('description')} \n"
                     )
                     narrative = f"{city} on {date_str}: high of {DailyWeather.get('tempmax')}, low of {DailyWeather.get('tempmin')}. {DailyWeather.get('description')}"
-
+    
                     if HourlyWeather:
                         times, condition_symbols, temps, winds = [], [], [], []
-
+    
                         for hour in HourlyWeather:
-                            if hour.get('datetime').strftime("%H:%M:%S") in HOURLY_COLUMNS_MAPPING.values():
-
-                                times.append(format_hourly_time(hour))
-
+                            # Convert hourly datetime to local timezone before checking/formatting
+                            local_hour = hour.get('datetime').astimezone(local_tz)
+                            if local_hour.strftime("%H:%M:%S") in HOURLY_COLUMNS_MAPPING.values():
+                                # Pass localized datetime to formatting functions
+                                times.append(format_hourly_time(local_hour))
                                 condition_symbols.append(format_hourly_icon(hour, sunrise, sunset))
-
                                 temps.append(format_hourly_temperature(hour))
-
                                 winds.append(format_hourly_wind(hour))
-
+    
                         detailed_forecast += assemble_hourly_data_table(times, condition_symbols, temps, winds)
                         detailed_forecast += f"```\n\n"
-
+    
                     l.debug(f"Detailed forecast: {detailed_forecast}.")
-
+    
                     with open(absolute_path, 'w', encoding='utf-8') as note_file:
                         note_file.write(detailed_forecast)
-
+    
                     l.debug(f"Operation complete.")
-
                     return narrative
                 else:
                     l.error(f"Failed to get DailyWeather from day: {day}")
             else:
                 l.error(f"Failed to get day")
                 raise HTTPException(status_code=500, detail="Failed to retrieve weather data")
-
+    
         except HTTPException as e:
             l.error(f"HTTP error: {e}")
             l.error(traceback.format_exc())
             raise e
-
+    
         except Exception as e:
             l.error(f"Error: {e}")
             l.error(traceback.format_exc())
             raise HTTPException(status_code=999, detail=f"Error: {e}")
-
+    
     except ValueError as ve:
         l.error(f"Value error in update_dn_weather: {str(ve)}")
         l.error(traceback.format_exc())
         raise HTTPException(status_code=400, detail=f"Value error: {str(ve)}")
-
+    
     except Exception as e:
         l.error(f"Error in update_dn_weather: {str(e)}")
         l.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Error in update_dn_weather: {str(e)}")
 
 
-def format_hourly_time(hour):
+def format_hourly_time(hour_datetime):
     try:
-        hour_12 = convert_to_12_hour_format(hour.get("datetime"))
+        # Assumes hour_datetime is already in local timezone from the calling function
+        hour_12 = convert_to_12_hour_format(hour_datetime)
         return hour_12
     except Exception as e:
         l.error(f"Error in format_hourly_time: {str(e)}")
         l.error(traceback.format_exc())
         return ""
-
 
 def format_hourly_icon(hour, sunrise, sunset):
     try:
@@ -753,9 +752,13 @@ def format_hourly_icon(hour, sunrise, sunset):
             precip_type = hour.get('preciptype', [''])
             sp_str = f"{str(precip)}mm"
 
-        if abs(hour.get('datetime') - sunrise) < timedelta(minutes=60):
+        # Use the already-converted datetime from the calling function
+        hour_datetime = hour.get('datetime')  # This should already be in local timezone
+        
+        # Sunrise and sunset should already be in local timezone from calling function
+        if abs(hour_datetime - sunrise) < timedelta(minutes=60):
             icon = ":LiSunrise:"
-        elif abs(hour.get('datetime') - sunset) < timedelta(minutes=60):
+        elif abs(hour_datetime - sunset) < timedelta(minutes=60):
             icon = ":LiSunset:"
         elif "thunder" in hour.get('icon'):
             icon += ":LiZap:"
