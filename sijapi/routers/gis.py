@@ -8,6 +8,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 import random
 from pathlib import Path
 import traceback
+import matplotlib.pyplot as plt
 from datetime import datetime, timezone
 from typing import Union, List
 import folium
@@ -122,71 +123,49 @@ async def get_last_location() -> Optional[Location]:
 
     
 async def generate_and_save_heatmap(
-    start_date: Union[str, int, datetime],
-    end_date: Optional[Union[str, int, datetime]] = None,
-    output_path: Optional[Path] = None
-) -> Path:
-    """
-Generate a heatmap for the given date range and save it as a PNG file using Folium.
-
-:param start_date: The start date for the map (or the only date if end_date is not provided)
-:param end_date: The end date for the map (optional)
-:param output_path: The path to save the PNG file (optional)
-:return: The path where the PNG file was saved
-    """
-    try:
-        start_date = await dt(start_date)
-        if end_date:
-            end_date = await dt(end_date)
-        else:
-            end_date = start_date.replace(hour=23, minute=59, second=59)
-
-        locations = await fetch_locations(start_date, end_date)
-        if not locations:
-            raise ValueError("No locations found for the given date range")
-
-        m = folium.Map()
-        heat_data = [[loc.latitude, loc.longitude] for loc in locations]
-        HeatMap(heat_data).add_to(m)
-
-        bounds = [
-            [min(loc.latitude for loc in locations), min(loc.longitude for loc in locations)],
-            [max(loc.latitude for loc in locations), max(loc.longitude for loc in locations)]
-        ]
-        m.fit_bounds(bounds)
-        
-        try:
+        start_date: Union[str, int, datetime],
+        end_date: Optional[Union[str, int, datetime]] = None,
+        output_path: Optional[Path] = None
+    ) -> Path:
+        """
+    Generate a heatmap for the given date range and save it as a PNG file using matplotlib.
+    
+    :param start_date: The start date for the map (or the only date if end_date is not provided)
+    :param end_date: The end date for the map (optional)
+    :param output_path: The path to save the PNG file (optional)
+    :return: The path where the PNG file was saved
+        """
+        try:            
+            start_date = await dt(start_date)
+            if end_date:
+                end_date = await dt(end_date)
+            else:
+                end_date = start_date.replace(hour=23, minute=59, second=59)
+    
+            locations = await fetch_locations(start_date, end_date)
+            if not locations:
+                raise ValueError("No locations found for the given date range")
+    
+            lats = [loc.latitude for loc in locations]
+            lons = [loc.longitude for loc in locations]
+    
+            plt.figure(figsize=(10, 6))
+            plt.hist2d(lons, lats, bins=50, cmap='hot')
+            plt.colorbar(label='Count')
+            
             if output_path is None:
                 output_path, relative_path = assemble_journal_path(end_date, filename="map", extension=".png", no_timestamp=True)
-            
-            # Save as HTML first
-            temp_html = output_path.with_suffix('.html')
-            m.save(str(temp_html))
-            
-            # Use Playwright to convert HTML to PNG
-            async with async_playwright() as p:
-                browser = await p.chromium.launch()
-                page = await browser.new_page()
-                await page.goto(f'file://{temp_html.absolute()}')
-                # Wait for map to load
-                await page.wait_for_load_state('networkidle')
-                # Take screenshot
-                await page.screenshot(path=str(output_path))
-                await browser.close()
-            
-            # Clean up temporary HTML file
-            temp_html.unlink()
     
+            plt.savefig(output_path)
+            plt.close()
+            
             l.info(f"Heatmap saved as PNG: {output_path}")
             return output_path
-            
+    
         except Exception as e:
-            l.error(f"Error saving heatmap: {str(e)}")
+            l.error(f"Error generating heatmap: {str(e)}")
             raise
 
-    except Exception as e:
-        l.error(f"Error generating heatmap: {str(e)}")
-        raise
 
 
 async def generate_map(start_date: datetime, end_date: datetime, max_points: int):
