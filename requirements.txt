@@ -1,8 +1,11 @@
 setuptools
+adblockparser
 aiofiles
 aiohttp
 asyncpg
+better_profanity
 elevation
+matplotlib
 pydantic
 python-dotenv
 pyyaml
@@ -129,5 +132,3 @@ websockets
 whisper
 whisperplus
 youtube_dl
-better_profanity
-adblockparser

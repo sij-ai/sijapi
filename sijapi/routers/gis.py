@@ -135,7 +135,10 @@ async def generate_and_save_heatmap(
     :param output_path: The path to save the PNG file (optional)
     :return: The path where the PNG file was saved
         """
-        try:            
+        try:
+            import matplotlib.pyplot as plt
+            import numpy as np
+            
             start_date = await dt(start_date)
             if end_date:
                 end_date = await dt(end_date)
@@ -149,14 +152,24 @@ async def generate_and_save_heatmap(
             lats = [loc.latitude for loc in locations]
             lons = [loc.longitude for loc in locations]
     
-            plt.figure(figsize=(10, 6))
-            plt.hist2d(lons, lats, bins=50, cmap='hot')
-            plt.colorbar(label='Count')
+            plt.style.use('dark_background')
+            fig, ax = plt.subplots(figsize=(10, 6))
+            
+            # Create heatmap
+            heatmap, xedges, yedges = np.histogram2d(lons, lats, bins=50)
+            extent = [xedges[0], xedges[-1], yedges[0], yedges[-1]]
+            
+            # Plot with no axes or labels
+            ax.imshow(heatmap.T, extent=extent, origin='lower', cmap='hot', interpolation='gaussian')
+            ax.axis('off')
+            
+            # Remove white border
+            plt.gca().set_position([0, 0, 1, 1])
             
             if output_path is None:
                 output_path, relative_path = assemble_journal_path(end_date, filename="map", extension=".png", no_timestamp=True)
     
-            plt.savefig(output_path)
+            plt.savefig(output_path, bbox_inches='tight', pad_inches=0, transparent=True)
             plt.close()
             
             l.info(f"Heatmap saved as PNG: {output_path}")
@@ -165,7 +178,6 @@ async def generate_and_save_heatmap(
         except Exception as e:
             l.error(f"Error generating heatmap: {str(e)}")
             raise
-
 
 
 async def generate_map(start_date: datetime, end_date: datetime, max_points: int):
