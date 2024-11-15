@@ -13,6 +13,7 @@ from typing import Union, List
 import folium
 from folium.plugins import HeatMap, MarkerCluster, Search
 from folium.plugins import Fullscreen, MiniMap, MousePosition, Geocoder, Draw, MeasureControl
+from playwright.async_api import async_playwright
 from zoneinfo import ZoneInfo
 from dateutil.parser import parse as dateutil_parse
 from typing import Optional, List, Union
@@ -119,8 +120,7 @@ async def get_last_location() -> Optional[Location]:
     
     return None
 
-
-
+    
 async def generate_and_save_heatmap(
     start_date: Union[str, int, datetime],
     end_date: Optional[Union[str, int, datetime]] = None,
@@ -158,8 +158,24 @@ Generate a heatmap for the given date range and save it as a PNG file using Foli
         try:
             if output_path is None:
                 output_path, relative_path = assemble_journal_path(end_date, filename="map", extension=".png", no_timestamp=True)
-    
-            m.save(str(output_path))
+            
+            # Save as HTML first
+            temp_html = output_path.with_suffix('.html')
+            m.save(str(temp_html))
+            
+            # Use Playwright to convert HTML to PNG
+            async with async_playwright() as p:
+                browser = await p.chromium.launch()
+                page = await browser.new_page()
+                await page.goto(f'file://{temp_html.absolute()}')
+                # Wait for map to load
+                await page.wait_for_load_state('networkidle')
+                # Take screenshot
+                await page.screenshot(path=str(output_path))
+                await browser.close()
+            
+            # Clean up temporary HTML file
+            temp_html.unlink()
     
             l.info(f"Heatmap saved as PNG: {output_path}")
             return output_path
@@ -171,6 +187,7 @@ Generate a heatmap for the given date range and save it as a PNG file using Foli
     except Exception as e:
         l.error(f"Error generating heatmap: {str(e)}")
         raise
+
 
 async def generate_map(start_date: datetime, end_date: datetime, max_points: int):
     locations = await fetch_locations(start_date, end_date)
