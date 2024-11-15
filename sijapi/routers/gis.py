@@ -125,17 +125,17 @@ async def get_last_location() -> Optional[Location]:
     
 
 async def generate_and_save_heatmap(
-        start_date: Union[str, int, datetime],
-        end_date: Optional[Union[str, int, datetime]] = None,
-        output_path: Optional[Path] = None
-    ) -> Path:
+    start_date: Union[str, int, datetime],
+    end_date: Optional[Union[str, int, datetime]] = None,
+    output_path: Optional[Path] = None
+) -> Optional[Path]:
     """
 Generate a heatmap for the given date range and save it as a PNG file.
 
 :param start_date: The start date for the map (or the only date if end_date is not provided)
 :param end_date: The end date for the map (optional)
 :param output_path: The path to save the PNG file (optional)
-:return: The path where the PNG file was saved
+:return: The path where the PNG file was saved, or None if no locations found
     """
     try:
         from staticmap import StaticMap, CircleMarker
@@ -149,7 +149,7 @@ Generate a heatmap for the given date range and save it as a PNG file.
 
         locations = await fetch_locations(start_date, end_date)
         if not locations:
-            raise ValueError("No locations found for the given date range")
+            return None
 
         # Calculate bounds
         lats = [loc.latitude for loc in locations]
@@ -157,10 +157,10 @@ Generate a heatmap for the given date range and save it as a PNG file.
         lat_diff = max(lats) - min(lats)
         lon_diff = max(lons) - min(lons)
         
-        # Calculate zoom level using system config
-        zoom = min(
+        # If all points at same location, use default zoom
+        zoom = 12 if (lat_diff == 0 and lon_diff == 0) else min(
             Gis.map.max_zoom,
-            int(math.log2(360 / max(lat_diff, lon_diff))) - 1
+            int(math.log2(360 / max(0.01, lat_diff, lon_diff))) - 1
         )
 
         # Create map with correct URL template
@@ -190,7 +190,6 @@ Generate a heatmap for the given date range and save it as a PNG file.
     except Exception as e:
         l.error(f"Error generating heatmap: {str(e)}")
         raise
-
 
 
 
