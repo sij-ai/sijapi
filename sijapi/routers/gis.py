@@ -9,6 +9,8 @@ import random
 from pathlib import Path
 import traceback
 import matplotlib.pyplot as plt
+import contextily as ctx
+import numpy as np
 from datetime import datetime, timezone
 from typing import Union, List
 import folium
@@ -122,6 +124,7 @@ async def get_last_location() -> Optional[Location]:
     return None
 
     
+
 async def generate_and_save_heatmap(
         start_date: Union[str, int, datetime],
         end_date: Optional[Union[str, int, datetime]] = None,
@@ -136,11 +139,7 @@ Generate a heatmap for the given date range and save it as a PNG file.
 :return: The path where the PNG file was saved
     """
     try:
-        import matplotlib.pyplot as plt
-        import contextily as ctx
-        import numpy as np
-        from matplotlib.colors import LinearSegmentedColormap
-        
+
         start_date = await dt(start_date)
         if end_date:
             end_date = await dt(end_date)
@@ -160,37 +159,31 @@ Generate a heatmap for the given date range and save it as a PNG file.
         buffer = max(lat_range, lon_range) * 0.05
         
         # Enforce minimum zoom
-        MIN_RANGE = 0.05  # roughly 3-4 miles
+        MIN_RANGE = 0.05
         lat_range = max(lat_range, MIN_RANGE)
         lon_range = max(lon_range, MIN_RANGE)
 
-        bounds = [
-            min(lons) - buffer,
-            max(lons) + buffer,
-            min(lats) - buffer,
-            max(lats) + buffer
-        ]
-
         # Create figure with fixed size
-        fig, ax = plt.subplots(figsize=(6.4, 3.6), dpi=100)  # 640x360 pixels
+        fig, ax = plt.subplots(figsize=(6.4, 3.6), dpi=100)
 
-        # Add dark basemap
-        ctx.add_basemap(
-            ax,
-            crs='EPSG:4326',
-            source=ctx.providers.CartoDB.DarkMatter,
-            zoom='auto',
-            bbox=bounds
-        )
+        # Set map extent
+        ax.set_xlim(min(lons) - buffer, max(lons) + buffer)
+        ax.set_ylim(min(lats) - buffer, max(lats) + buffer)
 
         # Create heatmap overlay
         heatmap = ax.hexbin(
             lons, lats,
-            extent=bounds,
             gridsize=25,
             cmap='hot',
             alpha=0.6,
             zorder=2
+        )
+
+        # Add dark basemap
+        ctx.add_basemap(
+            ax,
+            source=ctx.providers.CartoDB.DarkMatter,
+            zoom='auto'
         )
 
         # Remove axes and margins
