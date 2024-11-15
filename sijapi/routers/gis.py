@@ -124,7 +124,6 @@ async def get_last_location() -> Optional[Location]:
 
     
 
-
 async def generate_and_save_heatmap(
     start_date: Union[str, int, datetime],
     end_date: Optional[Union[str, int, datetime]] = None,
@@ -139,6 +138,8 @@ Generate a heatmap for the given date range and save it as a PNG file.
 :return: The path where the PNG file was saved
     """
     try:
+        from staticmap import StaticMap, CircleMarker
+        
         start_date = await dt(start_date)
         if end_date:
             end_date = await dt(end_date)
@@ -149,12 +150,15 @@ Generate a heatmap for the given date range and save it as a PNG file.
         if not locations:
             raise ValueError("No locations found for the given date range")
 
-        # Create map
-        m = StaticMap(640, 360, url_template='https://cartodb-basemaps-{s}.global.ssl.fastly.net/dark_all/{z}/{x}/{y}.png')
+        # Create map with correct URL template
+        m = StaticMap(
+            640, 360,
+            url_template='https://cartodb-basemaps-a.global.ssl.fastly.net/dark_all/{z}/{x}/{y}.png'
+        )
 
         # Add markers with heat effect
         for loc in locations:
-            marker = CircleMarker((loc.longitude, loc.latitude), 'red', 12)
+            marker = CircleMarker((loc.longitude, loc.latitude), '#ff0000', 12)
             m.add_marker(marker)
 
         # Render the image
