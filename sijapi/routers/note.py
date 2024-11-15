@@ -321,7 +321,7 @@ Obsidian helper. Takes a datetime and creates a new daily note. Note: it uses th
     fm_day = date_time.strftime("%Y-%m-%d")
 
     _, weather_path = assemble_journal_path(date_time, filename="Weather", extension=".md", no_timestamp = True)
-    weather_note = await update_dn_weather(date_time)
+    weather_note = await update_dn_weather(date_time, force_refresh=True)
     weather_embed = f"![[{weather_path}]]\n"
 
     events = await update_daily_note_events(date_time)
@@ -568,14 +568,15 @@ async def note_weather_get(
 
 
 @note.post("/update/note/{date}")
-async def post_update_daily_weather_and_calendar_and_timeslips(date: str, refresh: str="False") -> PlainTextResponse:
+async def post_update_daily_weather_and_calendar_and_timeslips(date: str, refresh: str="True") -> PlainTextResponse:
     date_time = await gis.dt(date)
     l.debug(f"Using {date_time.strftime('%Y-%m-%d %H:%M:%S')} as our dt_datetime in post_update_daily_weather_and_calendar_and_timeslips.")
-    force_refresh_weather = refresh == "True"
+    force_refresh_weather = refresh == "True" 
     await update_dn_weather(date_time, force_refresh_weather)
     await update_daily_note_events(date_time)
     await build_daily_timeslips(date_time)
     return f"[Refresh]({Sys.URL}/update/note/{date_time.strftime('%Y-%m-%d')}"
+
 
 
 async def update_dn_weather(date_time: dt_datetime, force_refresh: bool = False, lat: float = None, lon: float = None):
