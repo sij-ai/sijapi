@@ -28,6 +28,7 @@ Db = Database.init('sys') # load configuration from config/sys.yaml
 Dir = DirConfig.init('dirs') # load configuration from config/dirs.yaml
 
 # Load module configurations
+Gis = Config.init('gis', 'secrets', Dir)
 Img = Config.init('img', 'secrets', Dir)
 Llm = Config.init('llm', 'secrets', Dir)
 News = Config.init('news', 'secrets', Dir)

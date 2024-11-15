@@ -4,6 +4,9 @@ custom_locations:
     longitude: -123.049396
     radius: 2
 
+map:
+    max_zoom: 11
+    
 layers:
     - url: "https://gis.blm.gov/arcgis/rest/services/Cadastral/BLM_Natl_PLSS_CadNSDI/MapServer/1/query"
       table_name: "public.plss_townships"

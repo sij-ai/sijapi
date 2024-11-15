@@ -19,7 +19,7 @@ from playwright.async_api import async_playwright
 from zoneinfo import ZoneInfo
 from dateutil.parser import parse as dateutil_parse
 from typing import Optional, List, Union
-from sijapi import Sys, Db, TZ, GEO
+from sijapi import Sys, Db, TZ, GEO, Gis
 from sijapi.classes import Location
 from sijapi.utilities import haversine, assemble_journal_path
 from sijapi.serialization import json_dumps
@@ -124,7 +124,7 @@ async def get_last_location() -> Optional[Location]:
 
     
 
-async def generate_and_save_heatmap(
+wasync def generate_and_save_heatmap(
     start_date: Union[str, int, datetime],
     end_date: Optional[Union[str, int, datetime]] = None,
     output_path: Optional[Path] = None
@@ -139,6 +139,7 @@ Generate a heatmap for the given date range and save it as a PNG file.
     """
     try:
         from staticmap import StaticMap, CircleMarker
+        import math
         
         start_date = await dt(start_date)
         if end_date:
@@ -150,10 +151,23 @@ Generate a heatmap for the given date range and save it as a PNG file.
         if not locations:
             raise ValueError("No locations found for the given date range")
 
-        # Create map with correct URL template
+        # Calculate bounds
+        lats = [loc.latitude for loc in locations]
+        lons = [loc.longitude for loc in locations]
+        lat_diff = max(lats) - min(lats)
+        lon_diff = max(lons) - min(lons)
+        
+        # Calculate zoom level - lower number = more zoomed out
+        zoom = min(
+            Gis.map.max_zoom,
+            int(math.log2(360 / max(lat_diff, lon_diff))) - 1
+        )
+
+        # Create map with correct URL template and zoom
         m = StaticMap(
             640, 360,
-            url_template='https://cartodb-basemaps-a.global.ssl.fastly.net/dark_all/{z}/{x}/{y}.png'
+            url_template='https://cartodb-basemaps-a.global.ssl.fastly.net/dark_all/{z}/{x}/{y}.png',
+            zoom=zoom
         )
 
         # Add markers with heat effect
@@ -174,7 +188,6 @@ Generate a heatmap for the given date range and save it as a PNG file.
     except Exception as e:
         l.error(f"Error generating heatmap: {str(e)}")
         raise
-
 
 
 
