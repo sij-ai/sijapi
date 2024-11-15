@@ -125,10 +125,10 @@ async def get_last_location() -> Optional[Location]:
     
 
 async def generate_and_save_heatmap(
-    start_date: Union[str, int, datetime],
-    end_date: Optional[Union[str, int, datetime]] = None,
-    output_path: Optional[Path] = None
-) -> Path:
+        start_date: Union[str, int, datetime],
+        end_date: Optional[Union[str, int, datetime]] = None,
+        output_path: Optional[Path] = None
+    ) -> Path:
     """
 Generate a heatmap for the given date range and save it as a PNG file.
 
@@ -157,18 +157,20 @@ Generate a heatmap for the given date range and save it as a PNG file.
         lat_diff = max(lats) - min(lats)
         lon_diff = max(lons) - min(lons)
         
-        # Calculate zoom level - lower number = more zoomed out
+        # Calculate zoom level using system config
         zoom = min(
             Gis.map.max_zoom,
             int(math.log2(360 / max(lat_diff, lon_diff))) - 1
         )
 
-        # Create map with correct URL template and zoom
+        # Create map with correct URL template
         m = StaticMap(
             640, 360,
-            url_template='https://cartodb-basemaps-a.global.ssl.fastly.net/dark_all/{z}/{x}/{y}.png',
-            zoom=zoom
+            url_template='https://cartodb-basemaps-a.global.ssl.fastly.net/dark_all/{z}/{x}/{y}.png'
         )
+        
+        # Set zoom level after creation
+        m.zoom = zoom
 
         # Add markers with heat effect
         for loc in locations:
@@ -188,6 +190,7 @@ Generate a heatmap for the given date range and save it as a PNG file.
     except Exception as e:
         l.error(f"Error generating heatmap: {str(e)}")
         raise
+
 
 
 
