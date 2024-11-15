@@ -127,57 +127,89 @@ async def generate_and_save_heatmap(
         end_date: Optional[Union[str, int, datetime]] = None,
         output_path: Optional[Path] = None
     ) -> Path:
-        """
-    Generate a heatmap for the given date range and save it as a PNG file using matplotlib.
-    
-    :param start_date: The start date for the map (or the only date if end_date is not provided)
-    :param end_date: The end date for the map (optional)
-    :param output_path: The path to save the PNG file (optional)
-    :return: The path where the PNG file was saved
-        """
-        try:
-            import matplotlib.pyplot as plt
-            import numpy as np
-            
-            start_date = await dt(start_date)
-            if end_date:
-                end_date = await dt(end_date)
-            else:
-                end_date = start_date.replace(hour=23, minute=59, second=59)
-    
-            locations = await fetch_locations(start_date, end_date)
-            if not locations:
-                raise ValueError("No locations found for the given date range")
-    
-            lats = [loc.latitude for loc in locations]
-            lons = [loc.longitude for loc in locations]
-    
-            plt.style.use('dark_background')
-            fig, ax = plt.subplots(figsize=(10, 6))
-            
-            # Create heatmap
-            heatmap, xedges, yedges = np.histogram2d(lons, lats, bins=50)
-            extent = [xedges[0], xedges[-1], yedges[0], yedges[-1]]
-            
-            # Plot with no axes or labels
-            ax.imshow(heatmap.T, extent=extent, origin='lower', cmap='hot', interpolation='gaussian')
-            ax.axis('off')
-            
-            # Remove white border
-            plt.gca().set_position([0, 0, 1, 1])
-            
-            if output_path is None:
-                output_path, relative_path = assemble_journal_path(end_date, filename="map", extension=".png", no_timestamp=True)
-    
-            plt.savefig(output_path, bbox_inches='tight', pad_inches=0, transparent=True)
-            plt.close()
-            
-            l.info(f"Heatmap saved as PNG: {output_path}")
-            return output_path
-    
-        except Exception as e:
-            l.error(f"Error generating heatmap: {str(e)}")
-            raise
+    """
+Generate a heatmap for the given date range and save it as a PNG file.
+
+:param start_date: The start date for the map (or the only date if end_date is not provided)
+:param end_date: The end date for the map (optional)
+:param output_path: The path to save the PNG file (optional)
+:return: The path where the PNG file was saved
+    """
+    try:
+        import matplotlib.pyplot as plt
+        import contextily as ctx
+        import numpy as np
+        from matplotlib.colors import LinearSegmentedColormap
+        
+        start_date = await dt(start_date)
+        if end_date:
+            end_date = await dt(end_date)
+        else:
+            end_date = start_date.replace(hour=23, minute=59, second=59)
+
+        locations = await fetch_locations(start_date, end_date)
+        if not locations:
+            raise ValueError("No locations found for the given date range")
+
+        lats = np.array([loc.latitude for loc in locations])
+        lons = np.array([loc.longitude for loc in locations])
+
+        # Calculate bounds with 5% buffer
+        lat_range = max(lats) - min(lats)
+        lon_range = max(lons) - min(lons)
+        buffer = max(lat_range, lon_range) * 0.05
+        
+        # Enforce minimum zoom
+        MIN_RANGE = 0.05  # roughly 3-4 miles
+        lat_range = max(lat_range, MIN_RANGE)
+        lon_range = max(lon_range, MIN_RANGE)
+
+        bounds = [
+            min(lons) - buffer,
+            max(lons) + buffer,
+            min(lats) - buffer,
+            max(lats) + buffer
+        ]
+
+        # Create figure with fixed size
+        fig, ax = plt.subplots(figsize=(6.4, 3.6), dpi=100)  # 640x360 pixels
+
+        # Add dark basemap
+        ctx.add_basemap(
+            ax,
+            crs='EPSG:4326',
+            source=ctx.providers.CartoDB.DarkMatter,
+            zoom='auto',
+            bbox=bounds
+        )
+
+        # Create heatmap overlay
+        heatmap = ax.hexbin(
+            lons, lats,
+            extent=bounds,
+            gridsize=25,
+            cmap='hot',
+            alpha=0.6,
+            zorder=2
+        )
+
+        # Remove axes and margins
+        ax.set_axis_off()
+        plt.subplots_adjust(left=0, right=1, top=1, bottom=0)
+
+        if output_path is None:
+            output_path, relative_path = assemble_journal_path(end_date, filename="map", extension=".png", no_timestamp=True)
+
+        plt.savefig(output_path, bbox_inches='tight', pad_inches=0, dpi=100)
+        plt.close()
+        
+        l.info(f"Heatmap saved as PNG: {output_path}")
+        return output_path
+
+    except Exception as e:
+        l.error(f"Error generating heatmap: {str(e)}")
+        raise
+
 
 
 async def generate_map(start_date: datetime, end_date: datetime, max_points: int):
