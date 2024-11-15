@@ -124,7 +124,7 @@ async def get_last_location() -> Optional[Location]:
 
     
 
-wasync def generate_and_save_heatmap(
+async def generate_and_save_heatmap(
     start_date: Union[str, int, datetime],
     end_date: Optional[Union[str, int, datetime]] = None,
     output_path: Optional[Path] = None
