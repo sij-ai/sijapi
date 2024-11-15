@@ -8,9 +8,8 @@ from fastapi.responses import HTMLResponse, JSONResponse
 import random
 from pathlib import Path
 import traceback
-import matplotlib.pyplot as plt
-import contextily as ctx
-import numpy as np
+from staticmap import StaticMap, CircleMarker
+from io import BytesIO
 from datetime import datetime, timezone
 from typing import Union, List
 import folium
@@ -125,11 +124,12 @@ async def get_last_location() -> Optional[Location]:
 
     
 
+
 async def generate_and_save_heatmap(
-        start_date: Union[str, int, datetime],
-        end_date: Optional[Union[str, int, datetime]] = None,
-        output_path: Optional[Path] = None
-    ) -> Path:
+    start_date: Union[str, int, datetime],
+    end_date: Optional[Union[str, int, datetime]] = None,
+    output_path: Optional[Path] = None
+) -> Path:
     """
 Generate a heatmap for the given date range and save it as a PNG file.
 
@@ -139,7 +139,6 @@ Generate a heatmap for the given date range and save it as a PNG file.
 :return: The path where the PNG file was saved
     """
     try:
-
         start_date = await dt(start_date)
         if end_date:
             end_date = await dt(end_date)
@@ -150,58 +149,28 @@ Generate a heatmap for the given date range and save it as a PNG file.
         if not locations:
             raise ValueError("No locations found for the given date range")
 
-        lats = np.array([loc.latitude for loc in locations])
-        lons = np.array([loc.longitude for loc in locations])
+        # Create map
+        m = StaticMap(640, 360, url_template='https://cartodb-basemaps-{s}.global.ssl.fastly.net/dark_all/{z}/{x}/{y}.png')
 
-        # Calculate bounds with 5% buffer
-        lat_range = max(lats) - min(lats)
-        lon_range = max(lons) - min(lons)
-        buffer = max(lat_range, lon_range) * 0.05
+        # Add markers with heat effect
+        for loc in locations:
+            marker = CircleMarker((loc.longitude, loc.latitude), 'red', 12)
+            m.add_marker(marker)
+
+        # Render the image
+        image = m.render()
         
-        # Enforce minimum zoom
-        MIN_RANGE = 0.05
-        lat_range = max(lat_range, MIN_RANGE)
-        lon_range = max(lon_range, MIN_RANGE)
-
-        # Create figure with fixed size
-        fig, ax = plt.subplots(figsize=(6.4, 3.6), dpi=100)
-
-        # Set map extent
-        ax.set_xlim(min(lons) - buffer, max(lons) + buffer)
-        ax.set_ylim(min(lats) - buffer, max(lats) + buffer)
-
-        # Create heatmap overlay
-        heatmap = ax.hexbin(
-            lons, lats,
-            gridsize=25,
-            cmap='hot',
-            alpha=0.6,
-            zorder=2
-        )
-
-        # Add dark basemap
-        ctx.add_basemap(
-            ax,
-            source=ctx.providers.CartoDB.DarkMatter,
-            zoom='auto'
-        )
-
-        # Remove axes and margins
-        ax.set_axis_off()
-        plt.subplots_adjust(left=0, right=1, top=1, bottom=0)
-
         if output_path is None:
             output_path, relative_path = assemble_journal_path(end_date, filename="map", extension=".png", no_timestamp=True)
 
-        plt.savefig(output_path, bbox_inches='tight', pad_inches=0, dpi=100)
-        plt.close()
-        
-        l.info(f"Heatmap saved as PNG: {output_path}")
+        # Save the image
+        image.save(output_path)
         return output_path
 
     except Exception as e:
         l.error(f"Error generating heatmap: {str(e)}")
         raise
+
 
 
 
