@@ -6,6 +6,7 @@ Uses Postgres/PostGIS for location tracking (data obtained via the companion mob
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import HTMLResponse, JSONResponse
 import random
+import math
 from pathlib import Path
 import traceback
 from staticmap import StaticMap, CircleMarker
@@ -15,7 +16,6 @@ from typing import Union, List
 import folium
 from folium.plugins import HeatMap, MarkerCluster, Search
 from folium.plugins import Fullscreen, MiniMap, MousePosition, Geocoder, Draw, MeasureControl
-from playwright.async_api import async_playwright
 from zoneinfo import ZoneInfo
 from dateutil.parser import parse as dateutil_parse
 from typing import Optional, List, Union
@@ -138,9 +138,7 @@ Generate a heatmap for the given date range and save it as a PNG file.
 :return: The path where the PNG file was saved, or None if no locations found
     """
     try:
-        from staticmap import StaticMap, CircleMarker
-        import math
-        
+
         start_date = await dt(start_date)
         if end_date:
             end_date = await dt(end_date)
