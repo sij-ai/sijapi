@@ -176,10 +176,10 @@ profiles:
         img_comment_usr: Write a warm, gracious, upbeat, and flattering response to this Instagram post, in the tone and style befitting a very genuine modern young woman. If the content of the image or caption make it inappapropriate to comment, you may respond with 'PASS' in all capital letters, and without the quote marks, and your comment will not be posted.
         sentiment: positive
 
-openai_key: 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
-ghost_admin_api_key: 65f43092d453d100019bbebf:e0cf327c04689dcfe02b65506f09d3661e8a6f0f0b564a3a55836857067d2b2c
-ghost_admin_url: https://sij.ai/ghost/api/admin
-ghost_content_key: 1c240344beda1bb982eb0deb38
+openai_key: CHANGEME
+ghost_admin_api_key: CHANGEME
+ghost_admin_url: https://CHANGEME.com/ghost/api/admin
+ghost_content_key: CHANGEME
 short_sleep: 5
 long_sleep: 180
 img_gen: ComfyUI
