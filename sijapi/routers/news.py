@@ -20,12 +20,11 @@ from fastapi import APIRouter, BackgroundTasks, UploadFile, Form, HTTPException,
 from pathlib import Path
 from sijapi import Archivist, News, Tts, OBSIDIAN_VAULT_DIR, OBSIDIAN_RESOURCES_DIR
 from sijapi.utilities import html_to_markdown, download_file, sanitize_filename, assemble_journal_path, assemble_archive_path, contains_profanity, is_ad_or_tracker
-from sijapi.routers import gis, llm, tts, note
+from sijapi.routers import gis, llm, tts, note, email
 from sijapi.logs import get_logger
 l = get_logger(__name__)
 
 news = APIRouter()
-
 
 @news.post("/clip")
 async def clip_post(
@@ -153,7 +152,8 @@ async def process_and_save_article(
     title: Optional[str] = None,
     tts_mode: str = "summary",
     voice: str = Tts.elevenlabs.default,
-    site_name: Optional[str] = None
+    site_name: Optional[str] = None,
+    email_address: str = None
 ) -> str:
     '''
 Primary function for saving articles.
@@ -162,7 +162,7 @@ Primary function for saving articles.
         # Fetch and parse article
         article = await fetch_and_parse_article(url)
 
-        try:        
+        try:
             # Generate title and file paths
             title = sanitize_filename(title or article.title or f"Untitled - {dt_datetime.now().strftime('%Y-%m-%d')}")
             markdown_filename, relative_path = assemble_journal_path(dt_datetime.now(), subdir="Articles", filename=title, extension=".md")
@@ -197,10 +197,6 @@ Primary function for saving articles.
         raise HTTPException(status_code=500, detail=str(e))
 
 
-
-
-from newspaper import Article as NewspaperArticle
-
 async def fetch_and_parse_article(url: str) -> Article:
     # Try trafilatura first
     source = trafilatura.fetch_url(url)
@@ -230,7 +226,7 @@ async def fetch_and_parse_article(url: str) -> Article:
     
     # If trafilatura fails, use newspaper3k
     try:
-        newspaper_article = NewspaperArticle(url)
+        newspaper_article = Article(url)
         newspaper_article.download()
         newspaper_article.parse()
         
