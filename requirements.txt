@@ -63,30 +63,30 @@ apscheduler
 asgiref
 aura_sr
 authlib
-backports.zoneinfo
+# backports.zoneinfo
 boto3
 click
 colorama
 contextvars
-cron_descriptor
+#cron_descriptor
 dateparser
 deprecated
-django
-django_apscheduler
+#django
+#django_apscheduler
 exa_py
-factory
+#factory
 faker
-faster_whisper
+# faster_whisper
 ffmpeg
 fire
 flupy
 freezegun
 google
-huggingface_hub
+# huggingface_hub
 jinja2
-khoj
+# khoj
 konlpy
-langchain
+# langchain
 langchain_community
 libtmux
 litellm
@@ -104,31 +104,31 @@ packaging
 pgvector
 posthog
 psutil
-psycopg2
+# psycopg2
 pypdf
 pytest
-r2r
+# r2r
 redis
 resend
 rich
 schedule
-semaphore
-sentence_transformers
-soundfile
+# semaphore
+# sentence_transformers
+# soundfile
 spacy
-sqlalchemy
+# sqlalchemy
 stripe
 tailscale
 tenacity
 tiktoken
-torchaudio
+# torchaudio
 transformers
-twilio
+# twilio
 typing_extensions
 uvicorn
 vecs
-vectordb
+# vectordb
 websockets
-whisper
-whisperplus
-youtube_dl
+# whisper
+# whisperplus
+# youtube_dl

@@ -22,7 +22,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from timezonefinder import TimezoneFinder
 from zoneinfo import ZoneInfo
-from srtm import get_data
+# from srtm import get_data
 import os
 import sys
 from sqlalchemy import text
@@ -391,7 +391,7 @@ class Location(BaseModel):
 class Geocoder:
     def __init__(self, named_locs: Union[str, Path] = None, cache_file: Union[str, Path] = 'timezone_cache.json'):
         self.tf = TimezoneFinder()
-        self.srtm_data = get_data()
+        self.srtm_data = 0 # get_data()
         self.named_locs = Path(named_locs) if named_locs else None
         self.cache_file = Path(cache_file)
         self.last_timezone: str = "America/Los_Angeles"

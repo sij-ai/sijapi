@@ -284,15 +284,17 @@ async def get_timing_csv(
     start_date: str = Query(..., regex=r"\d{4}-\d{2}-\d{2}"),
     end_date: Optional[str] = Query(None, regex=r"\d{4}-\d{2}-\d{2}")
 ):
-
+    # Convert string dates to datetime objects
+    start = await gis.dt(start_date)
+    end = await gis.dt(end_date) if end_date else None
+    
     # Fetch and process timing data
-    timing_data = await fetch_and_prepare_timing_data(start_date, end_date)
-
-    # Retain these for processing CSV data with the correct timezone
-    queried_start_date = datetime.strptime(start_date, "%Y-%m-%d").replace(tzinfo=pacific).date()
-    queried_end_date = (datetime.strptime(end_date, "%Y-%m-%d").replace(tzinfo=pacific).date() 
-                        if end_date else queried_start_date)
-
+    timing_data = await fetch_and_prepare_timing_data(start, end)
+    
+    # Rest of the function remains the same
+    queried_start_date = start.replace(tzinfo=pacific).date()
+    queried_end_date = (end.replace(tzinfo=pacific).date() if end else queried_start_date)
+    
     # Process CSV data
     csv_data = process_csv(timing_data, queried_start_date, queried_end_date)
     if not csv_data or csv_data.strip() == "":
