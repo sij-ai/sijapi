@@ -15,17 +15,17 @@ os.makedirs(LOGS_DIR, exist_ok=True)
 L.init('sys', LOGS_DIR)
 l = get_logger("init")
 
-import ipaddress
 import multiprocessing
+import platform
 from dateutil import tz
 from pathlib import Path
 from .database import Database
 from .classes import Config, SysConfig, DirConfig, Geocoder
 
 # Load core configurations
-Sys = SysConfig.init('sys', 'secrets') # load configuration from config/sys.yaml and config/secrets.yaml
-Db = Database.init('sys') # load configuration from config/sys.yaml
-Dir = DirConfig.init('dirs') # load configuration from config/dirs.yaml
+Sys = SysConfig.init('sys', 'secrets')  # load configuration from config/sys.yaml and config/secrets.yaml
+Db = Database.init('sys')  # load database configuration from config/sys.yaml
+Dir = DirConfig.init('dirs')  # load configuration from config/dirs.yaml
 
 # Load module configurations
 Gis = Config.init('gis', 'secrets', Dir)
@@ -147,9 +147,6 @@ COURTLISTENER_DOCKETS_URL = "https://www.courtlistener.com/api/rest/v3/dockets/"
 # Keys & passwords
 PUBLIC_KEY_FILE = os.getenv("PUBLIC_KEY_FILE", 'you_public_key.asc')
 PUBLIC_KEY = (BASE_DIR.parent / PUBLIC_KEY_FILE).read_text()
-MAC_ID = os.getenv("MAC_ID")
-MAC_UN = os.getenv("MAC_UN")
-MAC_PW = os.getenv("MAC_PW")
 TIMING_API_KEY = os.getenv("TIMING_API_KEY")
 TIMING_API_URL = os.getenv("TIMING_API_URL", "https://web.timingapp.com/api/v1")
 
@@ -157,12 +154,8 @@ PHOTOPRISM_URL = os.getenv("PHOTOPRISM_URL")
 PHOTOPRISM_USER = os.getenv("PHOTOPRISM_USER")
 PHOTOPRISM_PASS = os.getenv("PHOTOPRISM_PASS")
 
-# Tailscale
-TS_IP = ipaddress.ip_address(os.getenv("TS_IP", "NULL"))
-TS_SUBNET = ipaddress.ip_network(os.getenv("TS_SUBNET")) if os.getenv("TS_SUBNET") else None
-TS_ID = os.getenv("TS_ID", "NULL")
-TS_TAILNET = os.getenv("TS_TAILNET", "NULL")
-TS_ADDRESS = f"http://{TS_ID}.{TS_TAILNET}.ts.net"
+# Platform detection (for macOS-specific features like notifications)
+IS_MACOS = platform.system() == "Darwin"
 
 # Cloudflare
 CF_API_BASE_URL = os.getenv("CF_API_BASE_URL")

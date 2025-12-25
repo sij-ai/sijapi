@@ -42,7 +42,6 @@ BASE_DIR = Path(__file__).resolve().parent
 CONFIG_DIR = BASE_DIR / "config"
 ENV_PATH = CONFIG_DIR / ".env"
 load_dotenv(ENV_PATH)
-TS_ID = os.environ.get('TS_ID')
 T = TypeVar('T', bound='Config')
 
 class Config(BaseModel):

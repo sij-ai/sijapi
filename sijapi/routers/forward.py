@@ -3,44 +3,11 @@ Used for port-forwarding and reverse proxy configurations.
 '''
 #routers/forward.py
 
-import os
-import io
-import string
-import json
-import time
-import base64
-import asyncpg
 import asyncio
-import subprocess
-import requests
-import random
-import paramiko
-import aiohttp
-import httpx
-from datetime import datetime
-from hashlib import sha256
-from pathlib import Path
-from typing import List, Optional
-from pydantic import BaseModel
-from PyPDF2 import PdfReader
-from fastapi import APIRouter, Form, HTTPException, Request, Response, BackgroundTasks, status, Path as PathParam
-from fastapi.responses import HTMLResponse, FileResponse, PlainTextResponse, JSONResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
-from webdriver_manager.chrome import ChromeDriverManager
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from sijapi import (
-    Sys, Serve, LOGS_DIR, TS_ID, CASETABLE_PATH, COURTLISTENER_DOCKETS_URL, COURTLISTENER_API_KEY,
-    COURTLISTENER_BASE_URL, COURTLISTENER_DOCKETS_DIR, COURTLISTENER_SEARCH_DIR, ALERTS_DIR,
-    MAC_UN, MAC_PW, MAC_ID, TS_TAILNET, IMG_DIR, PUBLIC_KEY, OBSIDIAN_VAULT_DIR
-)
-from sijapi.classes import WidgetUpdate
-from sijapi.utilities import bool_convert, sanitize_filename, assemble_journal_path
-from sijapi.routers import gis
+from fastapi import APIRouter
+from sijapi import Sys, Serve
 from sijapi.logs import get_logger
+
 l = get_logger(__name__)
 
 forward = APIRouter()

@@ -57,7 +57,7 @@ async def lifespan(app: FastAPI):
                 load_router(module_name)
 
     try:
-        await Db.initialize_engines()
+        await Db.initialize()
     except Exception as e:
         l.critical(f"Error during startup: {str(e)}")
         l.critical(f"Traceback: {traceback.format_exc()}")
@@ -69,9 +69,9 @@ async def lifespan(app: FastAPI):
         l.critical("Shutting down...")
         try:
             await asyncio.wait_for(Db.close(), timeout=20)
-            l.critical("Database pools closed.")
+            l.critical("Database connection closed.")
         except asyncio.TimeoutError:
-            l.critical("Timeout while closing database pools.")
+            l.critical("Timeout while closing database connection.")
         except Exception as e:
             l.critical(f"Error during shutdown: {str(e)}")
             l.critical(f"Traceback: {traceback.format_exc()}")
@@ -152,40 +152,6 @@ async def handle_exception_middleware(request: Request, call_next):
             status_code=500,
             content={"detail": "Internal Server Error"}
         )
-
-@app.post("/sync/pull")
-async def pull_changes():
-    l.info(f"Received request to /sync/pull")
-    try:
-        await Sys.add_primary_keys_to_local_tables()
-        await Sys.add_primary_keys_to_remote_tables()
-        try:
-            source = await Sys.get_most_recent_source()
-            if source:
-                # Pull changes from the source
-                total_changes = await Sys.pull_changes(source)
-
-                return JSONResponse(content={
-                    "status": "success",
-                    "message": f"Pull complete. Total changes: {total_changes}",
-                    "source": f"{source['ts_id']} ({source['ts_ip']})",
-                    "changes": total_changes
-                })
-            else:
-                return JSONResponse(content={
-                    "status": "info",
-                    "message": "No instances with more recent data found or all instances are offline."
-                })
-        except Exception as e:
-            l.error(f"Error in /sync/pull: {str(e)}")
-            l.error(f"Traceback: {traceback.format_exc()}")
-            raise HTTPException(status_code=500, detail=f"Error during pull: {str(e)}")
-        finally:
-            l.info(f"Finished processing /sync/pull request")
-    except Exception as e:
-        l.error(f"Error while ensuring primary keys to tables: {str(e)}")
-        l.error(f"Traceback: {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"Error during primary key insurance: {str(e)}")
 
 def load_router(router_name):
     router_logger = get_logger(f"router.{router_name}")

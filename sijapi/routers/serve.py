@@ -14,7 +14,6 @@ import asyncio
 import subprocess
 import requests
 import random
-import paramiko
 import aiohttp
 import httpx
 from datetime import datetime
@@ -33,9 +32,9 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from sijapi import (
-    Sys, Serve, Db, LOGS_DIR, TS_ID, CASETABLE_PATH, COURTLISTENER_DOCKETS_URL, COURTLISTENER_API_KEY,
+    Sys, Serve, Db, LOGS_DIR, CASETABLE_PATH, COURTLISTENER_DOCKETS_URL, COURTLISTENER_API_KEY,
     COURTLISTENER_BASE_URL, COURTLISTENER_DOCKETS_DIR, COURTLISTENER_SEARCH_DIR, ALERTS_DIR,
-    MAC_UN, MAC_PW, MAC_ID, TS_TAILNET, IMG_DIR, PUBLIC_KEY, OBSIDIAN_VAULT_DIR
+    IMG_DIR, PUBLIC_KEY, OBSIDIAN_VAULT_DIR, IS_MACOS
 )
 from sijapi.classes import WidgetUpdate
 from sijapi.utilities import bool_convert, sanitize_filename, assemble_journal_path
@@ -124,13 +123,9 @@ async def notify(alert: str):
             await notify_shellfish(alert)
             fail = False
 
-        if Sys.EXTENSIONS.macnotify:
-            if TS_ID == MAC_ID:
-                await notify_local(alert)
-                fail = False
-            else:
-                await notify_remote(f"{MAC_ID}.{TS_TAILNET}.net", alert, MAC_UN, MAC_PW)
-                fail = False
+        if Sys.EXTENSIONS.macnotify and IS_MACOS:
+            await notify_local(alert)
+            fail = False
     except:
         fail = True
 
@@ -142,22 +137,9 @@ async def notify(alert: str):
         return {"message": f"Failed to deliver alert: {alert}"}
 
 async def notify_local(message: str):
-    await asyncio.to_thread(os.system, f'osascript -e \'display notification "{message}" with title "Notification Title"\'')
+    """Send a macOS notification using osascript."""
+    await asyncio.to_thread(os.system, f'osascript -e \'display notification "{message}" with title "sijapi"\'')
 
-
-async def notify_remote(host: str, message: str, username: str = None, password: str = None, key_filename: str = None):
-    ssh = paramiko.SSHClient()
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    
-    connect_kwargs = {'hostname': host, 'username': username}
-    if key_filename:
-        connect_kwargs['key_filename'] = key_filename
-    else:
-        connect_kwargs['password'] = password
-
-    await asyncio.to_thread(ssh.connect, **connect_kwargs)
-    await asyncio.to_thread(ssh.exec_command, f'osascript -e \'display notification "{message}" with title "Notification Title"\'')
-    ssh.close()
 
 
 if Sys.EXTENSIONS.shellfish:

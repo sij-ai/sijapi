@@ -1,14 +1,10 @@
 # routers/sys.py
 
-import os
-import httpx
 import socket
-from fastapi import APIRouter, BackgroundTasks, HTTPException
-from sqlalchemy import text, select
-from tailscale import Tailscale
-from sijapi import Sys, Db, TS_ID
+import httpx
+from fastapi import APIRouter
+from sijapi import Sys
 from sijapi.logs import get_logger
-from sijapi.serialization import json_loads
 
 l = get_logger(__name__)
 
@@ -20,7 +16,8 @@ def get_health():
 
 @sys.get("/id")
 def get_id() -> str:
-    return TS_ID
+    """Get the server's hostname."""
+    return socket.gethostname()
 
 @sys.get("/routers")
 def get_routers() -> str:
@@ -32,7 +29,7 @@ def get_local_ip():
     """Get the server's local IP address."""
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
-        s.connect((f'{Sys.SUBNET_BROADCAST}', 1))
+        s.connect(('8.8.8.8', 1))
         IP = s.getsockname()[0]
     except Exception:
         IP = '127.0.0.1'
@@ -52,22 +49,3 @@ async def get_wan_ip():
         except Exception as e:
             l.error(f"Error fetching WAN IP: {e}")
             return "Unavailable"
-
-@sys.get("/ts_ip")
-async def get_tailscale_ip():
-    """Get the Tailscale IP address."""
-    tailnet = os.getenv("TAILNET")
-    api_key = os.getenv("TAILSCALE_API_KEY")
-    async with Tailscale(tailnet=tailnet, api_key=api_key) as tailscale:
-        devices = await tailscale.devices()
-        if devices:
-            # Assuming you want the IP of the first device in the list
-            return devices[0]['addresses'][0]
-        else:
-            return "No devices found"
-
-@sys.post("/db/sync")
-async def db_sync(background_tasks: BackgroundTasks):
-    l.info(f"Received request to /db/sync")
-    background_tasks.add_task(Db.sync_db)
-    return {"message": "Sync process initiated"}
