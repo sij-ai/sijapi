@@ -1,3 +1,12 @@
+#────,-_/──────────   W E   C A N   E X P E R I M E N T   W I T H   ──────────.───────────
+#   '  |  ,~-,-.  ,-.  ,-.  ,--.    |  --' ,--.   ,-.   ,--.  ,-.  ,-.  |--  .  ,-.   ,-. 
+# .^  |  |  |  | ,--| |  | | --'   |  -,- | --'  |  |  | --' |    ,--|  |   |  |  |  |  | 
+# `--'  '  '  '  `-^  `-|  `--'   `---|   `--'  '  '   `--'  '    `--^  `'  `  `-'  '  '  
+#                  ,   |         ,-. |        ~ 𝙸 𝙽   𝚃 𝙷 𝙴   𝙽 𝚄 𝙳 𝙴 . ~                
+#                  `~~'          `-+'                                                     
+#                                   O R   F U L L Y   C L O T H E D  ──  U P   T O   Y O U
+#                                                                                         
+#─── via comfyui (stable diffusion): ───── ( B U T   L E T   M E   K N O W ,   Y E A H ? )
 scenes:
   - scene: default
     triggers: 
@@ -37,3 +46,14 @@ scenes:
     workflows:
       - workflow: selfie.json
         size: 768x1024
+#─── notes: ──────────────────────────────────────────────────────────────────────────────
+#                                                                                         
+#   COMFY_URL, as you may expect, should point to the URL you use to access ComfyUI. If you 
+#   don't know, watch for it in the server logs once ComfyUI is fully launched.           
+#                                                                                         
+#   COMFYUI_DIR, with similar self-evidence, should point to the base directory of your   
+#   ComfyUI installation (i.e. the folder that contains `models`, `inputs`, and `outputs`).
+#   It can handle either a 
+#   
+#   PhotoPrism integration is not yet implemented, so don't bother with that just yet.
+#                                     ──────────

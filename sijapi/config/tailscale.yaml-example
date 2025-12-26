@@ -1,6 +1,39 @@
+#───────────────────────  Y ₒ ᵤ ' ᵣ ₑ   G ₒ ₙ ₙ ₐ   ₗ ₒ ᵥ ₑ ────────────────────────
+#                                                                                   
+# ░        ░░      ░░        ░  ░░░░░░░░      ░░░      ░░░      ░░  ░░░░░░░        ░
+# ▒▒▒▒  ▒▒▒▒  ▒▒▒▒  ▒▒▒▒  ▒▒▒▒  ▒▒▒▒▒▒▒  ▒▒▒▒▒▒▒  ▒▒▒▒  ▒  ▒▒▒▒  ▒  ▒▒▒▒▒▒▒  ▒▒▒▒▒▒▒
+# ▓▓▓▓  ▓▓▓▓  ▓▓▓▓  ▓▓▓▓  ▓▓▓▓  ▓▓▓▓▓▓▓▓      ▓▓  ▓▓▓▓▓▓▓  ▓▓▓▓  ▓  ▓▓▓▓▓▓▓      ▓▓▓
+# ████  ████        ████  ████  █████████████  █  ████  █        █  ███████  ███████
+# ████  ████  ████  █        █        ██      ███      ██  ████  █        █        █
+#                                                                                   
+#                A N D   I ' M   N O T.   E V E N.   J E A L O U S.                 
+#            Y O U   D E S E R V E   I T   A L L ,   B A B Y C A K E S.             
+#                                                                                   
+#─── use tailscale for secure remote access: ───────────────────────────────────────
+
 ID: sij-mbp16
 IP: 100.64.64.20
 SUBNET: 100.64.64.0/24
-MDNS: starling-sailfin.ts.net
+MDNS: goby-grue.ts.net
 API_KEY: '{{ SECRET.TAILSCALE_API_KEY }}'
 ADDRESS: 'http://{{ ID }}.{{ MDNS }}'
+
+#─── notes: ────────────────────────────────────────────────────────────────────────
+#   ID currently has two roles: it's used to assemble the complete MagicDNS of 
+#      the server, and it determines what the /id endpoint on the health router returns. 
+#      This is relevant where multiple servers run the script behind a load balancer 
+#      (e.g. Caddy), as a means to check which server responds. 
+#      Bear in mind that /id is NOT API key-protected by default here.
+#
+#   IP should match the Tailscale IP of the device. But this is deprecated, 
+#      and if the functionality becomes relevant again, it should be come back in 
+#      the form of a dynamic check (`tailscale status` in a shell subprocess) in 
+#      __init__.py or even the /id endpoint.
+#
+#   SUBNET should match the IP/CIDR-format tailnet
+#
+#   MDNS should match the tailnet's MagicDNS domain
+#
+#   ... don't go touching API_KEY or ADDRESS though.
+#
+#                                   ──────────                                        

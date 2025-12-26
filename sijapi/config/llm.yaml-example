@@ -1,3 +1,19 @@
+#────────────────────  L E T ' S   G E T   S I L L Y ,  ─────────────────────────────
+#                               T H E N   G O   B͎̝̪̼͉͜ O͖͕͇͚͉̼ N̢̦͖̺͔͎ K̠͓̠͖͜ E̝̼̫̙͔̞ R̡͇͖̙͉͎ S̡͉̠͎͙̪   
+#                  W I T H   O U R   O W N                                   
+#                                                                                          
+#                  ░▒▓█▓▒░        ░▒▓█▓▒░         ░▒▓██████▒▓██████▒░                      
+#                  ░▒▓█▓▒░        ░▒▓█▓▒░        ░▒▓█▓▒░░▒▓█▓▒░░▒▓█▓▒░                     
+#                  ░▒▓█▓▒░        ░▒▓█▓▒░        ░▒▓█▓▒░░▒▓█▓▒░░▒▓█▓▒░                     
+#                  ░▒▓█▓▒░        ░▒▓█▓▒░        ░▒▓█▓▒░░▒▓█▓▒░░▒▓█▓▒░                     
+#                  ░▒▓█▓▒░        ░▒▓█▓▒░        ░▒▓█▓▒░░▒▓█▓▒░░▒▓█▓▒░                     
+#                  ░▒▓█▓▒░        ░▒▓█▓▒░        ░▒▓█▓▒░░▒▓█▓▒░░▒▓█▓▒░                     
+#                  ░▒▓████████▓▒  ░▒▓████████▓▒  ░▒▓█▓▒░░▒▓█▓▒░░▒▓█▓▒░                     
+#  
+#                                                                                          
+#                              ( F O R   R E A L   T H O U G H ,  T H E S E   A R E
+#
+#─── via ollama (LLM): ─────────────────── S̝͖̦͓̪̻ O̡͖̘̫͇̟   H̢͔͔̫͉͜ O̢̢͉̞͍̘ T̟͍͍̪̦̞  R I G H T   N O W ────────────
 url: http://localhost:11434
 sys: 'You are a helpful AI assistant.'
 tpw: 1.3s
@@ -15,3 +31,49 @@ summary:
   instruct: 'You are an AI assistant that provides accurate summaries of text -- nothing more and nothing less. You must not include ANY extraneous text other than the sumary. Do not include comments apart from the summary, do not preface the summary, and do not provide any form of postscript. Do not add paragraph breaks. Do not add any kind of formatting. Your response should begin with, consist of, and end with an accurate plaintext summary.'
 functions:
   model: 'command-r'
+#─── notes: ──────────────────────────────────────────────────────────────────────────────
+#                                                                                         
+#   The exact values here will depend on what software you are using to inference an LLM,
+#   and of course what models and capabilities are available through it. The script was 
+#   designed for use with `ollama`, but most of the functionality should be equal with
+#   LM Studio, LocalAI, ect...                                                            
+#   
+#   
+#   Note it's possible to specify a separate model for general purposes and for 
+#   summarization tasks. The other SUMMARY_ variables call for some explanation, 
+#   in particular six that are most relevant when summarizing very long documents:
+#   
+#      SUMMARY_CHUNK_SIZE:  determines the maximum length, in tokens, the pieces that are 
+#                           split and sent individually to the model.
+#
+#   SUMMARY_CHUNK_OVERLAP:  determines how much of each chunk is overlapped with the prior
+#                           and next chunks. Set too high causes repetition, set too low
+#                           causes misunderstood confusion and poor summary results.
+#                           The summarization algorithm is flawed but I've gotten the best
+#                           results with this set around 100–200.
+#
+#             SUMMARY_TPW:  used in estimating the token count of a prompt for purposes of
+#                           complying with the maximum tokens a model can handle at once.
+#                           Best you can do is estimate. I tend to use long words a fair
+#                           excessively and found my average was 1.3 tokens per word. YMMV.
+#                                                                                         
+#    SUMMARY_LENGTH_RATIO:  this is the primary control over the length of generated 
+#                           summaries, expressed as the ratio of original text length to 
+#                           summary length. The default, 4, means the summaries will be
+#                           around 1/4 the length of the original text you provide it.
+#        
+#      SUMMARY_MIN_LENGTH:  the default SUMMARY_LENGTH_RATIO of 4 isn't ideal for very
+#                           short texts, but setting it any lower sacrifices conciseness
+#                           in summaries of longer texts. In short one size doesn't fit
+#                           all. The compromise I landed on was to set a "maximum minimum"
+#                           summary length: under no circumstances will the script impose
+#                           a smaller maximum length than this value.
+#                                                                                         
+#        SUMMARY_INSTRUCT:  sets the prompt used when summarizing text.
+#
+#    SUMMARY_INSTRUCT_TTS:  sets a separate prompt for use when summarizing text where
+#                           tts output was requested; tends to yield "cleaner" audio 
+#                           with less numbers (page numbers, citations) and other 
+#                           information extraneous to spoken contexts.
+#                                                                                         
+#                                      ──────────
